@@ -27,6 +27,10 @@ export class WorkspaceRegistry {
     this.require(id).validate(structuredClone(config));
   }
 
+  has(id: string): boolean {
+    return this.factories.has(id);
+  }
+
   manifests(): WorkspaceProviderManifest[] {
     return [...this.factories.values()].map((factory) => structuredClone(factory.manifest));
   }

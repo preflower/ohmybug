@@ -60,6 +60,12 @@ export const runtimeOperations = {
     renderer: true,
     invoke: (service, input) => service.listIntegrationPlugins(input),
   }),
+  listWorkspaceProviders: operation({
+    input: emptyPayloadSchema,
+    output: outputSchemas.workspaceManifests,
+    renderer: true,
+    invoke: (service, input) => service.listWorkspaceProviders(input),
+  }),
   listProjects: operation({
     input: emptyPayloadSchema,
     output: z.array(productProjectSchema),

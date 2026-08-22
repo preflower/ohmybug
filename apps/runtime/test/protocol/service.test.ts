@@ -4,17 +4,20 @@ import { join } from "node:path";
 
 import type { IntegrationPlugin } from "@oh-my-bug/core";
 import { ManualIntegrationAdapter } from "@oh-my-bug/integration-manual";
+import { localWorkspaceFactory } from "@oh-my-bug/workspace-local";
 import {
   LocalEvidenceStore,
   MemorySecretStore,
   openRuntimeDatabase,
   SqliteAgentSessionStore,
   SqliteRuntimeStore,
+  SqliteWorkspaceStore,
 } from "@oh-my-bug/storage";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { AgentRegistry } from "../../src/agents/registry.js";
 import { IntegrationRegistry } from "../../src/integrations/registry.js";
+import { WorkspaceRegistry } from "../../src/modules/workspace-registry.js";
 import { RuntimeCommands } from "../../src/orchestration/commands.js";
 import { RuntimeService } from "../../src/service.js";
 import { FakeAgent } from "../helpers/fakes.js";
@@ -53,6 +56,9 @@ async function harness(secrets = new MemorySecretStore()) {
   const database = openRuntimeDatabase(join(root, "runtime.sqlite"));
   const store = new SqliteRuntimeStore(database, { id: eventIds("issue"), now: () => now });
   const sessions = new SqliteAgentSessionStore(database);
+  const workspacePersistence = new SqliteWorkspaceStore(database);
+  const workspaceRegistry = new WorkspaceRegistry();
+  workspaceRegistry.register(localWorkspaceFactory);
   const agent = new FakeAgent();
   const agents = new AgentRegistry([{ id: "fake", create: () => agent }], {
     sessions,
@@ -94,6 +100,7 @@ async function harness(secrets = new MemorySecretStore()) {
     root,
     store,
     secrets,
+    workspacePersistence,
     service: new RuntimeService({
       runtime,
       store,
@@ -101,6 +108,8 @@ async function harness(secrets = new MemorySecretStore()) {
       evidence: new LocalEvidenceStore(join(root, "evidence")),
       integrations,
       integrationRegistry: registry,
+      workspacePersistence,
+      workspaceRegistry,
       id: eventIds("project"),
       now: () => now,
     }),
@@ -126,6 +135,7 @@ describe("RuntimeService", () => {
     });
     expect(created).toMatchObject({
       key: "CHECKOUT",
+      workspace: { provider: "local", config: {} },
       integrations: {
         fixture: {
           config: { workspace: "shop" },
@@ -136,6 +146,50 @@ describe("RuntimeService", () => {
     await expect(service.listIntegrationPlugins({})).resolves.toEqual([
       expect.objectContaining({ id: "fixture" }),
     ]);
+    await expect(service.listWorkspaceProviders({})).resolves.toEqual([
+      expect.objectContaining({ id: "local", name: "本机目录" }),
+    ]);
+  });
+
+  it("rejects unavailable Workspace providers without partially updating the Project", async () => {
+    const { root, service, store } = await harness();
+    const projectDirectory = join(root, "project");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+    const created = await service.createProject({ path: projectDirectory, key: "SHOP" });
+
+    await expect(service.updateProject({
+      id: created.id,
+      input: {
+        expectedRevision: created.revision,
+        name: "Should not persist",
+        workspace: { provider: "missing", config: {} },
+      },
+    })).rejects.toThrow("WORKSPACE_PROVIDER_NOT_AVAILABLE:missing");
+
+    expect(store.getProject(created.id)).toMatchObject({ revision: created.revision });
+    expect(store.getProject(created.id)).not.toHaveProperty("name");
+    await expect(service.getProject({ id: created.id })).resolves.toMatchObject({
+      workspace: { provider: "local", config: {} },
+    });
+  });
+
+  it("keeps an unavailable persisted Workspace selection visible", async () => {
+    const { root, service, workspacePersistence } = await harness();
+    const projectDirectory = join(root, "project");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+    const created = await service.createProject({ path: projectDirectory, key: "SHOP" });
+    workspacePersistence.setProjectConfiguration(created.id, {
+      provider: "removed-provider",
+      config: { retained: true },
+    });
+
+    await expect(service.getProject({ id: created.id })).resolves.toMatchObject({
+      workspace: {
+        provider: "removed-provider",
+        config: { retained: true },
+        unavailable: "WORKSPACE_PROVIDER_NOT_AVAILABLE:removed-provider",
+      },
+    });
   });
 
   it("rejects secret keys that are absent from the plugin manifest", async () => {

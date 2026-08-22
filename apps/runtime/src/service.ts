@@ -9,9 +9,15 @@ import type {
   RuntimeProject,
   RuntimeStore,
 } from "@oh-my-bug/core";
+import type {
+  WorkspacePersistence,
+  WorkspaceProjectConfiguration,
+  WorkspaceProviderManifest,
+} from "@oh-my-bug/module-api";
 
 import type { IntegrationManager } from "./integrations/manager.js";
 import type { IntegrationRegistry } from "./integrations/registry.js";
+import type { WorkspaceRegistry } from "./modules/workspace-registry.js";
 import type { ManualSubmission } from "./orchestration/commands.js";
 import type {
   AssessmentReference,
@@ -60,6 +66,8 @@ export interface RuntimeServiceDependencies {
   evidence: EvidenceStore;
   integrations: Pick<IntegrationManager, "refreshProject" | "health">;
   integrationRegistry: IntegrationRegistry;
+  workspacePersistence: WorkspacePersistence;
+  workspaceRegistry: WorkspaceRegistry;
   id(): string;
   now(): string;
 }
@@ -80,6 +88,14 @@ export class RuntimeService implements RuntimeApi {
     void _input;
     this.assertAccepting();
     return this.dependencies.integrationRegistry.manifests();
+  }
+
+  async listWorkspaceProviders(
+    _input: Record<string, never> = {},
+  ): Promise<WorkspaceProviderManifest[]> {
+    void _input;
+    this.assertAccepting();
+    return this.dependencies.workspaceRegistry.manifests();
   }
 
   async listProjects(_input: Record<string, never> = {}): Promise<ProductProject[]> {
@@ -104,9 +120,14 @@ export class RuntimeService implements RuntimeApi {
     return this.mutateProject(async () => {
       const path = await canonicalDirectory(input.path);
       const timestamp = this.dependencies.now();
+      const workspace = cloneWorkspaceConfiguration(
+        input.workspace ?? defaultWorkspaceConfiguration(),
+      );
+      const { workspace: _workspace, ...projectInput } = input;
+      void _workspace;
       const project: RuntimeProject = {
         id: this.dependencies.id(),
-        ...input,
+        ...projectInput,
         path,
         agent: input.agent ?? { plugin: "codex" },
         integrations: toRuntimeIntegrations(input.integrations),
@@ -115,8 +136,12 @@ export class RuntimeService implements RuntimeApi {
         updatedAt: timestamp,
       };
       this.validateIntegrations(project);
-      this.dependencies.runtime.registerProject(project);
-      const saved = this.requireProject(project.id);
+      this.dependencies.workspaceRegistry.validate(workspace.provider, workspace.config);
+      const saved = this.dependencies.workspacePersistence.transaction(() => {
+        this.dependencies.runtime.registerProject(project);
+        this.dependencies.workspacePersistence.setProjectConfiguration(project.id, workspace);
+        return this.requireProject(project.id);
+      });
       await this.dependencies.integrations.refreshProject(saved);
       return this.toProductProject(saved);
     });
@@ -125,7 +150,7 @@ export class RuntimeService implements RuntimeApi {
   async updateProject(input: { id: string; input: UpdateProjectInput }): Promise<ProductProject> {
     return this.mutateProject(async () => {
       const current = this.requireProject(input.id);
-      const fields = withoutExpectedRevision(input.input);
+      const { workspace, ...fields } = withoutExpectedRevision(input.input);
       const path = fields.path === undefined ? current.path : await canonicalDirectory(fields.path);
       const next: RuntimeProject = {
         ...current,
@@ -136,7 +161,24 @@ export class RuntimeService implements RuntimeApi {
           : toRuntimeIntegrations(fields.integrations, current.integrations),
       };
       this.validateIntegrations(next);
-      const updated = this.dependencies.store.updateProject(next, input.input.expectedRevision);
+      const existingWorkspace = this.dependencies.workspacePersistence
+        .getProjectConfiguration(current.id);
+      const selectedWorkspace = cloneWorkspaceConfiguration(
+        workspace ?? existingWorkspace ?? defaultWorkspaceConfiguration(),
+      );
+      if (workspace) {
+        this.dependencies.workspaceRegistry.validate(workspace.provider, workspace.config);
+      }
+      const updated = this.dependencies.workspacePersistence.transaction(() => {
+        const saved = this.dependencies.store.updateProject(next, input.input.expectedRevision);
+        if (workspace || !existingWorkspace) {
+          this.dependencies.workspacePersistence.setProjectConfiguration(
+            current.id,
+            selectedWorkspace,
+          );
+        }
+        return saved;
+      });
       await this.dependencies.integrations.refreshProject(updated);
       return this.toProductProject(updated);
     });
@@ -340,6 +382,10 @@ export class RuntimeService implements RuntimeApi {
           },
         )))
       : undefined;
+    const workspace = cloneWorkspaceConfiguration(
+      this.dependencies.workspacePersistence.getProjectConfiguration(project.id)
+        ?? defaultWorkspaceConfiguration(),
+    );
     return {
       id: project.id,
       key: project.key,
@@ -352,6 +398,12 @@ export class RuntimeService implements RuntimeApi {
       ...(project.commands ? { commands: project.commands } : {}),
       ...(project.agent ? { agent: project.agent } : {}),
       ...(integrations ? { integrations } : {}),
+      workspace: {
+        ...workspace,
+        ...(!this.dependencies.workspaceRegistry.has(workspace.provider)
+          ? { unavailable: `WORKSPACE_PROVIDER_NOT_AVAILABLE:${workspace.provider}` }
+          : {}),
+      },
     };
   }
 
@@ -383,6 +435,19 @@ function withoutExpectedRevision(input: UpdateProjectInput): Omit<UpdateProjectI
   const { expectedRevision, ...fields } = input;
   void expectedRevision;
   return fields;
+}
+
+function defaultWorkspaceConfiguration(): WorkspaceProjectConfiguration {
+  return { provider: "local", config: {} };
+}
+
+function cloneWorkspaceConfiguration(
+  configuration: WorkspaceProjectConfiguration,
+): WorkspaceProjectConfiguration {
+  return {
+    provider: configuration.provider,
+    config: structuredClone(configuration.config),
+  };
 }
 
 function secretReference(projectId: string, pluginId: string, key: string): string {

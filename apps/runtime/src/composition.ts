@@ -90,6 +90,8 @@ export interface RuntimeComposition {
   integrationRegistry: IntegrationRegistry;
   evidence: LocalEvidenceStore;
   secrets: SecretStore;
+  workspacePersistence: SqliteWorkspaceStore;
+  workspaceRegistry: WorkspaceRegistry;
 }
 
 export interface RuntimeApplication {
@@ -142,6 +144,8 @@ export async function inspectDesktopRuntimeSnapshot(
 ): Promise<DesktopRuntimeSnapshot> {
   if (!options.dataRoot.trim()) throw new Error("DATA_ROOT_REQUIRED");
   const integrationRegistry = new IntegrationRegistry([sentryPlugin(), dingTalkPlugin()]);
+  const workspaceRegistry = new WorkspaceRegistry();
+  workspaceRegistry.register(localWorkspaceFactory);
   const empty = (): DesktopRuntimeSnapshot => ({
     integrationPlugins: integrationRegistry.manifests(),
     projects: [],
@@ -158,12 +162,19 @@ export async function inspectDesktopRuntimeSnapshot(
     }
     throw error;
   }
-  const store = new SqliteRuntimeStore(openRuntimeDatabaseReadOnly(databasePath));
+  const database = openRuntimeDatabaseReadOnly(databasePath);
+  const store = new SqliteRuntimeStore(database);
+  const workspacePersistence = new SqliteWorkspaceStore(database);
   try {
     const issues = store.listIssues();
     return {
       integrationPlugins: integrationRegistry.manifests(),
-      projects: store.listProjects().map((project) => snapshotProject(project, integrationRegistry)),
+      projects: store.listProjects().map((project) => snapshotProject(
+        project,
+        integrationRegistry,
+        workspacePersistence,
+        workspaceRegistry,
+      )),
       issues,
       issueEvents: Object.fromEntries(issues.map((issue) => [issue.id, store.readEvents(issue.id)])),
       integrationHealth: {},
@@ -224,6 +235,8 @@ export function createRuntimeApplication(
       evidence: composition.evidence,
       integrations: composition.integrations,
       integrationRegistry: composition.integrationRegistry,
+      workspacePersistence: composition.workspacePersistence,
+      workspaceRegistry: composition.workspaceRegistry,
       id: options.overrides?.id ?? randomUUID,
       now: options.overrides?.now ?? (() => new Date().toISOString()),
     }),
@@ -325,6 +338,8 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     integrationRegistry: options.integrationRegistry,
     evidence,
     secrets: options.secrets,
+    workspacePersistence,
+    workspaceRegistry,
   };
 }
 
@@ -336,6 +351,8 @@ function enabledIntegrationCount(project: RuntimeProject): number {
 function snapshotProject(
   project: RuntimeProject,
   integrationRegistry: IntegrationRegistry,
+  workspacePersistence: SqliteWorkspaceStore,
+  workspaceRegistry: WorkspaceRegistry,
 ): ProductProject {
   const integrations = project.integrations
     ? Object.fromEntries(Object.entries(project.integrations).map(([id, configuration]) => {
@@ -353,6 +370,8 @@ function snapshotProject(
         }];
       }))
     : undefined;
+  const workspace = workspacePersistence.getProjectConfiguration(project.id)
+    ?? { provider: "local", config: {} };
   return {
     id: project.id,
     key: project.key,
@@ -365,5 +384,12 @@ function snapshotProject(
     ...(project.commands ? { commands: project.commands } : {}),
     ...(project.agent ? { agent: project.agent } : {}),
     ...(integrations ? { integrations } : {}),
+    workspace: {
+      provider: workspace.provider,
+      config: structuredClone(workspace.config),
+      ...(!workspaceRegistry.has(workspace.provider)
+        ? { unavailable: `WORKSPACE_PROVIDER_NOT_AVAILABLE:${workspace.provider}` }
+        : {}),
+    },
   };
 }

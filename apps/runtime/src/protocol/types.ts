@@ -8,8 +8,13 @@ import type {
   ProjectAgentConfiguration,
   ProjectCommands,
 } from "@oh-my-bug/core";
+import type {
+  WorkspaceProjectConfiguration,
+  WorkspaceProviderManifest,
+} from "@oh-my-bug/module-api";
 
 export type { ConfigValue, IntegrationHealth, IntegrationPluginManifest } from "@oh-my-bug/core";
+export type { WorkspaceProjectConfiguration, WorkspaceProviderManifest } from "@oh-my-bug/module-api";
 
 export type RuntimeHealth = {
   state: "starting" | "ready" | "stopping" | "stopped";
@@ -31,6 +36,10 @@ export interface ProductIntegrationConfiguration extends ProjectIntegrationInput
   unavailable?: string;
 }
 
+export interface ProductWorkspaceConfiguration extends WorkspaceProjectConfiguration {
+  unavailable?: string;
+}
+
 export interface ProductProject {
   id: string;
   key: string;
@@ -40,6 +49,7 @@ export interface ProductProject {
   commands?: ProjectCommands;
   agent?: ProjectAgentConfiguration;
   integrations?: Record<string, ProductIntegrationConfiguration>;
+  workspace: ProductWorkspaceConfiguration;
   revision: number;
   createdAt: string;
   updatedAt: string;
@@ -53,6 +63,7 @@ export interface CreateProjectInput {
   commands?: ProjectCommands;
   agent?: ProjectAgentConfiguration;
   integrations?: Record<string, ProjectIntegrationInput>;
+  workspace?: WorkspaceProjectConfiguration;
 }
 
 export interface UpdateProjectInput extends Partial<CreateProjectInput> {
@@ -86,6 +97,7 @@ export interface EvidencePayload {
 export interface RuntimeApi {
   health(input: Record<string, never>): Promise<RuntimeHealth>;
   listIntegrationPlugins(input: Record<string, never>): Promise<IntegrationPluginManifest[]>;
+  listWorkspaceProviders(input: Record<string, never>): Promise<WorkspaceProviderManifest[]>;
   listProjects(input: Record<string, never>): Promise<ProductProject[]>;
   inspectProject(input: { path: string }): Promise<ProjectInspection>;
   getProject(input: { id: string }): Promise<ProductProject>;

@@ -1,5 +1,6 @@
 import {
   integrationPluginManifestSchema,
+  configFieldSchema,
   issueSchema,
 } from "@oh-my-bug/core";
 import { z } from "zod";
@@ -29,6 +30,18 @@ export const productIntegrationSchema = projectIntegrationInputSchema.extend({
   secretConfigured: z.record(z.string(), z.boolean()),
   unavailable: z.string().min(1).optional(),
 }).strict();
+export const workspaceConfigurationSchema = z.object({
+  provider: identifierSchema,
+  config: configSchema,
+}).strict();
+export const productWorkspaceConfigurationSchema = workspaceConfigurationSchema.extend({
+  unavailable: z.string().min(1).optional(),
+}).strict();
+export const workspaceProviderManifestSchema = z.object({
+  id: identifierSchema,
+  name: identifierSchema,
+  configFields: z.array(configFieldSchema),
+}).strict();
 
 const projectFields = {
   path: identifierSchema,
@@ -38,6 +51,7 @@ const projectFields = {
   commands: projectCommandsSchema.optional(),
   agent: projectAgentSchema.optional(),
   integrations: z.record(identifierSchema, projectIntegrationInputSchema).optional(),
+  workspace: workspaceConfigurationSchema.optional(),
 };
 
 export const createProjectInputSchema = z.object(projectFields).strict();
@@ -50,6 +64,7 @@ export const updateProjectInputSchema = z.object({
   commands: projectFields.commands,
   agent: projectFields.agent,
   integrations: projectFields.integrations,
+  workspace: projectFields.workspace,
 }).strict();
 export const productProjectSchema = z.object({
   id: identifierSchema,
@@ -63,6 +78,7 @@ export const productProjectSchema = z.object({
   commands: projectFields.commands,
   agent: projectFields.agent,
   integrations: z.record(identifierSchema, productIntegrationSchema).optional(),
+  workspace: productWorkspaceConfigurationSchema,
 }).strict();
 export const projectInspectionSchema = z.object({
   path: identifierSchema,
@@ -117,4 +133,5 @@ export const outputSchemas = {
   issues: z.array(issueSchema),
   manifest: integrationPluginManifestSchema,
   manifests: z.array(integrationPluginManifestSchema),
+  workspaceManifests: z.array(workspaceProviderManifestSchema),
 };

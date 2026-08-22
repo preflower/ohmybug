@@ -7,6 +7,7 @@ describe("Runtime protocol operation registry", () => {
     expect(Object.keys(runtimeOperations)).toEqual([
       "health",
       "listIntegrationPlugins",
+      "listWorkspaceProviders",
       "listProjects",
       "inspectProject",
       "getProject",
