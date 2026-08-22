@@ -76,12 +76,9 @@ export class DemoAgentAdapter implements AgentAdapter {
     return this.runTurn(session, async (signal) => {
       await this.prepareNativeSession(session, input.issue.id, input.project.id);
       await this.wait(signal);
-      await mkdir(input.evidenceDirectory, { recursive: true });
-      const relativePath = "checkout-acceptance.png";
-      await sharp(Buffer.from(demoEvidenceSvg)).png().toFile(join(input.evidenceDirectory, relativePath));
       return {
         summary: "The failing path now returns a recoverable result.",
-        evidence: [{ type: "screenshot", label: "Checkout acceptance", relativePath }],
+        evidence: [],
       };
     });
   }

@@ -49,6 +49,15 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await expect(evidence).toHaveJSProperty("naturalWidth", 1280);
     expect(await evidence.evaluate((image) => (image as HTMLImageElement).src.startsWith("blob:file:"))).toBe(true);
 
+    await desktop.page.getByRole("button", { name: "显示详情栏" }).click();
+    const activity = desktop.page.getByRole("button", { name: "Agent 活动" });
+    await activity.click();
+    const activityPanel = desktop.page.locator("section.agent-activity");
+    await expect(activityPanel).toContainText("实现完成，准备采集证据");
+    await expect(activityPanel).toContainText("开始采集验证证据");
+    await expect(activityPanel).toContainText("验证证据已通过");
+    await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
+
     const artifactDir = resolve("test-results", "electron-acceptance");
     await mkdir(artifactDir, { recursive: true });
     await desktop.page.getByRole("button", { name: "预览 Checkout acceptance" }).click();

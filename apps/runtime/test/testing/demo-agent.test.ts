@@ -30,7 +30,7 @@ function receivedIssue(id = "issue-1"): Issue {
 }
 
 describe("demo Agent adapter", () => {
-  it("keeps one native session across Assessment and Repair and returns a relative evidence path", async () => {
+  it("keeps one native session across implementation and evidence capture", async () => {
     const sessions = new MemorySessions();
     const adapter = new DemoAgentAdapter({
       sessions,
@@ -67,13 +67,36 @@ describe("demo Agent adapter", () => {
         .toBe("demo-native-demo-issue-1-1");
       expect(result).toEqual({
         summary: "The failing path now returns a recoverable result.",
-        evidence: [{
+        evidence: [],
+      });
+      const evidenceResult = await adapter.captureEvidence(session, {
+        issue: {
+          ...repairing,
+          status: "EVIDENCE_CAPTURE",
+          repair: {
+            iteration: 1,
+            deliveryDraft: {
+              summary: result.summary,
+              repairIteration: 1,
+              implementationCompletedAt: now,
+            },
+          },
+        },
+        project,
+        assessment,
+        deliveryDraft: {
+          summary: result.summary,
+          repairIteration: 1,
+          implementationCompletedAt: now,
+        },
+        evidenceDirectory,
+      });
+      expect(evidenceResult).toEqual({ evidence: [{
           type: "screenshot",
           label: "Checkout acceptance",
           relativePath: "checkout-acceptance.png",
-        }],
-      });
-      const image = await readFile(join(evidenceDirectory, result.evidence[0]!.relativePath));
+        }] });
+      const image = await readFile(join(evidenceDirectory, evidenceResult.evidence[0]!.relativePath));
       expect(image.subarray(1, 4).toString()).toBe("PNG");
     } finally {
       await rm(evidenceDirectory, { recursive: true, force: true });
@@ -120,7 +143,7 @@ describe("demo Agent adapter", () => {
     const evidenceDirectory = await mkdtemp(join(tmpdir(), "omb-demo-scope-"));
     const assessment = await adapter.assess(session, { issue, project });
     try {
-      await adapter.repair(session, {
+      const result = await adapter.repair(session, {
         issue: {
           ...issue,
           status: "REPAIRING",
@@ -129,6 +152,29 @@ describe("demo Agent adapter", () => {
         },
         project,
         assessment,
+        evidenceDirectory,
+      });
+      await adapter.captureEvidence(session, {
+        issue: {
+          ...issue,
+          status: "EVIDENCE_CAPTURE",
+          assessment,
+          repair: {
+            iteration: 1,
+            deliveryDraft: {
+              summary: result.summary,
+              repairIteration: 1,
+              implementationCompletedAt: now,
+            },
+          },
+        },
+        project,
+        assessment,
+        deliveryDraft: {
+          summary: result.summary,
+          repairIteration: 1,
+          implementationCompletedAt: now,
+        },
         evidenceDirectory,
       });
       await expect(access(join(evidenceDirectory, "checkout-acceptance.png")))
