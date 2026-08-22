@@ -50,17 +50,46 @@ export interface RuntimeWorkerDependencies {
   now: () => string;
 }
 
+export interface RuntimeWorkerOptions {
+  maxConcurrentIssues?: number;
+}
+
+type OperationSettlement =
+  | { kind: "settled"; issueId: string; ok: true }
+  | { kind: "settled"; issueId: string; ok: false; error: unknown };
+
+type SchedulerProgress = OperationSettlement | { kind: "wake" };
+
+const DEFAULT_MAX_CONCURRENT_ISSUES = 3;
 const MAX_AUTOMATIC_EVIDENCE_RETRIES = 2;
 
 export class RuntimeWorker {
   private running?: Promise<void>;
   private accepting = true;
+  private wakeScheduler?: () => void;
+  private readonly maxConcurrentIssues: number;
 
-  constructor(private readonly dependencies: RuntimeWorkerDependencies) {}
+  constructor(
+    private readonly dependencies: RuntimeWorkerDependencies,
+    options: RuntimeWorkerOptions = {},
+  ) {
+    const maxConcurrentIssues = options.maxConcurrentIssues
+      ?? DEFAULT_MAX_CONCURRENT_ISSUES;
+    if (!Number.isInteger(maxConcurrentIssues) || maxConcurrentIssues < 1) {
+      throw new Error("INVALID_MAX_CONCURRENT_ISSUES");
+    }
+    this.maxConcurrentIssues = maxConcurrentIssues;
+  }
 
   kick(): void {
     if (!this.accepting) return;
-    this.running ??= this.runUntilIdle().finally(() => { this.running = undefined; });
+    if (this.running) {
+      this.wakeScheduler?.();
+      return;
+    }
+    this.running = this.runUntilIdle().finally(() => {
+      this.running = undefined;
+    });
   }
 
   beginShutdown(): void {
@@ -75,20 +104,74 @@ export class RuntimeWorker {
   async drainOne(): Promise<void> {
     const pending = this.dependencies.store.listPendingOperations()[0];
     if (!pending) return;
-    if (pending.operation === "PREPARE") return this.dependencies.workspaces.prepare(pending.issue);
+    await this.runPendingOperation(pending);
+  }
+
+  private async runPendingOperation(
+    pending: ReturnType<RuntimeStore["listPendingOperations"]>[number],
+  ): Promise<void> {
+    if (pending.operation === "PREPARE") {
+      return this.dependencies.workspaces.prepare(pending.issue);
+    }
     if (pending.operation === "ASSESS") return this.assess(pending.issue);
     if (pending.operation === "REPAIR") return this.repair(pending.issue);
-    if (pending.operation === "CAPTURE_EVIDENCE") return this.captureEvidence(pending.issue);
+    if (pending.operation === "CAPTURE_EVIDENCE") {
+      return this.captureEvidence(pending.issue);
+    }
     if (pending.operation === "EVIDENCE") return this.inspectEvidence(pending.issue);
-    if (pending.operation === "FINALIZE") return this.dependencies.workspaces.finalize(pending.issue);
+    if (pending.operation === "FINALIZE") {
+      return this.dependencies.workspaces.finalize(pending.issue);
+    }
     throw new Error("UNSUPPORTED_PENDING_OPERATION");
   }
 
   private async runUntilIdle(): Promise<void> {
-    while (
-      this.accepting &&
-      this.dependencies.store.listPendingOperations().length > 0
-    ) await this.drainOne();
+    const active = new Map<string, Promise<OperationSettlement>>();
+    const failedInPump = new Set<string>();
+    let firstFailure: { error: unknown } | undefined;
+
+    while (true) {
+      if (this.accepting) {
+        for (const pending of this.dependencies.store.listPendingOperations()) {
+          if (active.size >= this.maxConcurrentIssues) break;
+          const issueId = pending.issue.id;
+          if (active.has(issueId) || failedInPump.has(issueId)) continue;
+
+          const operation = this.runPendingOperation(pending).then<OperationSettlement>(
+            () => ({ kind: "settled", issueId, ok: true }),
+            (error: unknown) => ({ kind: "settled", issueId, ok: false, error }),
+          );
+          active.set(issueId, operation);
+        }
+      }
+
+      if (active.size === 0) break;
+      const progress = await this.waitForProgress(active);
+      if (progress.kind === "wake") continue;
+
+      active.delete(progress.issueId);
+      if (!progress.ok) {
+        failedInPump.add(progress.issueId);
+        firstFailure ??= { error: progress.error };
+      }
+    }
+
+    if (firstFailure) throw firstFailure.error;
+  }
+
+  private async waitForProgress(
+    active: Map<string, Promise<OperationSettlement>>,
+  ): Promise<SchedulerProgress> {
+    let wake!: () => void;
+    const woken = new Promise<SchedulerProgress>((resolve) => {
+      wake = () => resolve({ kind: "wake" });
+    });
+    this.wakeScheduler = wake;
+    try {
+      return await Promise.race([...active.values(), woken]);
+    } finally {
+      if (this.wakeScheduler === wake) this.wakeScheduler = undefined;
+    }
   }
 
   private event(issueId: string, type: string, actor: "SYSTEM" | "AGENT" = "SYSTEM", data = {}) {
