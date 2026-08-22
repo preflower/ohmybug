@@ -54,6 +54,11 @@ const inspection: ProjectInspection = {
         pushToRemote: { enabled: false, reason: "当前 Git 仓库未配置远程仓库" },
       },
       properties: [],
+      branches: {
+        localBranches: ["main"],
+        remoteBranches: [],
+        remoteUnavailableReason: "当前 Git 仓库未配置远程仓库",
+      },
     },
   },
 };
@@ -197,8 +202,9 @@ describe("Project configuration", () => {
     fireEvent.keyDown(local, { key: "ArrowDown" });
     await waitFor(() => expect(git).toHaveFocus());
     fireEvent.keyDown(git, { key: "Enter" });
-    expect(await screen.findByLabelText("基线分支")).toHaveValue("main");
-    expect(screen.getByRole("checkbox", { name: "完成后推送到远程" })).toHaveAttribute("aria-disabled", "true");
+    expect(await screen.findByRole("combobox", { name: "基线分支" })).toHaveValue("main");
+    expect(screen.getByRole("switch", { name: "完成后推送到远程" }))
+      .toHaveAttribute("aria-disabled", "true");
     expect(screen.getByText("当前 Git 仓库未配置远程仓库")).toBeVisible();
     expect(screen.queryByLabelText("远程仓库")).not.toBeInTheDocument();
   });
@@ -259,6 +265,11 @@ describe("Project configuration", () => {
               value: "git@example.com:team/checkout.git",
               description: "Git remote: origin",
             }],
+            branches: {
+              localBranches: ["main"],
+              remoteBranches: ["origin/main"],
+              remote: { name: "origin", url: "git@example.com:team/checkout.git" },
+            },
           },
         },
       }}
@@ -275,7 +286,8 @@ describe("Project configuration", () => {
     fireEvent.keyDown(git, { key: "Enter" });
     expect(await screen.findByText("git@example.com:team/checkout.git")).toBeVisible();
     expect(screen.queryByDisplayValue("origin")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("checkbox", { name: "完成后推送到远程" }));
+    expect(screen.getByRole("combobox", { name: "基线分支" })).toHaveValue("main");
+    fireEvent.click(screen.getByRole("switch", { name: "完成后推送到远程" }));
     fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
@@ -351,13 +363,13 @@ describe("Project configuration", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("shows a request error below the save action without clearing the form", async () => {
+  it("shows a request error above the save footer without clearing the form", async () => {
     render(<ProjectForm inspection={inspection} manifests={manifests} onSave={async () => Promise.reject(new Error("目录不可用"))} />);
     fireEvent.change(screen.getByLabelText("项目名称"), { target: { value: "Broken" } });
     const saveButton = screen.getByRole("button", { name: "保存项目" });
     fireEvent.click(saveButton);
     const alert = await screen.findByRole("alert");
-    expect(Boolean(saveButton.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(alert.compareDocumentPosition(saveButton) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(alert).toHaveTextContent("目录不可用");
     expect(screen.getByLabelText("项目名称")).toHaveValue("Broken");
   });

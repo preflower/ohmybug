@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 
 import appIconUrl from "../../assets/icons/oh-my-bug.png";
 import { api } from "./api/client.js";
-import type { DirectorySelection } from "./api/transport.js";
+import type { DirectorySelection, ProductTransport } from "./api/transport.js";
 import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, IssueWorkspaceInfoDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
@@ -281,7 +281,7 @@ function AppContent() {
         {view !== "issues" ? <header className="view-header">
           <h1>{viewTitle}</h1>
           <div className="filters">
-            {projectEditing ? <div className="header-actions"><Button type="button" variant="secondary" onClick={() => setProjectEditor(undefined)}>返回项目列表</Button><Button aria-label="保存项目（顶部）" form="project-settings-form" type="submit">保存项目</Button></div> : view === "projects" && projects.length > 0 ? <div className="header-actions"><Button size="sm" type="button" variant="secondary" onClick={() => { setProjectInspection(undefined); setProjectEditor("new"); }}>高级：手动输入路径</Button><Button size="sm" type="button" onClick={() => void openProjectDirectory()}><Plus size={13} />打开项目目录</Button></div> : null}
+            {!projectEditing && view === "projects" && projects.length > 0 ? <div className="header-actions"><Button size="sm" type="button" variant="secondary" onClick={() => { setProjectInspection(undefined); setProjectEditor("new"); }}>高级：手动输入路径</Button><Button size="sm" type="button" onClick={() => void openProjectDirectory()}><Plus size={13} />打开项目目录</Button></div> : null}
           </div>
         </header> : null}
 
@@ -298,6 +298,7 @@ function AppContent() {
             onOpenProjectDirectory={openProjectDirectory}
             onSelectProjectDirectory={selectProjectDirectory}
             onManualProject={() => { setProjectInspection(undefined); setProjectEditor("new"); }}
+            onRefreshWorkspaceBranches={(path, providerId) => api.projectBranches(path, providerId, true)}
             onSave={saveProject}
             onSaveSecrets={saveProjectSecrets}
           />
@@ -411,7 +412,7 @@ function Welcome() {
   return <div className="welcome"><div className="welcome-kicker"><Sparkles aria-hidden="true" size={14} />本地 AI 改动实现</div><h2>从 Integration Input 到可验证交付</h2><p>Agent 负责分析与实现；Runtime 负责编排、会话、证据与两次明确确认。</p><div className="flow-preview">{flow.map(([title, description, gate], index) => <div className="flow-step" key={title}><span className="flow-step-number">0{index + 1}</span><div><strong>{title}</strong><span>{description}</span></div><span className="gate-chip">{gate}</span></div>)}</div></div>;
 }
 
-function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, inspection, onEdit, onOpenProjectDirectory, onSelectProjectDirectory, onManualProject, onSave, onSaveSecrets }: {
+function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, inspection, onEdit, onOpenProjectDirectory, onSelectProjectDirectory, onManualProject, onRefreshWorkspaceBranches, onSave, onSaveSecrets }: {
   projects: ProjectDto[];
   manifests: IntegrationPluginManifest[];
   workspaceProviders: WorkspaceProviderManifest[];
@@ -421,6 +422,10 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, in
   onOpenProjectDirectory: () => Promise<void>;
   onSelectProjectDirectory: () => Promise<DirectorySelection>;
   onManualProject: () => void;
+  onRefreshWorkspaceBranches: (
+    path: string,
+    providerId: string,
+  ) => ReturnType<ProductTransport["projectBranches"]>;
   onSave: (project: ProjectFormValue) => Promise<ProjectDto | void>;
   onSaveSecrets: (projectId: string, pluginId: string, patch: Record<string, string | null>) => Promise<ProjectDto>;
 }) {
@@ -439,7 +444,7 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, in
 
   if (editor) {
     const initial = editor === "new" ? undefined : editor;
-    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={`${formSession}:${inspection?.path ?? "pending"}`} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
+    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={`${formSession}:${inspection?.path ?? "pending"}`} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onRefreshWorkspaceBranches={onRefreshWorkspaceBranches} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
   }
   return <section className="projects-page">{projects.length ? <ProjectList manifests={manifests} projects={projects} onEdit={onEdit} /> : <div className="page-empty"><FolderKanban size={24} /><h2>打开第一个本机项目</h2><p>选择一个本机目录，然后确认 Agent 与可插拔集成配置。</p><div className="onboarding-actions"><Button type="button" onClick={() => void onOpenProjectDirectory()}>打开项目目录</Button><Button type="button" variant="secondary" onClick={onManualProject}>高级：手动输入路径</Button></div></div>}</section>;
 }

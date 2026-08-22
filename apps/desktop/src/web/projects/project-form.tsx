@@ -13,8 +13,9 @@ import {
 } from "../components/ui/select.js";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
 import { Textarea } from "../components/ui/textarea.js";
-import type { ConfigValue, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "../api/types.js";
+import type { ConfigValue, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../api/types.js";
 import { ConfigFields } from "./config-fields.js";
+import { GitWorkspaceFields } from "./git-workspace-fields.js";
 import { IntegrationFields } from "./integration-fields.js";
 
 export interface ProjectIntegrationFormValue {
@@ -45,6 +46,10 @@ interface ProjectFormProps {
   onSelectDirectory?(): Promise<
     { canceled: true } | { canceled: false; inspection: ProjectInspection }
   >;
+  onRefreshWorkspaceBranches?(
+    path: string,
+    providerId: string,
+  ): Promise<WorkspaceBranchDiscoveryDto>;
   onSave(project: ProjectFormValue): Promise<ProjectDto | void>;
   onSaveSecrets?(projectId: string, pluginId: string, patch: Record<string, string | null>): Promise<ProjectDto>;
 }
@@ -59,7 +64,7 @@ const localWorkspaceProvider: WorkspaceProviderManifest = {
   configFields: [],
 };
 
-export function ProjectForm({ manifests, workspaceProviders = [localWorkspaceProvider], initial, inspection, onCancel, onSelectDirectory, onSave, onSaveSecrets }: ProjectFormProps) {
+export function ProjectForm({ manifests, workspaceProviders = [localWorkspaceProvider], initial, inspection, onCancel, onSelectDirectory, onRefreshWorkspaceBranches, onSave, onSaveSecrets }: ProjectFormProps) {
   const allManifests = useMemo(() => withUnavailableManifests(manifests, initial), [manifests, initial]);
   const allWorkspaceProviders = useMemo(
     () => withUnavailableWorkspaceProviders(workspaceProviders, initial),
@@ -190,7 +195,21 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
               },
             }));
           }}><SelectTrigger aria-label="工作目录方式"><SelectValue /></SelectTrigger><SelectContent>{allWorkspaceProviders.map((provider) => <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>)}</SelectContent></Select></label>
-          <ConfigFields fields={allWorkspaceProviders.find((provider) => provider.id === project.workspace.provider)?.configFields ?? []} config={project.workspace.config} idPrefix={`workspace-${project.workspace.provider}`} inspection={projectInspection?.workspaces[project.workspace.provider]} onChange={(key, value) => updateProject((current) => ({ ...current, workspace: { ...current.workspace, config: { ...current.workspace.config, [key]: value } } }))} />
+          {project.workspace.provider === "git" ? <GitWorkspaceFields
+            config={project.workspace.config}
+            discovery={projectInspection?.workspaces.git?.branches ?? {
+              localBranches: [String(project.workspace.config.baseBranch ?? "main")],
+              remoteBranches: [],
+            }}
+            pushState={projectInspection?.workspaces.git?.fields?.pushToRemote}
+            onChange={(key, value) => updateProject((current) => ({ ...current, workspace: { ...current.workspace, config: { ...current.workspace.config, [key]: value } } }))}
+            onRefreshBranches={() => onRefreshWorkspaceBranches
+              ? onRefreshWorkspaceBranches(project.path, project.workspace.provider)
+              : Promise.resolve(projectInspection?.workspaces.git?.branches ?? {
+                  localBranches: [String(project.workspace.config.baseBranch ?? "main")],
+                  remoteBranches: [],
+                })}
+          /> : <ConfigFields fields={allWorkspaceProviders.find((provider) => provider.id === project.workspace.provider)?.configFields ?? []} config={project.workspace.config} idPrefix={`workspace-${project.workspace.provider}`} inspection={projectInspection?.workspaces[project.workspace.provider]} onChange={(key, value) => updateProject((current) => ({ ...current, workspace: { ...current.workspace, config: { ...current.workspace.config, [key]: value } } }))} />}
           {initial?.workspace?.unavailable ? <p className="field-wide">{initial.workspace.unavailable}</p> : null}
           {projectInspection?.workspaces[project.workspace.provider]?.available === false ? <p className="field-wide field-error">{projectInspection.workspaces[project.workspace.provider]?.reason}</p> : null}
         </div></section><section className="workspace-permission"><h3>工作目录权限</h3><p>Agent 对文件的所有读写操作都将被限制在此项目目录中。</p></section></section></div> : null}
@@ -257,7 +276,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
             {project.id && manifest.secretFields.length > 0 ? <div className="credential-save-block"><Button disabled={state.saving || !onSaveSecrets} size="sm" type="button" variant="outline" onClick={() => { void saveSecrets(manifest); }}>{state.saving ? "保存中…" : `保存 ${manifest.name} 凭证`}</Button>{state.error ? <Alert variant="destructive"><AlertDescription>{state.error}</AlertDescription></Alert> : null}{state.message ? <p role="status">{state.message}</p> : null}</div> : null}
           </section></div> : null;
         })}
-      </div><footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存项目"}</Button></div>{saveError ? <Alert className="project-save-alert" variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert> : null}</footer></div>
+      </div>{saveError ? <Alert className="project-save-alert" variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert> : null}<footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存项目"}</Button></div></footer></div>
     </Tabs>
   </form>;
 }
@@ -300,12 +319,16 @@ function mergeWorkspaceInspection(
   inspection: ProjectInspection,
 ): ProjectFormValue["workspace"] {
   const providerInspection = inspection.workspaces[workspace.provider];
+  const config = {
+    ...normalizeWorkspaceConfig(workspace.provider, workspace.config),
+    ...(providerInspection?.configPatch ?? {}),
+  };
+  if (workspace.provider === "git" && providerInspection?.fields?.pushToRemote?.enabled === false) {
+    config.pushToRemote = false;
+  }
   return {
     ...workspace,
-    config: {
-      ...normalizeWorkspaceConfig(workspace.provider, workspace.config),
-      ...(providerInspection?.configPatch ?? {}),
-    },
+    config,
   };
 }
 

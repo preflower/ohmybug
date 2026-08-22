@@ -2020,6 +2020,7 @@ a:focus-visible {
 }
 
 .project-settings-main {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -2033,14 +2034,16 @@ a:focus-visible {
 
 .project-settings-actions {
   display: flex;
+  min-height: 54px;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
+  flex-wrap: nowrap;
+  gap: 12px;
   border-top: 1px solid var(--border);
   background: var(--surface);
-  padding: 14px 28px;
+  padding: 10px clamp(24px, 3.5vw, 36px);
+  box-shadow: none;
 }
 
 .project-settings-status,
@@ -2061,11 +2064,6 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.project-settings-actions > .project-save-alert {
-  flex-basis: 100%;
-  order: 3;
 }
 
 .project-settings-content [data-slot="tabs-content"] {
@@ -2133,6 +2131,7 @@ a:focus-visible {
 }
 
 .project-path-control [data-slot="button"] {
+  height: 32px;
   flex: 0 0 auto;
 }
 
@@ -2177,6 +2176,43 @@ a:focus-visible {
   color: var(--text);
   font-size: 16px;
   font-weight: 560;
+}
+
+.git-publication-field {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.git-publication-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.git-publication-copy strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 540;
+}
+
+.git-publication-copy small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.git-publication-copy code {
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workspace-inspection-properties {
@@ -2326,6 +2362,14 @@ a:focus-visible {
   background: rgb(214 95 107 / 9%);
   color: var(--danger);
   font-size: 11px;
+}
+
+.project-save-alert {
+  position: absolute;
+  z-index: 3;
+  right: clamp(24px, 3.5vw, 36px);
+  bottom: 62px;
+  left: clamp(24px, 3.5vw, 36px);
 }
 
 .credential-alert [data-slot="alert-description"],
