@@ -57,6 +57,15 @@ describe("Codex evidence capture", () => {
       relativePath: "payment.png",
     }]);
     expect(client.resumes[0]?.threadId).toBe("thread-1");
+    expect(client.resumes[0]).toMatchObject({
+      threadId: "thread-1",
+      options: {
+        workingDirectory: repairing.projectPath,
+        sandboxMode: "danger-full-access",
+        networkAccessEnabled: true,
+        approvalPolicy: "never",
+      },
+    });
     expect(client.prompts.at(-1)).toContain("Do not reimplement or refactor");
     expect(client.prompts.at(-1)).toContain("Previous screenshot was blank");
   });

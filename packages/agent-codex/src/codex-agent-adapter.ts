@@ -154,8 +154,8 @@ export class CodexAgentAdapter implements AgentAdapter {
       "EVIDENCE",
       {
         workingDirectory: requireProjectPath(input.issue),
-        sandboxMode: "workspace-write",
-        networkAccessEnabled: false,
+        sandboxMode: "danger-full-access",
+        networkAccessEnabled: true,
         approvalPolicy: "never",
       },
       evidencePrompt(input),

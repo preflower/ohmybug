@@ -14,7 +14,7 @@ import { AGENT_PRIVATE_TEMP_PREFIX, markAgentPrivateTemp } from "./private-temp.
 export interface CodexThreadOptions {
   model?: string;
   workingDirectory: string;
-  sandboxMode: "read-only" | "workspace-write";
+  sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
   networkAccessEnabled: boolean;
   approvalPolicy: "never";
   skipGitRepoCheck?: boolean;
