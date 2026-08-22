@@ -42,11 +42,13 @@ import { WorkspaceCoordinator } from "./orchestration/workspace-coordinator.js";
 import { OhMyBugRuntime } from "./runtime.js";
 import { RuntimeService } from "./service.js";
 import type {
+  IssueWorkspaceInfo,
   ProductProject,
   ProjectInspection,
   WorkspaceProviderManifest,
 } from "./protocol/types.js";
 import { demoAgent } from "./testing/demo-agent.js";
+import { readIssueWorkspaceInfo } from "./workspaces/issue-workspace-info.js";
 
 export interface CreateRuntimeOptions {
   databasePath: string;
@@ -85,6 +87,7 @@ export interface DesktopRuntimeSnapshot {
   projectInspections: Record<string, ProjectInspection>;
   projects: ProductProject[];
   issues: Issue[];
+  issueWorkspaces: Record<string, IssueWorkspaceInfo>;
   issueEvents: Record<string, IssueEvent[]>;
   integrationHealth: Record<string, IntegrationHealth>;
 }
@@ -163,6 +166,7 @@ export async function inspectDesktopRuntimeSnapshot(
     projectInspections: {},
     projects: [],
     issues: [],
+    issueWorkspaces: {},
     issueEvents: {},
     integrationHealth: {},
   });
@@ -199,12 +203,24 @@ export async function inspectDesktopRuntimeSnapshot(
         workspaces: await workspaceRegistry.inspectProject(project.path),
       },
     ])));
+    const issueWorkspaceEntries = await Promise.all(issues.map(async (issue) => {
+      const info = await readIssueWorkspaceInfo({
+        issue,
+        persistence: workspacePersistence,
+        registry: workspaceRegistry,
+      });
+      return info ? [issue.id, info] as const : undefined;
+    }));
+    const issueWorkspaces = Object.fromEntries(issueWorkspaceEntries.filter(
+      (entry): entry is readonly [string, IssueWorkspaceInfo] => Boolean(entry),
+    ));
     return {
       integrationPlugins: integrationRegistry.manifests(),
       workspaceProviders: workspaceRegistry.manifests(),
       projectInspections,
       projects,
       issues,
+      issueWorkspaces,
       issueEvents: Object.fromEntries(issues.map((issue) => [issue.id, store.readEvents(issue.id)])),
       integrationHealth: {},
     };

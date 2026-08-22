@@ -76,6 +76,28 @@ describe("Runtime composition boundary", () => {
         updatedAt: timestamp,
       });
       composition.store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
+      composition.workspacePersistence.setProjectConfiguration(issue.projectId, {
+        provider: "git",
+        config: { baseBranch: "main", pushToRemote: false },
+      });
+      composition.workspacePersistence.recoverBinding({
+        issueId: issue.id,
+        providerId: "git",
+        resourceId: `git:${issue.id}`,
+        status: "READY",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      composition.workspacePersistence.set("workspace-git", `git:${issue.id}`, {
+        issueId: issue.id,
+        repositoryPath: dataRoot,
+        projectRelativePath: ".",
+        worktreePath: join(dataRoot, "worktrees", issue.id),
+        branch: "ohmybug/omb-1",
+        baseBranch: "main",
+        baseCommit: "abc123",
+        pushToRemote: false,
+      });
       composition.store.transaction((transaction) => transaction.appendEvent({
         id: "issue-1:1",
         issueId: "issue-1",
@@ -115,6 +137,13 @@ describe("Runtime composition boundary", () => {
           updatedAt: timestamp,
         }],
         issues: [issue],
+        issueWorkspaces: {
+          "issue-1": {
+            providerId: "git",
+            status: "READY",
+            branch: "ohmybug/omb-1",
+          },
+        },
         issueEvents: {
           "issue-1": [{
             id: "issue-1:1",
