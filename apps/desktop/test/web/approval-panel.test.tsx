@@ -26,8 +26,8 @@ describe("approval panel", () => {
     expect(screen.queryByText("01234567")).not.toBeInTheDocument();
     expect(screen.getByText("将解锁：修改本机代码并运行项目命令")).toBeVisible();
     expect(screen.queryByLabelText("修改意见")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "确认是 Bug 并开始修复" })).toHaveAttribute("data-slot", "button");
-    fireEvent.click(screen.getByRole("button", { name: "确认是 Bug 并开始修复" }));
+    expect(screen.getByRole("button", { name: "开始修复" })).toHaveAttribute("data-slot", "button");
+    fireEvent.click(screen.getByRole("button", { name: "开始修复" }));
 
     expect(onApprove).toHaveBeenCalledWith({
       assessmentRevision: 3,
@@ -51,7 +51,7 @@ describe("approval panel", () => {
     );
 
     expect(screen.getByText("确认并开始实现")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "确认是 Feature 并开始实现" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始实现" }));
     expect(onApprove).toHaveBeenCalledWith({
       assessmentRevision: 4,
       assessmentContentHash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
@@ -73,10 +73,32 @@ describe("approval panel", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "要求重新分析" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新分析" }));
     fireEvent.change(screen.getByLabelText("修改意见"), { target: { value: "补充窄窗口截图" } });
     fireEvent.click(screen.getByRole("button", { name: "提交并重新分析" }));
     expect(onRequestChanges).toHaveBeenCalledWith("补充窄窗口截图");
+  });
+
+  it("requires confirmation before closing an Assessment Review Issue", async () => {
+    const onClose = vi.fn(async () => undefined);
+    render(
+      <ApprovalPanel
+        stage="ASSESSMENT"
+        revision={3}
+        contentHash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        title="Checkout returns 500"
+        verdict="BUG"
+        onApprove={async () => undefined}
+        onClose={onClose}
+        onRequestChanges={async () => undefined}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭 Issue" }));
+    expect(screen.getByRole("dialog", { name: "关闭 Issue？" })).toBeVisible();
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认关闭" }));
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
 
   it("states that Delivery approval completes the Issue as fixed", () => {

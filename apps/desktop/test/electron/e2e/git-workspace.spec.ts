@@ -41,7 +41,7 @@ test("publishes an approved local Git branch and removes only its worktree", asy
     const assessment = desktop.page.getByRole("region", { name: "评估结果操作" });
     await expect(assessment).toBeVisible();
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
-    await assessment.getByRole("button", { name: "确认是 Bug 并开始修复" }).click();
+    await assessment.getByRole("button", { name: "开始修复" }).click();
     const acceptance = desktop.page.getByRole("region", { name: "Delivery 审核" });
     await expect(acceptance).toBeVisible();
 

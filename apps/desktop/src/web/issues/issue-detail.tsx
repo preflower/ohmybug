@@ -85,6 +85,11 @@ export function IssueDetail({
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
   const canCancel = ["ASSESSING", "REPAIRING", "EVIDENCE_CHECK"].includes(issue.status);
+  const compactAssessment = issue.status === "ASSESSMENT_REVIEW"
+    && Boolean(assessment)
+    && (assessment?.verdict === "BUG" || assessment?.verdict === "FEATURE")
+    && !assessment?.suspectedDuplicateOf
+    && Boolean(onRequestReassessment);
   const sessionUnavailable = issue.lastFailure?.code === "AGENT_SESSION_UNAVAILABLE";
   const retryLabel = sessionUnavailable
     ? undefined
@@ -100,6 +105,8 @@ export function IssueDetail({
 
   return (
     <article className="issue-detail">
+      <div className="issue-detail-document">
+        <div className="issue-detail-content">
       <header className="issue-title-block">
         <div className="issue-title-meta">
           <span className="eyebrow">{issue.identifier}</span>
@@ -134,7 +141,7 @@ export function IssueDetail({
         </section>
       ) : null}
 
-      {issue.status === "ASSESSMENT_REVIEW" && assessment && onRequestReassessment ? (
+      {issue.status === "ASSESSMENT_REVIEW" && assessment && onRequestReassessment && !compactAssessment ? (
         <ApprovalPanel
           stage="ASSESSMENT"
           revision={assessment.revision}
@@ -165,7 +172,20 @@ export function IssueDetail({
           onRequestChanges={(feedback) => refreshAfter(() => onRejectDelivery(feedback))}
         />
       ) : null}
-
+        </div>
+      </div>
+      {compactAssessment && assessment && onRequestReassessment ? (
+        <ApprovalPanel
+          stage="ASSESSMENT"
+          revision={assessment.revision}
+          contentHash={assessment.contentHash}
+          title={assessment.suggestedTitle}
+          verdict={assessment.verdict as "BUG" | "FEATURE"}
+          onApprove={onApproveAssessment ? (input) => refreshAfter(() => onApproveAssessment(input)) : undefined}
+          onClose={onCancel ? () => refreshAfter(onCancel) : undefined}
+          onRequestChanges={(feedback) => refreshAfter(() => onRequestReassessment(feedback))}
+        />
+      ) : null}
     </article>
   );
 }

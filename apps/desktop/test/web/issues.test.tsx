@@ -217,6 +217,26 @@ describe("Issue detail", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  it("keeps Assessment actions outside the scrolling document and closes through cancel", async () => {
+    const onCancel = vi.fn(async () => undefined);
+    const onRefresh = vi.fn(async () => undefined);
+    render(<IssueDetail
+      issue={{ ...issue, status: "ASSESSMENT_REVIEW", repair: undefined, resolution: undefined }}
+      onApproveAssessment={async () => undefined}
+      onCancel={onCancel}
+      onRefresh={onRefresh}
+      onRequestReassessment={async () => undefined}
+    />);
+
+    const dock = screen.getByTestId("assessment-approval-dock");
+    expect(dock.parentElement).toHaveClass("issue-detail");
+    expect(dock.previousElementSibling).toHaveClass("issue-detail-document");
+    fireEvent.click(screen.getByRole("button", { name: "关闭 Issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认关闭" }));
+    await vi.waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
   it("keeps retry available beside a destructive failure alert", async () => {
     render(<IssueDetail issue={{ ...issue, status: "REPAIR_FAILED", resolution: undefined, lastFailure: { stage: "REPAIR", code: "TEST_FAILED" } }} onRefresh={async () => undefined} onRetry={async () => Promise.reject(new Error("重试服务不可用"))} />);
 

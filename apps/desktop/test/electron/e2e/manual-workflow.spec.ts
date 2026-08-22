@@ -40,7 +40,7 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await desktop.page.keyboard.press("Escape");
     await expect(newIssue).toBeFocused();
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
-    await rootApproval.getByRole("button", { name: "确认是 Bug 并开始修复" }).click();
+    await rootApproval.getByRole("button", { name: "开始修复" }).click();
 
     const acceptanceApproval = desktop.page.getByRole("region", { name: "Delivery 审核" });
     await expect(acceptanceApproval).toBeVisible();
