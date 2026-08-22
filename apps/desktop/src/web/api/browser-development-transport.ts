@@ -1,4 +1,4 @@
-import type { IntegrationPluginManifest } from "@oh-my-bug/runtime/protocol";
+import type { IntegrationPluginManifest, WorkspaceProviderManifest } from "@oh-my-bug/runtime/protocol";
 
 import type {
   AgentEventDto,
@@ -10,6 +10,7 @@ import type { ProductTransport } from "./transport.js";
 
 export interface DevelopmentSnapshot {
   integrationPlugins: IntegrationPluginManifest[];
+  workspaceProviders?: WorkspaceProviderManifest[];
   projects: ProjectDto[];
   issues: IssueDto[];
   issueEvents: Record<string, AgentEventDto[]>;
@@ -39,6 +40,11 @@ export function createBrowserDevelopmentTransport(
   };
   return {
     integrationPlugins: async () => (await snapshot()).integrationPlugins,
+    workspaceProviders: async () => (await snapshot()).workspaceProviders ?? [{
+      id: "local",
+      name: "本机目录",
+      configFields: [],
+    }],
     projects: async () => (await snapshot()).projects,
     project: async (id) => {
       const project = (await snapshot()).projects.find((candidate) => candidate.id === id);

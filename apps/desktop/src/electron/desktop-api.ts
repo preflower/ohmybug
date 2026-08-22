@@ -24,6 +24,7 @@ export interface RendererIpc {
 
 export interface DesktopApi {
   listIntegrationPlugins(): Promise<RuntimeOperationOutput<"listIntegrationPlugins">>;
+  listWorkspaceProviders(): Promise<RuntimeOperationOutput<"listWorkspaceProviders">>;
   listProjects(): Promise<RuntimeOperationOutput<"listProjects">>;
   getProject(id: string): Promise<RuntimeOperationOutput<"getProject">>;
   createProject(project: CreateProjectInput): Promise<RuntimeOperationOutput<"createProject">>;
@@ -86,6 +87,7 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     ipc.invoke(DESKTOP_REQUEST_CHANNEL, { operation, payload }) as Promise<RuntimeOperationOutput<Name>>;
   const api: DesktopApi = {
     listIntegrationPlugins: () => request("listIntegrationPlugins", {}),
+    listWorkspaceProviders: () => request("listWorkspaceProviders", {}),
     listProjects: () => request("listProjects", {}),
     getProject: (id) => request("getProject", { id }),
     createProject: (project) => request("createProject", project),

@@ -15,7 +15,7 @@ describe("preload desktop API", () => {
     expect(Object.keys(api).sort()).toEqual([
       "approveAssessment", "approveBugAssessment", "approveDelivery", "cancelIssue", "confirmDuplicate",
       "confirmNotABug", "createProject", "getIssue", "getProject", "listIntegrationPlugins",
-      "listIssues", "listProjects", "onRuntimeState", "openProjectDirectory",
+      "listIssues", "listProjects", "listWorkspaceProviders", "onRuntimeState", "openProjectDirectory",
       "readEvidence", "rebuildAgentSession", "rejectDelivery", "requestReassessment", "retryIssue",
       "setIntegrationSecrets", "submitManual", "subscribeIssueEvents", "integrationHealth", "updateProject"
     ].sort());

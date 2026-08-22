@@ -15,6 +15,7 @@ const project = {
   commands: {},
   agent: { plugin: "codex" },
   integrations: {},
+  workspace: { provider: "local", config: {} },
   revision: 1,
   createdAt: "2026-08-20T08:00:00.000Z",
   updatedAt: "2026-08-20T08:00:00.000Z",

@@ -50,6 +50,7 @@ describe("UtilityClient", () => {
         id: "project-1",
         key: "SHOP",
         path: "/tmp/shop",
+        workspace: { provider: "local", config: {} },
         revision: 1,
         createdAt: "2026-08-21T00:00:00.000Z",
         updatedAt: "2026-08-21T00:00:00.000Z"

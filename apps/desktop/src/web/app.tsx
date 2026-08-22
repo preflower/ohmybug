@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 
 import appIconUrl from "../../assets/icons/oh-my-bug.png";
 import { api } from "./api/client.js";
-import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, ProjectDto, ProjectInspection } from "./api/types.js";
+import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
 import { KbdShortcut } from "./components/ui/kbd.js";
@@ -78,6 +78,7 @@ function AppContent() {
   const [view, setView] = useState<View>(() => viewFromPath(currentRoute()));
   const [projects, setProjects] = useState<ProjectDto[]>([]);
   const [manifests, setManifests] = useState<IntegrationPluginManifest[]>([]);
+  const [workspaceProviders, setWorkspaceProviders] = useState<WorkspaceProviderManifest[]>([]);
   const [issues, setIssues] = useState<IssueDto[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedIssue, setSelectedIssue] = useState<IssueDto>();
@@ -151,11 +152,18 @@ function AppContent() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([api.integrationPlugins(), api.projects(), api.issues(), api.integrationHealth()])
-      .then(([nextManifests, nextProjects, nextIssues, nextHealth]) => {
+    void Promise.all([
+      api.integrationPlugins(),
+      api.workspaceProviders().catch(() => [{ id: "local", name: "本机目录", configFields: [] }]),
+      api.projects(),
+      api.issues(),
+      api.integrationHealth(),
+    ])
+      .then(([nextManifests, nextWorkspaceProviders, nextProjects, nextIssues, nextHealth]) => {
         if (!active) return;
         const orderedIssues = newestIssuesFirst(nextIssues);
         setManifests(nextManifests);
+        setWorkspaceProviders(nextWorkspaceProviders);
         setProjects(nextProjects);
         setIssues(orderedIssues);
         setSelectedId((current) => current ?? orderedIssues[0]?.id);
@@ -268,6 +276,7 @@ function AppContent() {
             editor={projectEditor}
             inspection={projectInspection}
             manifests={manifests}
+            workspaceProviders={workspaceProviders}
             projects={projects}
             onEdit={setProjectEditor}
             onOpenProjectDirectory={openProjectDirectory}
@@ -364,9 +373,10 @@ function Welcome() {
   return <div className="welcome"><div className="welcome-kicker"><Sparkles aria-hidden="true" size={14} />本地 AI 改动实现</div><h2>从 Integration Input 到可验证交付</h2><p>Agent 负责分析与实现；Runtime 负责编排、会话、证据与两次明确确认。</p><div className="flow-preview">{flow.map(([title, description, gate], index) => <div className="flow-step" key={title}><span className="flow-step-number">0{index + 1}</span><div><strong>{title}</strong><span>{description}</span></div><span className="gate-chip">{gate}</span></div>)}</div></div>;
 }
 
-function ProjectsWorkspace({ projects, manifests, editor, inspection, onEdit, onOpenProjectDirectory, onManualProject, onSave, onSaveSecrets }: {
+function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, inspection, onEdit, onOpenProjectDirectory, onManualProject, onSave, onSaveSecrets }: {
   projects: ProjectDto[];
   manifests: IntegrationPluginManifest[];
+  workspaceProviders: WorkspaceProviderManifest[];
   editor?: ProjectDto | "new";
   inspection?: ProjectInspection;
   onEdit: (project: ProjectDto | "new" | undefined) => void;
@@ -390,7 +400,7 @@ function ProjectsWorkspace({ projects, manifests, editor, inspection, onEdit, on
 
   if (editor) {
     const initial = editor === "new" ? undefined : editor;
-    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={formSession} initial={initial} inspection={inspection} manifests={manifests} onCancel={() => onEdit(undefined)} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
+    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={formSession} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} onCancel={() => onEdit(undefined)} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
   }
   return <section className="projects-page">{projects.length ? <ProjectList manifests={manifests} projects={projects} onEdit={onEdit} /> : <div className="page-empty"><FolderKanban size={24} /><h2>打开第一个本机项目</h2><p>选择一个本机目录，然后确认 Agent 与可插拔集成配置。</p><div className="onboarding-actions"><Button type="button" onClick={() => void onOpenProjectDirectory()}>打开项目目录</Button><Button type="button" variant="secondary" onClick={onManualProject}>高级：手动输入路径</Button></div></div>}</section>;
 }

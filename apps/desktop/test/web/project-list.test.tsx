@@ -29,6 +29,7 @@ const projects: ProjectDto[] = [
     path: "~/Documents/Workspace/storefront",
     agent: { plugin: "codex" },
     integrations: {},
+    workspace: { provider: "local", config: {} },
     revision: 3,
     createdAt: "2026-08-10T06:00:00.000Z",
     updatedAt: "2026-08-21T06:00:00.000Z",
@@ -43,6 +44,7 @@ const projects: ProjectDto[] = [
       sentry: { enabled: true, config: {}, secretConfigured: {} },
       dingtalk: { enabled: true, config: {}, secretConfigured: {} },
     },
+    workspace: { provider: "git", config: { baseBranch: "main", delivery: "local" } },
     revision: 8,
     createdAt: "2026-08-16T06:00:00.000Z",
     updatedAt: "2026-08-22T05:59:40.000Z",
@@ -56,6 +58,7 @@ const projects: ProjectDto[] = [
     integrations: {
       dingtalk: { enabled: true, config: {}, secretConfigured: {} },
     },
+    workspace: { provider: "local", config: {} },
     revision: 5,
     createdAt: "2026-08-14T06:00:00.000Z",
     updatedAt: "2026-08-22T05:42:00.000Z",

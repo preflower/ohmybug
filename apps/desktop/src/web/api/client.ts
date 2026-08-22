@@ -16,6 +16,7 @@ function unavailable(): Promise<never> {
 
 const unavailableTransport: ProductTransport = {
   integrationPlugins: unavailable,
+  workspaceProviders: unavailable,
   projects: unavailable,
   project: unavailable,
   createProject: unavailable,

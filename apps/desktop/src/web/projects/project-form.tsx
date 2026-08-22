@@ -13,7 +13,8 @@ import {
 } from "../components/ui/select.js";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
 import { Textarea } from "../components/ui/textarea.js";
-import type { ConfigValue, IntegrationPluginManifest, ProjectDto, ProjectInspection } from "../api/types.js";
+import type { ConfigValue, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "../api/types.js";
+import { ConfigFields } from "./config-fields.js";
 import { IntegrationFields } from "./integration-fields.js";
 
 export interface ProjectIntegrationFormValue {
@@ -32,10 +33,12 @@ export interface ProjectFormValue {
   agentPlugin: string;
   commands: NonNullable<ProjectDto["commands"]>;
   integrations: Record<string, ProjectIntegrationFormValue>;
+  workspace: { provider: string; config: Record<string, ConfigValue> };
 }
 
 interface ProjectFormProps {
   manifests: IntegrationPluginManifest[];
+  workspaceProviders?: WorkspaceProviderManifest[];
   initial?: ProjectDto;
   inspection?: ProjectInspection;
   onCancel?(): void;
@@ -46,10 +49,20 @@ interface ProjectFormProps {
 type ProjectField = "name" | "key" | "path";
 type Feedback = { saving: boolean; error: string; message: string };
 
-export function ProjectForm({ manifests, initial, inspection, onCancel, onSave, onSaveSecrets }: ProjectFormProps) {
+const localWorkspaceProvider: WorkspaceProviderManifest = {
+  id: "local",
+  name: "本机目录",
+  configFields: [],
+};
+
+export function ProjectForm({ manifests, workspaceProviders = [localWorkspaceProvider], initial, inspection, onCancel, onSave, onSaveSecrets }: ProjectFormProps) {
   const allManifests = useMemo(() => withUnavailableManifests(manifests, initial), [manifests, initial]);
+  const allWorkspaceProviders = useMemo(
+    () => withUnavailableWorkspaceProviders(workspaceProviders, initial),
+    [workspaceProviders, initial],
+  );
   const formRef = useRef<HTMLFormElement>(null);
-  const [project, setProject] = useState<ProjectFormValue>(() => initialValue(allManifests, initial, inspection));
+  const [project, setProject] = useState<ProjectFormValue>(() => initialValue(allManifests, allWorkspaceProviders, initial, inspection));
   const [activeTab, setActiveTab] = useState("project");
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ProjectField, string>>>({});
   const [secretValues, setSecretValues] = useState<Record<string, Record<string, string>>>({});
@@ -89,7 +102,7 @@ export function ProjectForm({ manifests, initial, inspection, onCancel, onSave, 
     try {
       const normalized = { ...project, key: project.key.trim().toUpperCase() };
       const next = await onSave(normalized);
-      setProject(next ? initialValue(allManifests, next) : normalized);
+      setProject(next ? initialValue(allManifests, allWorkspaceProviders, next) : normalized);
       setSaved(true);
       setSaveConfirmed(true);
     } catch (error) {
@@ -105,7 +118,7 @@ export function ProjectForm({ manifests, initial, inspection, onCancel, onSave, 
     setFeedback((current) => ({ ...current, [manifest.id]: { saving: true, error: "", message: "" } }));
     try {
       const next = await onSaveSecrets(project.id, manifest.id, patch);
-      setProject(initialValue(allManifests, next));
+      setProject(initialValue(allManifests, allWorkspaceProviders, next));
       setSecretValues((current) => ({ ...current, [manifest.id]: {} }));
       setFeedback((current) => ({ ...current, [manifest.id]: { saving: false, error: "", message: "凭证已保存到系统钥匙串" } }));
     } catch (error) {
@@ -118,6 +131,7 @@ export function ProjectForm({ manifests, initial, inspection, onCancel, onSave, 
       <TabsList aria-label="项目配置" className="project-settings-nav" variant="line">
         <span className="project-settings-nav-label" role="presentation">项目设置</span>
         <TabsTrigger value="project">项目</TabsTrigger>
+        <TabsTrigger value="workspace">工作目录</TabsTrigger>
         <TabsTrigger value="agent">Agent</TabsTrigger>
         <TabsTrigger value="commands">命令与验收</TabsTrigger>
         <span className="project-settings-nav-label project-settings-nav-label-integrations" role="presentation">集成</span>
@@ -129,6 +143,19 @@ export function ProjectForm({ manifests, initial, inspection, onCancel, onSave, 
           <label>项目标识<Input aria-label="项目标识" invalid={Boolean(fieldErrors.key)} name="key" value={project.key} onChange={(event) => setField("key", event.target.value)} />{fieldErrors.key ? <small className="field-error">{fieldErrors.key}</small> : null}</label>
           <label className="field-wide">本机项目路径<Input aria-label="本机项目路径" invalid={Boolean(fieldErrors.path)} name="path" value={project.path} onChange={(event) => setField("path", event.target.value)} />{fieldErrors.path ? <small className="field-error">{fieldErrors.path}</small> : null}</label>
         </div><div className="project-registration-summary" aria-label="项目注册状态"><div className="project-registration-state"><span className="state-dot" /><strong>{initial ? "本机项目已注册" : "项目目录已识别"}</strong></div><div><span>Agent</span><code>{project.agentPlugin === "codex" ? "Codex" : project.agentPlugin}</code></div><div><span>已启用集成</span><code>{Object.values(project.integrations).filter((integration) => integration.enabled).length}</code></div></div><section className="workspace-permission"><h3>工作目录权限</h3><p>Agent 对文件的所有读写操作都将被限制在此项目目录中。</p></section></section></div> : null}
+        {activeTab === "workspace" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel"><div className="section-heading"><div><h2>工作目录</h2><p>选择 Issue 使用项目原目录，或为每个 Issue 创建隔离的 Git Worktree。</p></div></div><div className="form-grid">
+          <label>工作目录方式<Select items={Object.fromEntries(allWorkspaceProviders.map((provider) => [provider.id, provider.name]))} value={project.workspace.provider} onValueChange={(providerId) => {
+            if (providerId === null) return;
+            const provider = allWorkspaceProviders.find((candidate) => candidate.id === providerId);
+            if (!provider) return;
+            updateProject((current) => ({
+              ...current,
+              workspace: { provider: providerId, config: defaults(provider) },
+            }));
+          }}><SelectTrigger aria-label="工作目录方式"><SelectValue /></SelectTrigger><SelectContent>{allWorkspaceProviders.map((provider) => <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>)}</SelectContent></Select></label>
+          <ConfigFields fields={allWorkspaceProviders.find((provider) => provider.id === project.workspace.provider)?.configFields ?? []} config={project.workspace.config} idPrefix={`workspace-${project.workspace.provider}`} onChange={(key, value) => updateProject((current) => ({ ...current, workspace: { ...current.workspace, config: { ...current.workspace.config, [key]: value } } }))} />
+          {initial?.workspace?.unavailable ? <p className="field-wide">{initial.workspace.unavailable}</p> : null}
+        </div></section></div> : null}
         {activeTab === "agent" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel"><div className="section-heading"><div><h2>Agent</h2><p>选择能力实现，并提供项目指令。</p></div></div><div className="form-grid">
           <label>Agent 插件<Select items={{ codex: "Codex", ...(project.agentPlugin === "codex" ? {} : { [project.agentPlugin]: project.agentPlugin }) }} value={project.agentPlugin} onValueChange={(agentPlugin) => {
             if (agentPlugin !== null) updateProject((current) => ({ ...current, agentPlugin }));
@@ -176,7 +203,7 @@ export function ProjectForm({ manifests, initial, inspection, onCancel, onSave, 
   </form>;
 }
 
-function initialValue(manifests: IntegrationPluginManifest[], initial?: ProjectDto, inspection?: ProjectInspection): ProjectFormValue {
+function initialValue(manifests: IntegrationPluginManifest[], workspaceProviders: WorkspaceProviderManifest[], initial?: ProjectDto, inspection?: ProjectInspection): ProjectFormValue {
   const integrations = Object.fromEntries(manifests.map((manifest) => {
     const stored = initial?.integrations?.[manifest.id];
     return [manifest.id, { enabled: stored?.enabled ?? false, config: stored?.config ?? defaults(manifest), secretConfigured: stored?.secretConfigured ?? {} }];
@@ -190,11 +217,33 @@ function initialValue(manifests: IntegrationPluginManifest[], initial?: ProjectD
     agentPlugin: initial?.agent?.plugin ?? "codex",
     commands: { ...initial?.commands },
     integrations,
+    workspace: initial?.workspace
+      ? { provider: initial.workspace.provider, config: { ...initial.workspace.config } }
+      : {
+          provider: workspaceProviders.find((provider) => provider.id === "local")?.id
+            ?? workspaceProviders[0]?.id
+            ?? "local",
+          config: defaults(
+            workspaceProviders.find((provider) => provider.id === "local")
+              ?? workspaceProviders[0]
+              ?? localWorkspaceProvider,
+          ),
+        },
   };
 }
 
-function defaults(manifest: IntegrationPluginManifest): Record<string, ConfigValue> {
+function defaults(manifest: Pick<IntegrationPluginManifest, "configFields">): Record<string, ConfigValue> {
   return Object.fromEntries(manifest.configFields.flatMap((field) => field.defaultValue === undefined ? [] : [[field.key, field.defaultValue]]));
+}
+
+function withUnavailableWorkspaceProviders(
+  providers: WorkspaceProviderManifest[],
+  initial?: ProjectDto,
+): WorkspaceProviderManifest[] {
+  const providerId = initial?.workspace.provider;
+  return providerId && !providers.some((provider) => provider.id === providerId)
+    ? [...providers, { id: providerId, name: providerId, configFields: [] }]
+    : providers;
 }
 
 function withUnavailableManifests(manifests: IntegrationPluginManifest[], initial?: ProjectDto): IntegrationPluginManifest[] {

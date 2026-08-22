@@ -7,6 +7,7 @@ import type {
   ProjectInspection,
   RuntimeOperationInput,
   RuntimeOperationOutput,
+  WorkspaceProviderManifest,
 } from "@oh-my-bug/runtime/protocol";
 
 export type ProjectDto = ProductProject;
@@ -22,4 +23,5 @@ export type {
   EvidencePayload,
   IntegrationPluginManifest,
   ProjectInspection,
+  WorkspaceProviderManifest,
 };

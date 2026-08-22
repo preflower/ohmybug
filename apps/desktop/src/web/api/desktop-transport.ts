@@ -10,6 +10,7 @@ import {
 export function createDesktopTransport(bridge: Readonly<DesktopApi>): ProductTransport {
   return {
     integrationPlugins: () => bridge.listIntegrationPlugins(),
+    workspaceProviders: () => bridge.listWorkspaceProviders(),
     projects: () => bridge.listProjects(),
     project: (id) => bridge.getProject(id),
     createProject: (project) => bridge.createProject(createProjectPayload(project)),

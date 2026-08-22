@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { IntegrationPluginManifest, ProjectDto } from "../../src/web/api/types.js";
+import type { IntegrationPluginManifest, ProjectDto, WorkspaceProviderManifest } from "../../src/web/api/types.js";
 import { ProjectForm } from "../../src/web/projects/project-form.js";
 
 class ResizeObserverMock {
@@ -31,6 +31,18 @@ const manifests: IntegrationPluginManifest[] = [{
 }];
 
 const inspection = { path: "/work/checkout", name: "checkout", key: "CHECKOUT" };
+const workspaceProviders: WorkspaceProviderManifest[] = [
+  { id: "local", name: "本机目录", configFields: [] },
+  {
+    id: "git",
+    name: "Git Worktree",
+    configFields: [
+      { key: "baseBranch", type: "string", label: "基线分支", required: true, defaultValue: "main" },
+      { key: "delivery", type: "string", label: "交付方式", required: true, defaultValue: "local" },
+      { key: "remote", type: "string", label: "远程仓库", required: false, defaultValue: "origin" },
+    ],
+  },
+];
 
 const configuredProject: ProjectDto = {
   id: "project-1",
@@ -47,6 +59,7 @@ const configuredProject: ProjectDto = {
       config: { workspace: "acme", channels: ["alerts"], batchSize: 50, includeArchived: true },
     },
   },
+  workspace: { provider: "local", config: {} },
   revision: 3,
   createdAt: "2026-08-20T08:00:00.000Z",
   updatedAt: "2026-08-20T09:00:00.000Z",
@@ -57,6 +70,31 @@ function selectTab(name: string) {
 }
 
 describe("Project configuration", () => {
+  it("keeps Local as default and renders Git fields from its manifest", async () => {
+    render(<ProjectForm
+      inspection={inspection}
+      manifests={manifests}
+      workspaceProviders={workspaceProviders}
+      onSave={async () => undefined}
+    />);
+
+    selectTab("工作目录");
+    expect(screen.getByRole("combobox", { name: "工作目录方式" }))
+      .toHaveTextContent("本机目录");
+    expect(screen.queryByLabelText("基线分支")).not.toBeInTheDocument();
+    const trigger = screen.getByRole("combobox", { name: "工作目录方式" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const local = await screen.findByRole("option", { name: "本机目录" });
+    const git = screen.getByRole("option", { name: "Git Worktree" });
+    await waitFor(() => expect(local).toHaveFocus());
+    fireEvent.keyDown(local, { key: "ArrowDown" });
+    await waitFor(() => expect(git).toHaveFocus());
+    fireEvent.keyDown(git, { key: "Enter" });
+    expect(await screen.findByLabelText("基线分支")).toHaveValue("main");
+    expect(screen.getByLabelText("交付方式")).toHaveValue("local");
+    expect(screen.getByLabelText("远程仓库")).toHaveValue("origin");
+  });
+
   it("prefills a new project from directory inspection without assuming Git", () => {
     render(<ProjectForm inspection={inspection} manifests={manifests} onSave={async () => undefined} />);
     expect(screen.getByLabelText("项目名称")).toHaveAttribute("data-slot", "input");
@@ -71,7 +109,7 @@ describe("Project configuration", () => {
     const tabs = screen.getByRole("tablist", { name: "项目配置" });
     expect(tabs).toHaveAttribute("aria-orientation", "vertical");
     expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "项目", "Agent", "命令与验收", "Example source",
+      "项目", "工作目录", "Agent", "命令与验收", "Example source",
     ]);
     selectTab("Example source");
     expect(screen.getByRole("checkbox", { name: "启用" })).toHaveAttribute(

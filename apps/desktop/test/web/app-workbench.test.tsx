@@ -16,6 +16,7 @@ const project: ProjectDto = {
   commands: { test: "pnpm test" },
   agent: { plugin: "codex" },
   integrations: {},
+  workspace: { provider: "local", config: {} },
   revision: 1,
   createdAt: "2026-08-19T09:00:00.000Z",
   updatedAt: "2026-08-19T09:00:00.000Z",

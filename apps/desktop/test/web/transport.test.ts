@@ -8,6 +8,7 @@ import { createProjectPayload } from "../../src/web/api/transport.js";
 const project = {
   id: "project-1", name: "Checkout", key: "CHK", path: "/work/checkout",
   commands: {}, agent: { plugin: "codex" }, integrations: {}, revision: 1,
+  workspace: { provider: "local", config: {} },
   createdAt: "2026-08-20T08:00:00.000Z", updatedAt: "2026-08-20T08:00:00.000Z",
 };
 
@@ -16,6 +17,9 @@ describe("renderer product transports", () => {
     const unsubscribe = vi.fn();
     const bridge = {
       listIntegrationPlugins: vi.fn(async () => []),
+      listWorkspaceProviders: vi.fn(async () => [{
+        id: "local", name: "本机目录", configFields: [],
+      }]),
       listProjects: vi.fn(async () => [project]),
       approveDelivery: vi.fn(async () => ({
         issue: { id: "issue-1", status: "COMPLETED" },
@@ -30,6 +34,9 @@ describe("renderer product transports", () => {
     const transport = createDesktopTransport(bridge as never);
     const listener = vi.fn();
     await expect(transport.integrationPlugins()).resolves.toEqual([]);
+    await expect(transport.workspaceProviders()).resolves.toEqual([
+      { id: "local", name: "本机目录", configFields: [] },
+    ]);
     await expect(transport.projects()).resolves.toEqual([project]);
     await expect(transport.approveDelivery("issue-1")).resolves.toEqual({
       issue: { id: "issue-1", status: "COMPLETED" },
@@ -49,11 +56,13 @@ describe("renderer product transports", () => {
     expect(createProjectPayload({
       name: "Checkout", key: "CHK", path: "/work/checkout", instructions: "", commands: {},
       agentPlugin: "codex",
+      workspace: { provider: "git", config: { baseBranch: "main", delivery: "local" } },
       integrations: {
         example: { enabled: true, config: { workspace: "acme", channels: ["alerts"] }, secretConfigured: { apiToken: true } },
       },
     })).toEqual({
       name: "Checkout", key: "CHK", path: "/work/checkout", commands: {}, agent: { plugin: "codex" },
+      workspace: { provider: "git", config: { baseBranch: "main", delivery: "local" } },
       integrations: { example: { enabled: true, config: { workspace: "acme", channels: ["alerts"] } } },
     });
   });

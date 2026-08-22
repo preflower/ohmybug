@@ -176,8 +176,11 @@ describe("packaged desktop runtime", () => {
       "@oh-my-bug/integration-dingtalk",
       "@oh-my-bug/integration-manual",
       "@oh-my-bug/integration-sentry",
+      "@oh-my-bug/module-api",
       "@oh-my-bug/runtime",
       "@oh-my-bug/storage",
+      "@oh-my-bug/workspace-git",
+      "@oh-my-bug/workspace-local",
     ]);
   });
 

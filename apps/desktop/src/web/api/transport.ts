@@ -2,6 +2,7 @@ import type {
   CreateProjectInput,
   IntegrationPluginManifest,
   UpdateProjectInput,
+  WorkspaceProviderManifest,
 } from "@oh-my-bug/runtime/protocol";
 
 import type { ProjectFormValue } from "../projects/project-form.js";
@@ -21,6 +22,7 @@ export type DirectorySelection = { canceled: true } | { canceled: false; inspect
 
 export interface ProductTransport {
   integrationPlugins(): Promise<IntegrationPluginManifest[]>;
+  workspaceProviders(): Promise<WorkspaceProviderManifest[]>;
   projects(): Promise<ProjectDto[]>;
   project(id: string): Promise<ProjectDto>;
   createProject(project: ProjectFormValue): Promise<ProjectDto>;
@@ -65,6 +67,7 @@ export function createProjectPayload(project: ProjectFormValue): CreateProjectIn
     ...(project.instructions ? { instructions: project.instructions } : {}),
     commands: project.commands,
     agent: { plugin: project.agentPlugin },
+    workspace: project.workspace,
     integrations: Object.fromEntries(
       Object.entries(project.integrations).map(([pluginId, integration]) => [
         pluginId,
