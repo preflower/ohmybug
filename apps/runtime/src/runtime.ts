@@ -1,4 +1,5 @@
 import type { IntegrationInput, RuntimeProject, RuntimeStore } from "@oh-my-bug/core";
+import type { BranchInfo } from "@oh-my-bug/module-api";
 
 import type { AgentRegistry } from "./agents/registry.js";
 import type { IntegrationManager } from "./integrations/manager.js";
@@ -101,8 +102,14 @@ export class OhMyBugRuntime {
   rejectDelivery(...args: Parameters<RuntimeCommands["rejectDelivery"]>) {
     return this.dependencies.commands.rejectDelivery(...args);
   }
-  approveDelivery(...args: Parameters<RuntimeCommands["approveDelivery"]>) {
-    return this.dependencies.commands.approveDelivery(...args);
+  async approveDelivery(
+    ...args: Parameters<RuntimeCommands["approveDelivery"]>
+  ): Promise<{ issue: ReturnType<RuntimeCommands["getIssue"]>; branch?: BranchInfo }> {
+    const approved = this.dependencies.commands.approveDelivery(...args);
+    await this.worker.drain();
+    const issue = this.dependencies.commands.getIssue(approved.id);
+    const branch = completedBranch(this.dependencies.store, issue.id);
+    return { issue, ...(branch ? { branch } : {}) };
   }
   retryIssue(...args: Parameters<RuntimeCommands["retryIssue"]>) {
     return this.dependencies.commands.retryIssue(...args);
@@ -113,6 +120,21 @@ export class OhMyBugRuntime {
   cancelIssue(...args: Parameters<RuntimeCommands["cancelIssue"]>) {
     return this.dependencies.commands.cancelIssue(...args);
   }
+}
+
+function completedBranch(store: RuntimeStore, issueId: string): BranchInfo | undefined {
+  const completed = store.readEvents(issueId)
+    .findLast((event) => event.type === "ISSUE_COMPLETED");
+  const value = completed?.data.branch;
+  if (!value || typeof value !== "object") return undefined;
+  const branch = value as Record<string, unknown>;
+  if (typeof branch.name !== "string" || typeof branch.commit !== "string") return undefined;
+  if (branch.remote !== undefined && typeof branch.remote !== "string") return undefined;
+  return {
+    name: branch.name,
+    commit: branch.commit,
+    ...(branch.remote ? { remote: branch.remote } : {}),
+  };
 }
 
 export type RuntimeIntegrationLifecycle = {

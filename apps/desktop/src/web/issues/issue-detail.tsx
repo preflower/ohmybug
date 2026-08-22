@@ -5,6 +5,7 @@ import { api } from "../api/client.js";
 import type {
   ApproveAssessmentInput,
   AssessmentReference,
+  BranchInfoDto,
   IssueDto,
 } from "../api/types.js";
 import { Alert, AlertDescription } from "../components/ui/alert.js";
@@ -21,6 +22,7 @@ import { IssueStatusBadge } from "./issue-status.js";
 
 interface IssueDetailProps {
   issue: IssueDto;
+  branch?: BranchInfoDto;
   onRefresh: () => Promise<void>;
   onApproveAssessment?: (input: ApproveAssessmentInput) => Promise<void>;
   onConfirmNotABug?: (reference: AssessmentReference) => Promise<void>;
@@ -59,6 +61,7 @@ function failureMessage(failure: NonNullable<IssueDto["lastFailure"]>): string {
 
 export function IssueDetail({
   issue,
+  branch,
   onRefresh,
   onApproveAssessment,
   onConfirmNotABug,
@@ -79,6 +82,8 @@ export function IssueDetail({
   const [cancelError, setCancelError] = useState("");
   const [rebuilding, setRebuilding] = useState(false);
   const [rebuildError, setRebuildError] = useState("");
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
   const canCancel = ["ASSESSING", "REPAIRING", "EVIDENCE_CHECK"].includes(issue.status);
   const sessionUnavailable = issue.lastFailure?.code === "AGENT_SESSION_UNAVAILABLE";
   const retryLabel = sessionUnavailable
@@ -114,6 +119,10 @@ export function IssueDetail({
       {retryLabel && onRetry ? <section aria-label="失败恢复" className="failure-actions"><div><strong>{retryLabel}</strong><span>Issue 上下文和已确认内容会保留，并从可恢复阶段继续。</span></div>{retryError ? <Alert className="form-error" variant="destructive"><AlertDescription>{retryError}</AlertDescription></Alert> : null}<Button disabled={retrying} type="button" variant="secondary" onClick={() => { setRetrying(true); setRetryError(""); void refreshAfter(onRetry).catch((caught) => setRetryError(caught instanceof Error ? caught.message : "重试失败")).finally(() => setRetrying(false)); }}><RotateCcw size={13} />{retrying ? "重试中…" : retryLabel}</Button></section> : null}
 
       {sessionUnavailable && onRebuildSession ? <section aria-label="会话恢复" className="failure-actions"><div><strong>Agent 会话已被删除或不可用</strong><span>重建后会保留 Issue、Assessment、反馈和证据记录，并用新会话继续当前阶段。</span></div>{rebuildError ? <Alert className="form-error" variant="destructive"><AlertDescription>{rebuildError}</AlertDescription></Alert> : null}<Button disabled={rebuilding} type="button" variant="secondary" onClick={() => { setRebuilding(true); setRebuildError(""); void refreshAfter(onRebuildSession).catch((caught) => setRebuildError(caught instanceof Error ? caught.message : "重建会话失败")).finally(() => setRebuilding(false)); }}><RotateCcw size={13} />{rebuilding ? "重建中…" : "重建 Agent 会话"}</Button></section> : null}
+
+      {issue.status === "APPROVED" && onApproveDelivery ? <section aria-label="分支发布" className="failure-actions"><div><strong>发布中 / 待重试</strong><span>代码已通过用户确认；若自动发布未完成，可安全重试同一个提交。</span></div>{publishError ? <Alert className="form-error" variant="destructive"><AlertDescription>{publishError}</AlertDescription></Alert> : null}<Button disabled={publishing} type="button" variant="secondary" onClick={() => { setPublishing(true); setPublishError(""); void refreshAfter(onApproveDelivery).catch((caught) => setPublishError(caught instanceof Error ? caught.message : "发布失败")).finally(() => setPublishing(false)); }}><RotateCcw size={13} />{publishing ? "发布中…" : "重试发布"}</Button></section> : null}
+
+      {branch ? <section aria-label="交付分支" className="review-section"><div className="review-heading"><span>交付分支</span></div><dl><div><dt>分支</dt><dd><code>{branch.name}</code></dd></div><div><dt>Commit</dt><dd><code>{branch.commit.slice(0, 7)}</code></dd></div>{branch.remote ? <div><dt>Remote</dt><dd><code>{branch.remote}</code></dd></div> : null}</dl></section> : null}
 
       {assessment ? (
         <section className="review-section assessment-review" data-testid="assessment-review">

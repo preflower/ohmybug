@@ -8,6 +8,7 @@ import { gitWorkspaceFactory } from "@oh-my-bug/workspace-git";
 import { describe, expect, it } from "vitest";
 
 import { RuntimeWorker } from "../src/orchestration/worker.js";
+import { OhMyBugRuntime } from "../src/runtime.js";
 import { FakeAgent } from "./helpers/fakes.js";
 import { assessment, createHarness, eventIds, project } from "./helpers/runtime.js";
 
@@ -128,23 +129,30 @@ describe("Workspace finalization", () => {
     });
     await worker.drain();
 
-    commands.approveDelivery(created.issue.id);
-    await worker.drainOne();
+    const runtime = new OhMyBugRuntime({
+      commands,
+      store,
+      agents,
+      evidence,
+      workspaces,
+      hooks,
+      id: eventIds("approval-result"),
+      now: () => "2026-08-20T15:02:00.000Z",
+    });
+    const failed = await runtime.approveDelivery(created.issue.id);
 
-    expect(store.getIssue(created.issue.id)?.status).toBe("APPROVED");
+    expect(failed).toEqual({ issue: expect.objectContaining({ status: "APPROVED" }) });
     expect(store.listPendingOperations()).toEqual([]);
     expect(workspacePersistence.getBinding(created.issue.id)?.status).toBe("READY");
     expect(store.readEvents(created.issue.id).map((event) => event.type))
       .toContain("WORKSPACE_PUBLISH_FAILED");
 
-    const retrying = commands.approveDelivery(created.issue.id);
-    expect(retrying.status).toBe("APPROVED");
-    expect(store.listPendingOperations()).toEqual([
-      { issue: retrying, operation: "FINALIZE" },
-    ]);
-    await worker.drainOne();
+    const published = await runtime.approveDelivery(created.issue.id);
 
-    expect(store.getIssue(created.issue.id)?.status).toBe("COMPLETED");
+    expect(published).toEqual({
+      issue: expect.objectContaining({ status: "COMPLETED" }),
+      branch: { name: "ohmybug/omb-1", commit: "abc123" },
+    });
     expect(workspacePersistence.getBinding(created.issue.id)?.status).toBe("RELEASED");
     expect(publishAttempts).toBe(2);
     expect(releases).toBe(1);

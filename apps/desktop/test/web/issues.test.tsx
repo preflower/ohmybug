@@ -250,4 +250,32 @@ describe("Issue detail", () => {
     expect(rebuildError.closest('[data-slot="alert"]')).toHaveAttribute("data-slot", "alert");
     expect(rebuild).toBeVisible();
   });
+
+  it("shows retry while an approved branch is waiting to publish", async () => {
+    const onApproveDelivery = vi.fn(async () => undefined);
+    render(<IssueDetail
+      issue={{ ...issue, status: "APPROVED", repair: undefined }}
+      onApproveDelivery={onApproveDelivery}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(within(screen.getByRole("region", { name: "分支发布" }))
+      .getByText("发布中 / 待重试")).toBeVisible();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "重试发布" }));
+    });
+    expect(onApproveDelivery).toHaveBeenCalledOnce();
+  });
+
+  it("shows the returned branch separately from the completed Issue", () => {
+    render(<IssueDetail
+      branch={{ name: "ohmybug/chk-1", commit: "abcdef123456", remote: "origin" }}
+      issue={issue}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("ohmybug/chk-1")).toBeVisible();
+    expect(screen.getByText("abcdef1")).toBeVisible();
+    expect(screen.getByText("origin")).toBeVisible();
+  });
 });

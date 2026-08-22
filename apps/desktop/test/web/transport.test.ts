@@ -17,6 +17,10 @@ describe("renderer product transports", () => {
     const bridge = {
       listIntegrationPlugins: vi.fn(async () => []),
       listProjects: vi.fn(async () => [project]),
+      approveDelivery: vi.fn(async () => ({
+        issue: { id: "issue-1", status: "COMPLETED" },
+        branch: { name: "ohmybug/chk-1", commit: "abc123" },
+      })),
       subscribeIssueEvents: vi.fn((_id: string, _cursor: number, listener: (event: unknown) => void) => {
         listener({ issueId: "issue-1", cursor: 2, events: [{ id: "event-2", sequence: 2 }] });
         return unsubscribe;
@@ -27,6 +31,10 @@ describe("renderer product transports", () => {
     const listener = vi.fn();
     await expect(transport.integrationPlugins()).resolves.toEqual([]);
     await expect(transport.projects()).resolves.toEqual([project]);
+    await expect(transport.approveDelivery("issue-1")).resolves.toEqual({
+      issue: { id: "issue-1", status: "COMPLETED" },
+      branch: { name: "ohmybug/chk-1", commit: "abc123" },
+    });
     const stop = transport.subscribeIssueEvents("issue-1", 1, listener);
     stop();
     const evidence = await transport.evidenceSource("issue-1", "evidence-1");

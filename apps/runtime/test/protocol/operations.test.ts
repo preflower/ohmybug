@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { rendererOperationNames, runtimeOperations } from "../../src/protocol/operations.js";
+import { reviewedIssue } from "../helpers/runtime.js";
 
 describe("Runtime protocol operation registry", () => {
   it("is the single ordered source of operation shape and renderer exposure", () => {
@@ -36,5 +37,21 @@ describe("Runtime protocol operation registry", () => {
     expect(rendererOperationNames).not.toContain("health");
     expect(rendererOperationNames).toContain("rebuildAgentSession");
     expect(rendererOperationNames).toContain("readEvidence");
+  });
+
+  it("validates published branch information outside the Core Issue", () => {
+    const issue = reviewedIssue({ status: "COMPLETED", resolution: "FIXED" });
+
+    expect(runtimeOperations.approveDelivery.output.parse({
+      issue,
+      branch: { name: "ohmybug/omb-2", commit: "abc123", remote: "origin" },
+    })).toEqual({
+      issue,
+      branch: { name: "ohmybug/omb-2", commit: "abc123", remote: "origin" },
+    });
+    expect(() => runtimeOperations.approveDelivery.output.parse({
+      ...issue,
+      branch: { name: "ohmybug/omb-2", commit: "abc123" },
+    })).toThrow();
   });
 });

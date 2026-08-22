@@ -79,8 +79,7 @@ describe("SQLite-backed Runtime acceptance", () => {
       `${evidence.evidenceId}.png`,
     ))).toBe(true);
 
-    runtime.approveDelivery(assessed.id);
-    await runtime.drain();
+    await runtime.approveDelivery(assessed.id);
     expect(runtime.getIssue(assessed.id)).toMatchObject({
       status: "COMPLETED",
       resolution: "FIXED",

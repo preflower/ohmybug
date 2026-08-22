@@ -172,7 +172,7 @@ export const runtimeOperations = {
   }),
   approveDelivery: operation({
     input: projectIdSchema,
-    output: outputSchemas.issue,
+    output: outputSchemas.approvalResult,
     renderer: true,
     invoke: (service, input) => service.approveDelivery(input),
   }),

@@ -20,8 +20,9 @@ import { IntegrationRegistry } from "../../src/integrations/registry.js";
 import { WorkspaceRegistry } from "../../src/modules/workspace-registry.js";
 import { RuntimeCommands } from "../../src/orchestration/commands.js";
 import { RuntimeService } from "../../src/service.js";
+import type { ApprovalResult } from "../../src/protocol/types.js";
 import { FakeAgent } from "../helpers/fakes.js";
-import { eventIds, now } from "../helpers/runtime.js";
+import { eventIds, now, reviewedIssue } from "../helpers/runtime.js";
 
 const cleanup: string[] = [];
 
@@ -50,7 +51,10 @@ function fixturePlugin(): IntegrationPlugin {
   };
 }
 
-async function harness(secrets = new MemorySecretStore()) {
+async function harness(
+  secrets = new MemorySecretStore(),
+  approveDelivery?: (id: string) => Promise<ApprovalResult>,
+) {
   const root = await mkdtemp(join(tmpdir(), "omb-runtime-service-"));
   cleanup.push(root);
   const database = openRuntimeDatabase(join(root, "runtime.sqlite"));
@@ -90,7 +94,9 @@ async function harness(secrets = new MemorySecretStore()) {
     confirmDuplicate: commands.confirmDuplicate.bind(commands),
     requestReassessment: commands.requestReassessment.bind(commands),
     rejectDelivery: commands.rejectDelivery.bind(commands),
-    approveDelivery: commands.approveDelivery.bind(commands),
+    approveDelivery: approveDelivery ?? (async (id: string) => ({
+      issue: commands.approveDelivery(id),
+    })),
     retryIssue: commands.retryIssue.bind(commands),
     rebuildAgentSession: commands.rebuildAgentSession.bind(commands),
     cancelIssue: commands.cancelIssue.bind(commands),
@@ -117,6 +123,21 @@ async function harness(secrets = new MemorySecretStore()) {
 }
 
 describe("RuntimeService", () => {
+  it("returns branch information outside the Core Issue", async () => {
+    const issue = reviewedIssue({ status: "COMPLETED", resolution: "FIXED" });
+    const branch = { name: "ohmybug/omb-2", commit: "abc123" };
+    const { service } = await harness(
+      new MemorySecretStore(),
+      async () => ({ issue, branch }),
+    );
+
+    await expect(service.approveDelivery({ id: issue.id })).resolves.toEqual({
+      issue,
+      branch,
+    });
+    expect(issue).not.toHaveProperty("branch");
+  });
+
   it("inspects a directory without Git and creates a manifest-configured Project", async () => {
     const { root, service } = await harness();
     const projectDirectory = join(root, "checkout app");

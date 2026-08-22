@@ -21,6 +21,7 @@ import type { WorkspaceRegistry } from "./modules/workspace-registry.js";
 import type { ManualSubmission } from "./orchestration/commands.js";
 import type {
   AssessmentReference,
+  ApprovalResult,
   CreateProjectInput,
   EvidencePayload,
   ProductProject,
@@ -46,7 +47,7 @@ interface RuntimeFacade {
   confirmDuplicate(id: string, reference: AssessmentReference, duplicateOf: string): Issue;
   requestReassessment(id: string, feedback: string): Issue;
   rejectDelivery(id: string, feedback: string): Issue;
-  approveDelivery(id: string): Issue;
+  approveDelivery(id: string): Promise<ApprovalResult>;
   retryIssue(id: string): Issue;
   rebuildAgentSession(id: string, expectedRevision: number): Promise<Issue>;
   cancelIssue(id: string): Promise<Issue>;
@@ -309,7 +310,7 @@ export class RuntimeService implements RuntimeApi {
     return this.dependencies.runtime.rejectDelivery(input.id, input.feedback);
   }
 
-  async approveDelivery(input: { id: string }): Promise<Issue> {
+  async approveDelivery(input: { id: string }): Promise<ApprovalResult> {
     this.assertAccepting();
     return this.dependencies.runtime.approveDelivery(input.id);
   }

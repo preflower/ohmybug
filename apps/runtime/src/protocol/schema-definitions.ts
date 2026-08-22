@@ -127,6 +127,15 @@ export const evidencePayloadSchema = z.object({
   mimeType: identifierSchema,
   label: identifierSchema,
 }).strict();
+export const branchInfoSchema = z.object({
+  name: identifierSchema,
+  commit: identifierSchema,
+  remote: identifierSchema.optional(),
+}).strict();
+export const approvalResultSchema = z.object({
+  issue: issueSchema,
+  branch: branchInfoSchema.optional(),
+}).strict();
 
 export const outputSchemas = {
   issue: issueSchema,
@@ -134,4 +143,5 @@ export const outputSchemas = {
   manifest: integrationPluginManifestSchema,
   manifests: z.array(integrationPluginManifestSchema),
   workspaceManifests: z.array(workspaceProviderManifestSchema),
+  approvalResult: approvalResultSchema,
 };

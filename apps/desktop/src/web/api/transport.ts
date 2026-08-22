@@ -7,6 +7,7 @@ import type {
 import type { ProjectFormValue } from "../projects/project-form.js";
 import type {
   AgentEventDto,
+  ApprovalResultDto,
   ApproveAssessmentInput,
   AssessmentReference,
   IntegrationHealth,
@@ -42,7 +43,7 @@ export interface ProductTransport {
   confirmDuplicate(id: string, reference: AssessmentReference, duplicateOf: string): Promise<IssueDto>;
   requestReassessment(id: string, feedback: string): Promise<IssueDto>;
   rejectDelivery(id: string, feedback: string): Promise<IssueDto>;
-  approveDelivery(id: string): Promise<IssueDto>;
+  approveDelivery(id: string): Promise<ApprovalResultDto>;
   cancel(id: string): Promise<IssueDto>;
   retry(id: string): Promise<IssueDto>;
   rebuildSession(id: string, expectedRevision: number): Promise<IssueDto>;

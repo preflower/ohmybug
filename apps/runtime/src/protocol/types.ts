@@ -9,12 +9,13 @@ import type {
   ProjectCommands,
 } from "@oh-my-bug/core";
 import type {
+  BranchInfo,
   WorkspaceProjectConfiguration,
   WorkspaceProviderManifest,
 } from "@oh-my-bug/module-api";
 
 export type { ConfigValue, IntegrationHealth, IntegrationPluginManifest } from "@oh-my-bug/core";
-export type { WorkspaceProjectConfiguration, WorkspaceProviderManifest } from "@oh-my-bug/module-api";
+export type { BranchInfo, WorkspaceProjectConfiguration, WorkspaceProviderManifest } from "@oh-my-bug/module-api";
 
 export type RuntimeHealth = {
   state: "starting" | "ready" | "stopping" | "stopped";
@@ -94,6 +95,11 @@ export interface EvidencePayload {
   label: string;
 }
 
+export interface ApprovalResult {
+  issue: Issue;
+  branch?: BranchInfo;
+}
+
 export interface RuntimeApi {
   health(input: Record<string, never>): Promise<RuntimeHealth>;
   listIntegrationPlugins(input: Record<string, never>): Promise<IntegrationPluginManifest[]>;
@@ -123,7 +129,7 @@ export interface RuntimeApi {
   }): Promise<Issue>;
   requestReassessment(input: { id: string; feedback: string }): Promise<Issue>;
   rejectDelivery(input: { id: string; feedback: string }): Promise<Issue>;
-  approveDelivery(input: { id: string }): Promise<Issue>;
+  approveDelivery(input: { id: string }): Promise<ApprovalResult>;
   retryIssue(input: { id: string }): Promise<Issue>;
   rebuildAgentSession(input: { id: string; expectedRevision: number }): Promise<Issue>;
   cancelIssue(input: { id: string }): Promise<Issue>;
