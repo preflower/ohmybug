@@ -52,4 +52,32 @@ describe("Agent activity", () => {
     expect(details).toHaveAttribute("open");
     expect(screen.getByText("stream disconnected before completion: error sending request")).toBeVisible();
   });
+
+  it("presents Runtime interruption as recovery instead of failure", () => {
+    render(<AgentActivity active events={[
+      {
+        id: "issue-1:1",
+        issueId: "issue-1",
+        sequence: 1,
+        actor: "SYSTEM",
+        type: "RUNTIME_INTERRUPTED",
+        occurredAt: "2026-08-22T03:33:48Z",
+        data: { operation: "ASSESS" },
+      },
+      {
+        id: "issue-1:2",
+        issueId: "issue-1",
+        sequence: 2,
+        actor: "SYSTEM",
+        type: "RUNTIME_INTERRUPTED",
+        occurredAt: "2026-08-22T03:34:48Z",
+        data: { operation: "REPAIR" },
+      },
+    ]} />);
+
+    expect(screen.getByText("Runtime 已重启，正在恢复实现")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    expect(screen.getByText("Runtime 已重启，正在恢复分析")).toBeVisible();
+    expect(screen.queryByText("任务意外中断")).not.toBeInTheDocument();
+  });
 });

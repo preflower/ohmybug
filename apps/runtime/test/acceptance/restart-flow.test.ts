@@ -229,4 +229,49 @@ describe("SQLite-backed review and recovery acceptance", () => {
       .filter((event) => event.type === "RUNTIME_INTERRUPTED")).toHaveLength(1);
     await reopened.stop();
   });
+
+  it("resumes interrupted Repair in the same logical session and iteration", async () => {
+    const databasePath = temporaryDatabase("omb-runtime-repair-resume-");
+    const projectRoot = join(dirname(databasePath), "project");
+    mkdirSync(projectRoot);
+    const seededStore = new SqliteRuntimeStore(openRuntimeDatabase(databasePath));
+    seededStore.registerProject({ ...project, path: projectRoot });
+    const interrupted = {
+      id: "interrupted-repair",
+      projectId: project.id,
+      projectPath: projectRoot,
+      identifier: "OMB-RESTART-REPAIR",
+      title: "Interrupted repair",
+      titleSource: "user" as const,
+      status: "REPAIRING" as const,
+      inputs: [],
+      agentSession: { agent: "fake", sessionId: "session-1" },
+      assessment,
+      repair: { iteration: 2 },
+      revision: 5,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    seededStore.transaction((transaction) =>
+      transaction.insertIssue(interrupted, "REPAIR"));
+    seededStore.transaction((transaction) =>
+      transaction.updateIssue(interrupted, interrupted.revision, null));
+    seededStore.close();
+
+    const agent = new FakeAgent();
+    const runtime = createRuntime(runtimeOptions(databasePath, agent));
+    await runtime.start();
+    await runtime.drain();
+
+    expect(runtime.getIssue(interrupted.id)).toMatchObject({
+      status: "ACCEPTANCE_REVIEW",
+      agentSession: interrupted.agentSession,
+      repair: { iteration: 2 },
+    });
+    expect(agent.repairSessions).toEqual(["session-1"]);
+    expect(runtime.readIssueEvents(interrupted.id).filter(
+      (event) => event.type === "RUNTIME_INTERRUPTED",
+    )).toHaveLength(1);
+    await runtime.stop();
+  });
 });

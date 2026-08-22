@@ -40,14 +40,20 @@ const eventLabels: Record<string, string> = {
   AGENT_FILES_CHANGE_FAILED: "文件更新失败",
   AGENT_ERROR: "Codex 运行失败",
   ISSUE_CANCELED: "任务已取消",
-  RUNTIME_INTERRUPTED: "任务意外中断",
+  RUNTIME_INTERRUPTED: "Runtime 已重启，正在恢复任务",
 };
 
 export function AgentActivity({ events, active }: { events: AgentEventDto[]; active: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const message = (event: AgentEventDto) => typeof event.data.message === "string"
-    ? event.data.message
-    : eventLabels[event.type] ?? "状态已更新";
+  const message = (event: AgentEventDto) => {
+    if (typeof event.data.message === "string") return event.data.message;
+    if (event.type === "RUNTIME_INTERRUPTED") {
+      if (event.data.operation === "ASSESS") return "Runtime 已重启，正在恢复分析";
+      if (event.data.operation === "REPAIR") return "Runtime 已重启，正在恢复实现";
+      if (event.data.operation === "EVIDENCE") return "Runtime 已重启，正在恢复证据检查";
+    }
+    return eventLabels[event.type] ?? "状态已更新";
+  };
   const latestEvent = events.at(-1);
   const latestMessage = latestEvent ? message(latestEvent) : "Agent 正在工作";
   const currentClass = active
