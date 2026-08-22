@@ -5,6 +5,7 @@ import { issueSchema, type Issue } from "../../src/index.js";
 const issue: Issue = {
   id: "issue-1",
   projectId: "project-1",
+  projectPath: "/tmp/worktrees/OMB-1",
   identifier: "OMB-1",
   title: "支付页无法打开",
   titleSource: "assessment",
@@ -43,5 +44,9 @@ describe("Issue persistence schema", () => {
 
   it("rejects unknown top-level persistence fields", () => {
     expect(() => issueSchema.parse({ ...issue, unexpectedField: true })).toThrow();
+  });
+
+  it("stores only the concrete Issue project path", () => {
+    expect(issueSchema.parse(issue).projectPath).toBe("/tmp/worktrees/OMB-1");
   });
 });

@@ -17,6 +17,7 @@ export const issueStatusSchema = z.enum([
   "EVIDENCE_CHECK",
   "REPAIR_FAILED",
   "ACCEPTANCE_REVIEW",
+  "APPROVED",
   "COMPLETED",
   "CLOSED",
   "CANCELED",
@@ -26,6 +27,7 @@ export const issueSchema: z.ZodType<Issue> = z
   .object({
     id: z.string().trim().min(1),
     projectId: z.string().trim().min(1),
+    projectPath: z.string().trim().min(1).optional(),
     identifier: z.string().trim().min(1),
     title: z.string().trim().min(1),
     titleSource: z.enum(["integration", "assessment", "user"]),

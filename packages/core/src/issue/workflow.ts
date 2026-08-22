@@ -18,6 +18,7 @@ export type IssueAction =
   | "RETRY_REPAIR"
   | "REJECT_DELIVERY"
   | "APPROVE_DELIVERY"
+  | "COMPLETE_DELIVERY"
   | "CANCEL";
 
 type InternalIssueAction =
@@ -64,9 +65,10 @@ const transitions: Record<
   },
   ACCEPTANCE_REVIEW: {
     REJECT_DELIVERY: "REPAIRING",
-    APPROVE_DELIVERY: "COMPLETED",
+    APPROVE_DELIVERY: "APPROVED",
     CANCEL: "CANCELED",
   },
+  APPROVED: { COMPLETE_DELIVERY: "COMPLETED" },
   COMPLETED: {},
   CLOSED: {},
   CANCELED: {},

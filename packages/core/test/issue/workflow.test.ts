@@ -35,7 +35,22 @@ function issueAt(status: IssueStatus): Issue {
 }
 
 describe("Issue workflow", () => {
-  it("completes a confirmed Bug immediately after Delivery approval", () => {
+  it("persists Delivery approval before final completion", () => {
+    const approved = transitionIssue(
+      { ...issueAt("ACCEPTANCE_REVIEW"), assessment },
+      "APPROVE_DELIVERY",
+      "2026-08-20T07:09:00.000Z",
+    );
+
+    expect(approved).toMatchObject({ status: "APPROVED", resolution: "FIXED" });
+    expect(transitionIssue(
+      approved,
+      "COMPLETE_DELIVERY",
+      "2026-08-20T07:10:00.000Z",
+    )).toMatchObject({ status: "COMPLETED", resolution: "FIXED" });
+  });
+
+  it("completes a confirmed Bug after approved Delivery is finalized", () => {
     let current = transitionIssue(
       issueAt("RECEIVED"),
       "START_ASSESSMENT",
@@ -60,6 +75,7 @@ describe("Issue workflow", () => {
       "DELIVERY_READY",
       "EVIDENCE_ACCEPTED",
       "APPROVE_DELIVERY",
+      "COMPLETE_DELIVERY",
     ] as const;
 
     const result = remainingActions.reduce(
@@ -74,7 +90,7 @@ describe("Issue workflow", () => {
       title: "支付页无法打开",
       titleSource: "assessment",
       repair: { iteration: 1 },
-      revision: 7,
+      revision: 8,
     });
   });
 
@@ -98,7 +114,12 @@ describe("Issue workflow", () => {
       "2026-08-20T07:12:00.000Z",
     );
 
-    const implemented = (["DELIVERY_READY", "EVIDENCE_ACCEPTED", "APPROVE_DELIVERY"] as const)
+    const implemented = ([
+      "DELIVERY_READY",
+      "EVIDENCE_ACCEPTED",
+      "APPROVE_DELIVERY",
+      "COMPLETE_DELIVERY",
+    ] as const)
       .reduce((issue, action) => transitionIssue(issue, action, "2026-08-20T07:13:00.000Z"), approved);
 
     expect(implemented).toMatchObject({

@@ -14,6 +14,7 @@ export type IssueStatus =
   | "EVIDENCE_CHECK"
   | "REPAIR_FAILED"
   | "ACCEPTANCE_REVIEW"
+  | "APPROVED"
   | "COMPLETED"
   | "CLOSED"
   | "CANCELED";
@@ -41,6 +42,7 @@ export interface IssueFailure {
 export interface Issue {
   id: string;
   projectId: string;
+  projectPath?: string;
   identifier: string;
   title: string;
   titleSource: IssueTitleSource;
