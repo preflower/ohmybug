@@ -112,6 +112,7 @@ export function issue(overrides: Partial<Issue> = {}): Issue {
   return {
     id: "issue-1",
     projectId: project.id,
+    projectPath: project.path,
     identifier: "CHK-1",
     title: "Checkout fails",
     titleSource: "integration",

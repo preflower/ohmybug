@@ -9,6 +9,7 @@ function repairingIssue(id: string) {
   return {
     id,
     projectId: project.id,
+    projectPath: `/tmp/worktrees/${id}`,
     identifier: "OMB-9",
     title: "Bug",
     titleSource: "user" as const,
@@ -48,11 +49,11 @@ describe("Runtime repair worker", () => {
     expect(evidence.prepared).toEqual([{
       issueId: "repair-1",
       repairIteration: 1,
-      workspaceDirectory: project.path,
+      workspaceDirectory: issue.projectPath,
     }]);
     expect(evidence.imported).toEqual([expect.objectContaining({
       issueId: "repair-1",
-      workspaceDirectory: project.path,
+      workspaceDirectory: issue.projectPath,
       intakeDirectory: "/tmp/evidence/repair-1/1",
       relativePath: "proof.png",
     })]);

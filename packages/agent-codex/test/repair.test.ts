@@ -52,7 +52,12 @@ describe("Codex repair", () => {
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-1", "thread-1");
     const adapter = new CodexAgentAdapter({ client, sessions });
-    const repairing = issue({ status: "REPAIRING", assessment, repair: { iteration: 2 } });
+    const repairing = issue({
+      projectPath: "/tmp/worktrees/CHK-1",
+      status: "REPAIRING",
+      assessment,
+      repair: { iteration: 2 },
+    });
 
     const result = await adapter.repair(
       { agent: "codex", sessionId: "logical-1" },
@@ -72,7 +77,7 @@ describe("Codex repair", () => {
     expect(client.resumes[0]).toMatchObject({
       threadId: "thread-1",
       options: {
-        workingDirectory: project.path,
+        workingDirectory: repairing.projectPath,
         sandboxMode: "workspace-write",
         networkAccessEnabled: false,
       },

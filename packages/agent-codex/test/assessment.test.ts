@@ -33,7 +33,7 @@ describe("Codex assessment", () => {
       id: () => "logical-1",
       now: () => new Date("2026-08-20T10:02:00.000Z"),
     });
-    const current = issue();
+    const current = issue({ projectPath: "/tmp/worktrees/CHK-1" });
     const session = await adapter.createSession({ issue: current, project });
 
     expect(session).toEqual({ agent: "codex", sessionId: "logical-1" });
@@ -43,7 +43,7 @@ describe("Codex assessment", () => {
 
     expect(assessment).toEqual({ revision: current.revision, contentHash: canonicalHash(content), ...content });
     expect(client.starts).toEqual([expect.objectContaining({
-      workingDirectory: project.path,
+      workingDirectory: current.projectPath,
       sandboxMode: "read-only",
       networkAccessEnabled: false,
       approvalPolicy: "never",

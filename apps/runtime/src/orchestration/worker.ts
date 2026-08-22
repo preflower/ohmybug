@@ -64,6 +64,7 @@ export class RuntimeWorker {
   }
 
   private async assess(pending: Issue): Promise<void> {
+    requireProjectPath(pending);
     const project = this.dependencies.store.getProject(pending.projectId);
     if (!project) throw new Error("PROJECT_NOT_FOUND");
     let agent: AgentAdapter;
@@ -143,12 +144,13 @@ export class RuntimeWorker {
       tx.appendEvent(this.event(current.id, "REPAIR_STARTED"));
       return current;
     });
+    const projectPath = requireProjectPath(claimed);
     let intake: Awaited<ReturnType<EvidenceStore["prepareIntake"]>>;
     try {
       intake = await this.dependencies.evidence.prepareIntake(
         claimed.id,
         claimed.repair!.iteration,
-        project.path,
+        projectPath,
       );
     } catch {
       this.complete(
@@ -189,7 +191,7 @@ export class RuntimeWorker {
           evidence.push(await this.dependencies.evidence.import({
             issueId: claimed.id,
             repairIteration: claimed.repair!.iteration,
-            workspaceDirectory: project.path,
+            workspaceDirectory: projectPath,
             intakeDirectory: intake.directory,
             ...item,
           }));
@@ -312,6 +314,11 @@ export class RuntimeWorker {
       return true;
     });
   }
+}
+
+function requireProjectPath(issue: Issue): string {
+  if (!issue.projectPath) throw new Error("ISSUE_PROJECT_PATH_REQUIRED");
+  return issue.projectPath;
 }
 
 function agentFailureCode(error: unknown): string {

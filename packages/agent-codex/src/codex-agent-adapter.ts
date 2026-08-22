@@ -14,6 +14,7 @@ import {
   type AssessInput,
   type Assessment,
   type CreateSessionInput,
+  type Issue,
   type RepairInput,
   type RepairResult,
 } from "@oh-my-bug/core";
@@ -78,7 +79,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       input,
       "ASSESSMENT",
       {
-        workingDirectory: input.project.path,
+        workingDirectory: requireProjectPath(input.issue),
         sandboxMode: "read-only",
         networkAccessEnabled: false,
         approvalPolicy: "never",
@@ -109,7 +110,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       input,
       "REPAIR",
       {
-        workingDirectory: input.project.path,
+        workingDirectory: requireProjectPath(input.issue),
         sandboxMode: "workspace-write",
         networkAccessEnabled: false,
         approvalPolicy: "never",
@@ -272,6 +273,11 @@ export function codexAgent(
       return new CodexAgentAdapter({ ...options, ...context });
     },
   };
+}
+
+function requireProjectPath(issue: Issue): string {
+  if (!issue.projectPath) throw new Error("ISSUE_PROJECT_PATH_REQUIRED");
+  return issue.projectPath;
 }
 
 function validateEvidencePath(value: string): string {

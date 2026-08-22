@@ -75,6 +75,34 @@ describe("Runtime assessment worker", () => {
     expect(agent.assessSessions).toHaveLength(0);
   });
 
+  it("rejects Assessment work without a prepared projectPath", async () => {
+    const agent = new FakeAgent();
+    const { store, agents, evidence, workspaces } = createHarness(agent);
+    const unprepared = {
+      id: "unprepared-assessment",
+      projectId: project.id,
+      identifier: "OMB-UNPREPARED",
+      title: "Unprepared",
+      titleSource: "user" as const,
+      status: "RECEIVED" as const,
+      inputs: [],
+      revision: 1,
+      createdAt: "2026-08-20T15:00:00.000Z",
+      updatedAt: "2026-08-20T15:00:00.000Z",
+    };
+    store.transaction((transaction) => transaction.insertIssue(unprepared, "ASSESS"));
+
+    await expect(new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("unprepared"),
+      now: () => "2026-08-20T15:01:00.000Z",
+    }).drainOne()).rejects.toThrow("ISSUE_PROJECT_PATH_REQUIRED");
+    expect(agent.createdSessions).toHaveLength(0);
+  });
+
   it("creates, persists, and reuses one logical Agent session", async () => {
     const agent = new FakeAgent();
     const { commands, store, agents, evidence, workspaces } = createHarness(agent);
