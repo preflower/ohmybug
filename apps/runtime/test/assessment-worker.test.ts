@@ -5,9 +5,79 @@ import { FakeAgent } from "./helpers/fakes.js";
 import { createHarness, eventIds, project } from "./helpers/runtime.js";
 
 describe("Runtime assessment worker", () => {
+  it("queues Workspace preparation before Assessment", async () => {
+    const agent = new FakeAgent();
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
+    const created = await commands.submitManual(project.id, {
+      commandId: "prepare-1",
+      content: "Checkout fails",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+
+    expect(store.listPendingOperations()).toEqual([
+      { issue: created.issue, operation: "PREPARE" },
+    ]);
+    expect(agent.assessSessions).toHaveLength(0);
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("prepare"),
+      now: () => "2026-08-20T15:01:00.000Z",
+    }).drainOne();
+
+    expect(store.getIssue(created.issue.id)).toMatchObject({ projectPath: project.path });
+    expect(store.listPendingOperations()[0]?.operation).toBe("ASSESS");
+    expect(agent.assessSessions).toHaveLength(0);
+  });
+
+  it("records Workspace preparation failure without starting Assessment", async () => {
+    const agent = new FakeAgent();
+    const {
+      commands,
+      store,
+      agents,
+      evidence,
+      workspacePersistence,
+      workspaces,
+    } = createHarness(agent);
+    workspacePersistence.setProjectConfiguration(project.id, {
+      provider: "missing",
+      config: {},
+    });
+    const created = await commands.submitManual(project.id, {
+      commandId: "prepare-failure",
+      content: "Checkout fails",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("prepare-failure"),
+      now: () => "2026-08-20T15:01:00.000Z",
+    }).drainOne();
+
+    expect(store.getIssue(created.issue.id)).toEqual(created.issue);
+    expect(store.listPendingOperations()).toEqual([]);
+    expect(workspacePersistence.getBinding(created.issue.id)).toMatchObject({
+      providerId: "missing",
+      status: "FAILED",
+      lastError: "WORKSPACE_PROVIDER_NOT_AVAILABLE:missing",
+    });
+    expect(store.readEvents(created.issue.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "WORKSPACE_PREPARATION_FAILED" }),
+    ]));
+    expect(agent.assessSessions).toHaveLength(0);
+  });
+
   it("creates, persists, and reuses one logical Agent session", async () => {
     const agent = new FakeAgent();
-    const { commands, store, agents, evidence } = createHarness(agent);
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
     const created = await commands.submitManual(project.id, {
       commandId: "command-1",
       content: "支付页打不开",
@@ -18,6 +88,7 @@ describe("Runtime assessment worker", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: () => `worker-event-${++sequence}`,
       now: () => "2026-08-20T15:01:00.000Z",
     });
@@ -43,7 +114,7 @@ describe("Runtime assessment worker", () => {
   it("records an unavailable provider session without auto-replacement", async () => {
     const agent = new FakeAgent();
     agent.assessError = new Error("AGENT_SESSION_UNAVAILABLE");
-    const { commands, store, agents, evidence } = createHarness(agent);
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
     const created = await commands.submitManual(project.id, {
       commandId: "command-2",
       content: "Bug",
@@ -54,6 +125,7 @@ describe("Runtime assessment worker", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("assessment-failed"),
       now: () => "2026-08-20T15:01:00.000Z",
     }).drain();
@@ -67,7 +139,7 @@ describe("Runtime assessment worker", () => {
   });
 
   it("records a stable Assessment failure when the configured Agent plugin is not installed", async () => {
-    const { commands, store, agents, evidence } = createHarness(new FakeAgent());
+    const { commands, store, agents, evidence, workspaces } = createHarness(new FakeAgent());
     const missingProject = {
       ...project,
       id: "project-missing-agent",
@@ -84,6 +156,7 @@ describe("Runtime assessment worker", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("missing-agent"),
       now: () => "2026-08-20T15:01:00.000Z",
     });
@@ -107,7 +180,7 @@ describe("Runtime assessment worker", () => {
       await released;
       return { agent: "fake", sessionId: "session-race" };
     };
-    const { commands, store, agents, evidence } = createHarness(agent);
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
     const created = await commands.submitManual(project.id, {
       commandId: "cancel-create",
       content: "Cancel",
@@ -117,6 +190,7 @@ describe("Runtime assessment worker", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("worker-cancel-create"),
       now: () => "2026-08-20T15:01:00.000Z",
     });

@@ -26,7 +26,7 @@ function repairingIssue(id: string) {
 describe("Runtime repair worker", () => {
   it("imports scoped Agent evidence and reaches human acceptance", async () => {
     const agent = new FakeAgent();
-    const { store, agents, evidence } = createHarness(agent);
+    const { store, agents, evidence, workspaces } = createHarness(agent);
     const issue = repairingIssue("repair-1");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
 
@@ -34,6 +34,7 @@ describe("Runtime repair worker", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("repair-event"),
       now: () => now,
     }).drain();
@@ -60,12 +61,12 @@ describe("Runtime repair worker", () => {
 
   it("returns unusable evidence to the same session with safe feedback", async () => {
     const agent = new FakeAgent();
-    const { store, agents, evidence } = createHarness(agent);
+    const { store, agents, evidence, workspaces } = createHarness(agent);
     evidence.nextInspection = { ...evidence.nextInspection, exists: false, byteLength: 0 };
     const issue = repairingIssue("repair-invalid-evidence");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
 
-    await new RuntimeWorker({ store, agents, evidence, id: eventIds("invalid"), now: () => now })
+    await new RuntimeWorker({ store, agents, evidence, workspaces, id: eventIds("invalid"), now: () => now })
       .drainOne();
 
     expect(store.getIssue(issue.id)).toMatchObject({
@@ -79,12 +80,12 @@ describe("Runtime repair worker", () => {
 
   it("redacts evidence import failures and requeues Repair", async () => {
     const agent = new FakeAgent();
-    const { store, agents, evidence } = createHarness(agent);
+    const { store, agents, evidence, workspaces } = createHarness(agent);
     evidence.importError = new Error("/private/secret/token.png");
     const issue = repairingIssue("repair-import-failure");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
 
-    await new RuntimeWorker({ store, agents, evidence, id: eventIds("import-failed"), now: () => now })
+    await new RuntimeWorker({ store, agents, evidence, workspaces, id: eventIds("import-failed"), now: () => now })
       .drainOne();
 
     const repaired = store.getIssue(issue.id);
@@ -102,11 +103,11 @@ describe("Runtime repair worker", () => {
   it("automatically requeues invalid Agent evidence metadata with actionable feedback", async () => {
     const agent = new FakeAgent();
     agent.repairError = new Error("EVIDENCE_LABEL_REQUIRED");
-    const { store, agents, evidence } = createHarness(agent);
+    const { store, agents, evidence, workspaces } = createHarness(agent);
     const issue = repairingIssue("repair-invalid-label");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
 
-    await new RuntimeWorker({ store, agents, evidence, id: eventIds("invalid-label"), now: () => now })
+    await new RuntimeWorker({ store, agents, evidence, workspaces, id: eventIds("invalid-label"), now: () => now })
       .drainOne();
 
     expect(store.getIssue(issue.id)).toMatchObject({
@@ -126,14 +127,14 @@ describe("Runtime repair worker", () => {
   it("stops after two automatic evidence retries and preserves the concrete failure code", async () => {
     const agent = new FakeAgent();
     agent.repairError = new Error("EVIDENCE_LABEL_REQUIRED");
-    const { store, agents, evidence } = createHarness(agent);
+    const { store, agents, evidence, workspaces } = createHarness(agent);
     const issue = {
       ...repairingIssue("repair-invalid-label-limit"),
       repair: { iteration: 3, automaticEvidenceRetries: 2 },
     };
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
 
-    await new RuntimeWorker({ store, agents, evidence, id: eventIds("invalid-label-limit"), now: () => now })
+    await new RuntimeWorker({ store, agents, evidence, workspaces, id: eventIds("invalid-label-limit"), now: () => now })
       .drain();
 
     expect(store.getIssue(issue.id)).toMatchObject({
@@ -145,7 +146,7 @@ describe("Runtime repair worker", () => {
   });
 
   it("records a stable Repair failure when the session Agent plugin is not installed", async () => {
-    const { store, agents, evidence } = createHarness(new FakeAgent());
+    const { store, agents, evidence, workspaces } = createHarness(new FakeAgent());
     const issue = {
       ...repairingIssue("repair-missing-agent"),
       agentSession: { agent: "missing", sessionId: "session-missing" },
@@ -155,6 +156,7 @@ describe("Runtime repair worker", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("repair-missing-agent"),
       now: () => now,
     });
@@ -169,7 +171,7 @@ describe("Runtime repair worker", () => {
   });
 
   it("records a safe Repair failure when Storage cannot prepare the evidence intake", async () => {
-    const { store, agents, evidence } = createHarness(new FakeAgent());
+    const { store, agents, evidence, workspaces } = createHarness(new FakeAgent());
     evidence.prepareError = new Error("/private/secret/intake");
     const issue = repairingIssue("repair-intake-failure");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
@@ -177,6 +179,7 @@ describe("Runtime repair worker", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("repair-intake-failure"),
       now: () => now,
     });
@@ -203,13 +206,14 @@ describe("Runtime repair worker", () => {
       markStarted();
       return deferred;
     };
-    const { commands, store, agents, evidence } = createHarness(agent);
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
     const issue = repairingIssue("repair-canceled");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
     const worker = new RuntimeWorker({
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("cancel-repair"),
       now: () => now,
     });

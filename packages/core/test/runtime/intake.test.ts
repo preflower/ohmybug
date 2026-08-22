@@ -146,7 +146,7 @@ describe("atomic Integration intake", () => {
       issue: { id: "issue-2", identifier: "OMB-2", status: "RECEIVED" },
     });
     expect(transaction.inserted).toMatchObject({
-      pendingOperation: "ASSESS",
+      pendingOperation: "PREPARE",
       issue: { inputs: [{ id: "input-1" }] },
     });
     expect(transaction.events[0]).toEqual({

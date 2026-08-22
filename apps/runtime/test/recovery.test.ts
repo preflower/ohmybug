@@ -11,7 +11,7 @@ describe("Runtime recovery", () => {
     ["EVIDENCE_CHECK", "REPAIR_FAILED", "REPAIR"],
   ] as const)("reconciles interrupted %s to %s once", async (status, expected, stage) => {
     const agent = new FakeAgent();
-    const { commands, store, agents, evidence } = createHarness(agent);
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
     const issue = {
       id: `interrupted-${status}`,
       projectId: project.id,
@@ -49,6 +49,7 @@ describe("Runtime recovery", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: () => `recovery-${++sequence}`,
       now: () => now,
     });
@@ -68,7 +69,7 @@ describe("Runtime recovery", () => {
     "leaves durable %s work unchanged",
     async (status) => {
       const agent = new FakeAgent();
-      const { commands, store, agents, evidence } = createHarness(agent);
+      const { commands, store, agents, evidence, workspaces } = createHarness(agent);
       const issue = {
         id: `stable-${status}`,
         projectId: project.id,
@@ -93,6 +94,7 @@ describe("Runtime recovery", () => {
         store,
         agents,
         evidence,
+        workspaces,
         id: eventIds("stable-event"),
         now: () => now,
       });
@@ -113,7 +115,7 @@ describe("Runtime recovery", () => {
       await blocked;
       return originalAssess(...args);
     };
-    const { commands, store, agents, evidence } = createHarness(agent);
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
     store.transaction((transaction) => transaction.insertIssue({
       id: "slow-pending-assess",
       projectId: project.id,
@@ -131,6 +133,7 @@ describe("Runtime recovery", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("slow-start-event"),
       now: () => now,
     });

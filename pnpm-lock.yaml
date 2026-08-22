@@ -211,6 +211,9 @@ importers:
       '@oh-my-bug/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@oh-my-bug/workspace-local':
+        specifier: workspace:*
+        version: link:../../packages/workspace-local
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@26.2.0)
@@ -300,6 +303,15 @@ importers:
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@26.2.0)
+
+  packages/workspace-local:
+    dependencies:
+      '@oh-my-bug/core':
+        specifier: workspace:*
+        version: link:../core
+      '@oh-my-bug/module-api':
+        specifier: workspace:*
+        version: link:../module-api
 
 packages:
 

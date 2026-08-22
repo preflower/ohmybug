@@ -75,7 +75,7 @@ export function acceptIntegrationInput(
     input,
     now: command.now,
   });
-  command.transaction.insertIssue(issue, "ASSESS");
+  command.transaction.insertIssue(issue, "PREPARE");
   command.transaction.appendEvent(
     intakeEvent(command, issue.id, "ISSUE_CREATED"),
   );

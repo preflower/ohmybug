@@ -15,6 +15,7 @@ import type {
 import { dingTalkPlugin, type DingTalkPluginOptions } from "@oh-my-bug/integration-dingtalk";
 import { ManualIntegrationAdapter } from "@oh-my-bug/integration-manual";
 import { sentryPlugin, type SentryPluginOptions } from "@oh-my-bug/integration-sentry";
+import { localWorkspaceFactory } from "@oh-my-bug/workspace-local";
 import {
   LocalEvidenceStore,
   LocalSecretStore,
@@ -24,13 +25,18 @@ import {
   SqliteAgentSessionStore,
   SqliteIntegrationCheckpointStore,
   SqliteRuntimeStore,
+  SqliteWorkspaceStore,
   type SecretStore,
 } from "@oh-my-bug/storage";
 
 import { AgentRegistry } from "./agents/registry.js";
 import { IntegrationManager } from "./integrations/manager.js";
 import { IntegrationRegistry } from "./integrations/registry.js";
+import { ModuleHost } from "./modules/module-host.js";
+import { WorkspaceRegistry } from "./modules/workspace-registry.js";
+import { workspaceModule } from "./modules/workspace-module.js";
 import { RuntimeCommands } from "./orchestration/commands.js";
+import { WorkspaceCoordinator } from "./orchestration/workspace-coordinator.js";
 import { OhMyBugRuntime } from "./runtime.js";
 import { RuntimeService } from "./service.js";
 import type { ProductProject } from "./protocol/types.js";
@@ -240,6 +246,20 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
   const store = new SqliteRuntimeStore(database, { id, now });
   const sessions = new SqliteAgentSessionStore(database);
   const checkpoints = new SqliteIntegrationCheckpointStore(database);
+  const workspacePersistence = new SqliteWorkspaceStore(database);
+  const workspaceRegistry = new WorkspaceRegistry();
+  const modules = new ModuleHost();
+  modules.mount(workspaceModule, {
+    factory: localWorkspaceFactory,
+    registry: workspaceRegistry,
+  });
+  const workspaceCoordinator = new WorkspaceCoordinator({
+    store,
+    persistence: workspacePersistence,
+    registry: workspaceRegistry,
+    id,
+    now,
+  });
   const evidence = new LocalEvidenceStore(options.evidenceRoot);
   const agents = new AgentRegistry(options.agentPlugins, {
     sessions,
@@ -286,7 +306,9 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     store,
     agents,
     evidence,
+    workspaces: workspaceCoordinator,
     integrations,
+    modules,
     id,
     now,
   });

@@ -17,6 +17,7 @@
     "@oh-my-bug/integration-sentry": "workspace:*",
     "@oh-my-bug/module-api": "workspace:*",
     "@oh-my-bug/storage": "workspace:*",
+    "@oh-my-bug/workspace-local": "workspace:*",
     "sharp": "^0.35.3",
     "zod": "^4.1.11"
   }

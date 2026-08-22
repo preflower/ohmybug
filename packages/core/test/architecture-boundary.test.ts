@@ -144,6 +144,7 @@ describe("workspace architecture boundaries", () => {
     ]);
     expect(workspaceExternalImports("packages/storage/src")).toEqual([
       "@oh-my-bug/core",
+      "@oh-my-bug/module-api",
       "better-sqlite3",
       "cross-keychain",
       "mediainfo.js",
@@ -151,12 +152,15 @@ describe("workspace architecture boundaries", () => {
       "sharp",
     ]);
     expect(workspaceExternalImports("apps/runtime/src")).toEqual([
+      "@cordisjs/core",
       "@oh-my-bug/agent-codex",
       "@oh-my-bug/core",
       "@oh-my-bug/integration-dingtalk",
       "@oh-my-bug/integration-manual",
       "@oh-my-bug/integration-sentry",
+      "@oh-my-bug/module-api",
       "@oh-my-bug/storage",
+      "@oh-my-bug/workspace-local",
       "sharp",
       "zod",
     ]);

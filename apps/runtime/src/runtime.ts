@@ -2,6 +2,7 @@ import type { IntegrationInput, RuntimeProject, RuntimeStore } from "@oh-my-bug/
 
 import type { AgentRegistry } from "./agents/registry.js";
 import type { IntegrationManager } from "./integrations/manager.js";
+import type { ModuleHost } from "./modules/module-host.js";
 import { RuntimeCommands } from "./orchestration/commands.js";
 import { reconcileInterruptedIssues } from "./orchestration/recovery.js";
 import { RuntimeWorker, type RuntimeWorkerDependencies } from "./orchestration/worker.js";
@@ -11,6 +12,7 @@ export interface OhMyBugRuntimeDependencies extends RuntimeWorkerDependencies {
   agents: AgentRegistry;
   store: RuntimeStore;
   integrations?: Pick<IntegrationManager, "start" | "stop">;
+  modules?: Pick<ModuleHost, "start" | "stop">;
 }
 
 export class OhMyBugRuntime {
@@ -28,6 +30,7 @@ export class OhMyBugRuntime {
     if (this.stopped) throw new Error("RUNTIME_STOPPED");
     if (this.started) return;
     this.started = true;
+    await this.dependencies.modules?.start();
     reconcileInterruptedIssues(this.dependencies);
     await this.dependencies.integrations?.start(this.dependencies.store.listProjects());
     this.state = "ready";
@@ -54,6 +57,7 @@ export class OhMyBugRuntime {
           : []),
       );
       await this.worker.drain();
+      await this.dependencies.modules?.stop();
       this.dependencies.store.close();
       this.state = "stopped";
     })();

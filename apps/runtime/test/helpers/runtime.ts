@@ -6,14 +6,18 @@ import type {
   RuntimeProject,
 } from "@oh-my-bug/core";
 import { ManualIntegrationAdapter } from "@oh-my-bug/integration-manual";
+import { localWorkspaceFactory } from "@oh-my-bug/workspace-local";
 import {
   openRuntimeDatabase,
   SqliteAgentSessionStore,
   SqliteRuntimeStore,
+  SqliteWorkspaceStore,
 } from "@oh-my-bug/storage";
 
 import { AgentRegistry } from "../../src/agents/registry.js";
+import { WorkspaceRegistry } from "../../src/modules/workspace-registry.js";
 import { RuntimeCommands } from "../../src/orchestration/commands.js";
+import { WorkspaceCoordinator } from "../../src/orchestration/workspace-coordinator.js";
 import { fakeAssessment, FakeAgent, FakeEvidenceStore } from "./fakes.js";
 
 export const now = "2026-08-20T15:00:00.000Z";
@@ -37,6 +41,16 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
   const database = openRuntimeDatabase(":memory:");
   const store = new SqliteRuntimeStore(database, { id: () => "issue-1" });
   const sessions = new SqliteAgentSessionStore(database);
+  const workspacePersistence = new SqliteWorkspaceStore(database);
+  const workspaceRegistry = new WorkspaceRegistry();
+  workspaceRegistry.register(localWorkspaceFactory);
+  const workspaces = new WorkspaceCoordinator({
+    store,
+    persistence: workspacePersistence,
+    registry: workspaceRegistry,
+    id,
+    now: () => now,
+  });
   const plugin: AgentPlugin = { id: "fake", create: () => agent };
   const agents = new AgentRegistry([plugin], { sessions });
   const evidence = new FakeEvidenceStore();
@@ -50,7 +64,16 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
     wake: () => { wakes += 1; },
   });
   commands.registerProject(project);
-  return { commands, store, sessions, agents, evidence, wakes: () => wakes };
+  return {
+    commands,
+    store,
+    sessions,
+    agents,
+    evidence,
+    workspacePersistence,
+    workspaces,
+    wakes: () => wakes,
+  };
 }
 
 export function reviewedIssue(overrides: Partial<Issue> = {}): Issue {

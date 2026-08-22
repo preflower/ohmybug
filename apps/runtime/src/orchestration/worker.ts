@@ -19,11 +19,13 @@ import {
 } from "@oh-my-bug/core";
 
 import type { AgentRegistry } from "../agents/registry.js";
+import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
 
 export interface RuntimeWorkerDependencies {
   store: RuntimeStore;
   agents: AgentRegistry;
   evidence: EvidenceStore & EvidenceInspector;
+  workspaces: Pick<WorkspaceCoordinator, "prepare">;
   id: () => string;
   now: () => string;
 }
@@ -47,6 +49,7 @@ export class RuntimeWorker {
   async drainOne(): Promise<void> {
     const pending = this.dependencies.store.listPendingOperations()[0];
     if (!pending) return;
+    if (pending.operation === "PREPARE") return this.dependencies.workspaces.prepare(pending.issue);
     if (pending.operation === "ASSESS") return this.assess(pending.issue);
     if (pending.operation === "REPAIR") return this.repair(pending.issue);
     throw new Error("UNSUPPORTED_PENDING_OPERATION");

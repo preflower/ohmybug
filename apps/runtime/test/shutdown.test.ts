@@ -8,12 +8,13 @@ import { createHarness, eventIds, now, project } from "./helpers/runtime.js";
 describe("Runtime shutdown", () => {
   it("rejects new commands after idempotent shutdown", async () => {
     const agent = new FakeAgent();
-    const { commands, store, agents, evidence } = createHarness(agent);
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
     const runtime = new OhMyBugRuntime({
       commands,
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("shutdown-event"),
       now: () => now,
     });
@@ -36,7 +37,7 @@ describe("Runtime shutdown", () => {
       markStarted();
       return deferred;
     };
-    const { commands, store, agents, evidence } = createHarness(agent);
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
     const created = await commands.submitManual(project.id, {
       commandId: "in-flight",
       content: "Bug",
@@ -47,6 +48,7 @@ describe("Runtime shutdown", () => {
       store,
       agents,
       evidence,
+      workspaces,
       id: eventIds("shutdown-event"),
       now: () => now,
     });
