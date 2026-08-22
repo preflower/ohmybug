@@ -87,7 +87,7 @@ describe("Projects engineering table", () => {
     expect(within(screenRegion).getByText("刚刚")).toBeVisible();
     expect(within(screenRegion).getByText("18 分钟前")).toBeVisible();
     expect(within(screenRegion).getByText("昨天")).toBeVisible();
-    expect(within(screenRegion).getByText("项目保存在本机；Oh My Bug 只会在已注册目录内运行 Agent。")).toBeVisible();
+    expect(within(screenRegion).getByText("项目与配置仅保存在本机；Oh My Bug 只会在已添加项目的目录内运行 Agent。")).toBeVisible();
   });
 
   it("filters by project identity and opens the exact project", () => {
