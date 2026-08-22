@@ -80,4 +80,31 @@ describe("Agent activity", () => {
     expect(screen.getByText("Runtime 已重启，正在恢复分析")).toBeVisible();
     expect(screen.queryByText("任务意外中断")).not.toBeInTheDocument();
   });
+
+  it("describes the independent evidence lifecycle", () => {
+    render(<AgentActivity active events={[
+      {
+        id: "issue-1:1",
+        issueId: "issue-1",
+        sequence: 1,
+        actor: "AGENT",
+        type: "IMPLEMENTATION_READY",
+        occurredAt: "2026-08-22T03:33:48Z",
+        data: {},
+      },
+      {
+        id: "issue-1:2",
+        issueId: "issue-1",
+        sequence: 2,
+        actor: "SYSTEM",
+        type: "RUNTIME_INTERRUPTED",
+        occurredAt: "2026-08-22T03:34:48Z",
+        data: { operation: "CAPTURE_EVIDENCE" },
+      },
+    ]} />);
+
+    expect(screen.getByText("Runtime 已重启，正在恢复证据采集")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    expect(screen.getByText("实现完成，准备采集证据")).toBeVisible();
+  });
 });

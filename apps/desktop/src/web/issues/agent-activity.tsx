@@ -23,6 +23,11 @@ const eventLabels: Record<string, string> = {
   ASSESSMENT_RETRIED: "正在重新分析",
   REPAIR_STARTED: "开始实现",
   REPAIR_RETRIED: "正在重新实现",
+  IMPLEMENTATION_READY: "实现完成，准备采集证据",
+  EVIDENCE_CAPTURE_STARTED: "开始采集验证证据",
+  EVIDENCE_CAPTURE_REQUEUED: "证据未通过，正在重新采集",
+  EVIDENCE_FAILED: "证据采集失败；实现改动已保留",
+  EVIDENCE_RETRIED: "正在重新采集证据",
   DELIVERY_READY: "改动完成，等待验收",
   DELIVERY_REJECTED: "验收未通过，继续实现",
   DELIVERY_APPROVED: "改动已验收",
@@ -50,6 +55,7 @@ export function AgentActivity({ events, active }: { events: AgentEventDto[]; act
     if (event.type === "RUNTIME_INTERRUPTED") {
       if (event.data.operation === "ASSESS") return "Runtime 已重启，正在恢复分析";
       if (event.data.operation === "REPAIR") return "Runtime 已重启，正在恢复实现";
+      if (event.data.operation === "CAPTURE_EVIDENCE") return "Runtime 已重启，正在恢复证据采集";
       if (event.data.operation === "EVIDENCE") return "Runtime 已重启，正在恢复证据检查";
     }
     return eventLabels[event.type] ?? "状态已更新";

@@ -83,6 +83,38 @@ function selectTab(name: string) {
 }
 
 describe("Project configuration", () => {
+  it.each([
+    ["浏览器", { mode: "browser", label: "支付页", timeoutMs: 15_000 }],
+    ["Electron", { mode: "electron", label: "桌面支付页", electronEntry: "dist/main.js", timeoutMs: 15_000 }],
+    ["命令", { mode: "command", label: "API 响应", command: "pnpm capture:evidence", timeoutMs: 15_000 }],
+  ] as const)("saves %s evidence capture configuration", async (option, expected) => {
+    const onSave = vi.fn(async () => undefined);
+    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />);
+    selectTab("命令与验收");
+    const trigger = screen.getByRole("combobox", { name: "证据采集方式" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const selected = await screen.findByRole("option", { name: option });
+    fireEvent.keyDown(selected, { key: "Enter" });
+    fireEvent.change(screen.getByLabelText("证据标签"), {
+      target: { value: expected.label },
+    });
+    if (expected.mode === "electron") {
+      fireEvent.change(screen.getByLabelText("Electron 入口"), {
+        target: { value: expected.electronEntry },
+      });
+    }
+    if (expected.mode === "command") {
+      fireEvent.change(screen.getByLabelText("证据命令"), {
+        target: { value: expected.command },
+      });
+    }
+    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      commands: expect.objectContaining({ evidenceCapture: expected }),
+    })));
+  });
+
   it("keeps Local as default and renders Git fields from its manifest", async () => {
     render(<ProjectForm
       inspection={inspection}

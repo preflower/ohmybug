@@ -181,6 +181,39 @@ describe("Issue detail", () => {
     expect(screen.queryByRole("button", { name: "重建 Agent 会话" })).not.toBeInTheDocument();
   });
 
+  it("shows preserved implementation state while evidence is captured", () => {
+    render(<IssueDetail
+      issue={{ ...issue, status: "EVIDENCE_CAPTURE", resolution: undefined }}
+      onCancel={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("实现完成，正在采集证据")).toBeVisible();
+    expect(screen.getByRole("button", { name: "取消 Agent 运行" })).toBeEnabled();
+  });
+
+  it("retries only evidence after evidence capture fails", async () => {
+    const onRetry = vi.fn(async () => undefined);
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "EVIDENCE_FAILED",
+        resolution: undefined,
+        lastFailure: { stage: "EVIDENCE", code: "EVIDENCE_RETRY_LIMIT_REACHED" },
+      }}
+      onRefresh={async () => undefined}
+      onRetry={onRetry}
+    />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("证据采集失败；实现改动和工作目录已保留");
+    expect(screen.getByText("证据采集失败")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "重新实现" })).not.toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "重试证据" }));
+    });
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("hides the previous failure banner as soon as retry starts", async () => {
     let finishRetry: (() => void) | undefined;
     const onRetry = vi.fn(() => new Promise<void>((resolve) => {

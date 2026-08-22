@@ -45,7 +45,7 @@ const verdictLabels: Record<NonNullable<IssueDto["assessment"]>["verdict"], stri
 };
 
 function failureMessage(failure: NonNullable<IssueDto["lastFailure"]>): string {
-  const stage = failure.stage === "ASSESSMENT" ? "分析" : "实现";
+  const stage = failure.stage === "ASSESSMENT" ? "分析" : failure.stage === "EVIDENCE" ? "证据采集" : "实现";
   switch (failure.code) {
     case "AGENT_FAILURE": return `Codex 未能完成${stage}`;
     case "AGENT_SESSION_UNAVAILABLE": return "Codex 会话不可用";
@@ -84,7 +84,7 @@ export function IssueDetail({
   const [rebuildError, setRebuildError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
-  const canCancel = ["ASSESSING", "REPAIRING", "EVIDENCE_CHECK"].includes(issue.status);
+  const canCancel = ["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE", "EVIDENCE_CHECK"].includes(issue.status);
   const compactAssessment = issue.status === "ASSESSMENT_REVIEW"
     && Boolean(assessment)
     && (assessment?.verdict === "BUG" || assessment?.verdict === "FEATURE")
@@ -97,6 +97,8 @@ export function IssueDetail({
     ? "重试分析"
     : issue.status === "REPAIR_FAILED"
       ? "重试实现"
+      : issue.status === "EVIDENCE_FAILED"
+        ? "重试证据"
       : undefined;
   const refreshAfter = async (action: () => Promise<void>) => {
     await action();
@@ -118,12 +120,12 @@ export function IssueDetail({
         {latestInput?.data.content ? <p>{latestInput.data.content}</p> : null}
         {issue.inputs.length > 1 ? <span className="occurrence-summary">已收到 {issue.inputs.length} 次输入 · 最近 {new Date(latestInput!.receivedAt).toLocaleString("zh-CN")}</span> : null}
         {issue.resolution ? <p className="resolution-summary" role="status">结果：{issue.resolution}{issue.duplicateOf ? ` · ${issue.duplicateOf}` : ""}{issue.status === "COMPLETED" && issue.resolution === "FIXED" ? " · 修复已验收，Issue 已完成。" : issue.status === "COMPLETED" && issue.resolution === "IMPLEMENTED" ? " · 特性已验收，Issue 已完成。" : ""}</p> : null}
-        {issue.lastFailure && !retrying ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />{failureMessage(issue.lastFailure)}</div> : null}
+        {issue.status === "EVIDENCE_FAILED" && !retrying ? <Alert variant="destructive"><AlertDescription>证据采集失败；实现改动和工作目录已保留。</AlertDescription></Alert> : issue.lastFailure && !retrying ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />{failureMessage(issue.lastFailure)}</div> : null}
       </header>
 
       {canCancel && onCancel ? <section aria-label="运行控制" className="failure-actions"><div><strong>Agent 正在运行</strong><span>取消会终止当前回合，并将 Issue 标记为已取消。</span></div>{cancelError ? <Alert className="form-error" variant="destructive"><AlertDescription>{cancelError}</AlertDescription></Alert> : null}<Button disabled={canceling} type="button" variant="secondary" onClick={() => { setCanceling(true); setCancelError(""); void refreshAfter(onCancel).catch((caught) => setCancelError(caught instanceof Error ? caught.message : "取消失败")).finally(() => setCanceling(false)); }}><Square aria-hidden="true" size={12} />{canceling ? "取消中…" : "取消 Agent 运行"}</Button></section> : null}
 
-      {retryLabel && onRetry ? <section aria-label="失败恢复" className="failure-actions"><div><strong>{retryLabel}</strong><span>Issue 上下文和已确认内容会保留，并从可恢复阶段继续。</span></div>{retryError ? <Alert className="form-error" variant="destructive"><AlertDescription>{retryError}</AlertDescription></Alert> : null}<Button disabled={retrying} type="button" variant="secondary" onClick={() => { setRetrying(true); setRetryError(""); void refreshAfter(onRetry).catch((caught) => setRetryError(caught instanceof Error ? caught.message : "重试失败")).finally(() => setRetrying(false)); }}><RotateCcw size={13} />{retrying ? "重试中…" : retryLabel}</Button></section> : null}
+      {retryLabel && onRetry ? <section aria-label="失败恢复" className="failure-actions"><div><strong>{retryLabel}</strong><span>{issue.status === "EVIDENCE_FAILED" ? "实现改动和工作目录已保留，只会重新采集证据。" : "Issue 上下文和已确认内容会保留，并从可恢复阶段继续。"}</span></div>{retryError ? <Alert className="form-error" variant="destructive"><AlertDescription>{retryError}</AlertDescription></Alert> : null}<Button disabled={retrying} type="button" variant="secondary" onClick={() => { setRetrying(true); setRetryError(""); void refreshAfter(onRetry).catch((caught) => setRetryError(caught instanceof Error ? caught.message : "重试失败")).finally(() => setRetrying(false)); }}><RotateCcw size={13} />{retrying ? "重试中…" : retryLabel}</Button></section> : null}
 
       {sessionUnavailable && onRebuildSession ? <section aria-label="会话恢复" className="failure-actions"><div><strong>Agent 会话已被删除或不可用</strong><span>重建后会保留 Issue、Assessment、反馈和证据记录，并用新会话继续当前阶段。</span></div>{rebuildError ? <Alert className="form-error" variant="destructive"><AlertDescription>{rebuildError}</AlertDescription></Alert> : null}<Button disabled={rebuilding} type="button" variant="secondary" onClick={() => { setRebuilding(true); setRebuildError(""); void refreshAfter(onRebuildSession).catch((caught) => setRebuildError(caught instanceof Error ? caught.message : "重建会话失败")).finally(() => setRebuilding(false)); }}><RotateCcw size={13} />{rebuilding ? "重建中…" : "重建 Agent 会话"}</Button></section> : null}
 

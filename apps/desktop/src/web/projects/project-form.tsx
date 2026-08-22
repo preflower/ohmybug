@@ -51,6 +51,7 @@ interface ProjectFormProps {
 
 type ProjectField = "name" | "key" | "path";
 type Feedback = { saving: boolean; error: string; message: string };
+type EvidenceCaptureMode = "agent" | "browser" | "electron" | "command";
 
 const localWorkspaceProvider: WorkspaceProviderManifest = {
   id: "local",
@@ -125,7 +126,11 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
     setSaved(false);
     setSaveError("");
     try {
-      const normalized = { ...project, key: project.key.trim().toUpperCase() };
+      const normalized = {
+        ...project,
+        key: project.key.trim().toUpperCase(),
+        commands: normalizeCommands(project.commands),
+      };
       const next = await onSave(normalized);
       setProject(next
         ? initialValue(allManifests, allWorkspaceProviders, next, projectInspection)
@@ -195,7 +200,28 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
           }}><SelectTrigger aria-label="Agent 插件"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="codex">Codex</SelectItem>{project.agentPlugin !== "codex" ? <SelectItem value={project.agentPlugin}>{project.agentPlugin}</SelectItem> : null}</SelectContent></Select></label>
           <label className="field-wide">项目指令<Textarea aria-label="项目指令" rows={4} value={project.instructions} onChange={(event) => updateProject((current) => ({ ...current, instructions: event.target.value }))} /></label>
         </div></section></div> : null}
-        {activeTab === "commands" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel"><div className="section-heading"><div><h2>命令与验收</h2><p>这些命令会作为项目上下文提供给 Agent。</p></div></div><div className="form-grid">{(["install", "test", "start", "acceptanceUrl"] as const).map((key) => <label key={key}>{commandLabel(key)}<Input value={project.commands[key] ?? ""} onChange={(event) => updateProject((current) => ({ ...current, commands: { ...current.commands, [key]: event.target.value || undefined } }))} /></label>)}</div></section></div> : null}
+        {activeTab === "commands" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel"><div className="section-heading"><div><h2>命令与验收</h2><p>这些命令会作为项目上下文提供给 Agent。</p></div></div><div className="form-grid">
+          {(["install", "test", "start", "acceptanceUrl"] as const).map((key) => <label key={key}>{commandLabel(key)}<Input value={project.commands[key] ?? ""} onChange={(event) => updateProject((current) => ({ ...current, commands: { ...current.commands, [key]: event.target.value || undefined } }))} /></label>)}
+          <label>证据采集方式<Select items={{ agent: "Agent", browser: "浏览器", electron: "Electron", command: "命令" }} value={project.commands.evidenceCapture?.mode ?? "agent"} onValueChange={(mode) => {
+            if (mode !== null) updateProject((current) => ({
+              ...current,
+              commands: setEvidenceCaptureMode(current.commands, mode as EvidenceCaptureMode),
+            }));
+          }}><SelectTrigger aria-label="证据采集方式"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="agent">Agent</SelectItem><SelectItem value="browser">浏览器</SelectItem><SelectItem value="electron">Electron</SelectItem><SelectItem value="command">命令</SelectItem></SelectContent></Select></label>
+          {project.commands.evidenceCapture ? <>
+            <label>证据标签<Input aria-label="证据标签" value={project.commands.evidenceCapture.label} onChange={(event) => updateProject((current) => ({ ...current, commands: updateEvidenceCapture(current.commands, { label: event.target.value }) }))} /></label>
+            <label>超时（毫秒）<Input aria-label="超时（毫秒）" min={1000} max={120000} type="number" value={project.commands.evidenceCapture.timeoutMs ?? 15000} onChange={(event) => updateProject((current) => ({ ...current, commands: updateEvidenceCapture(current.commands, { timeoutMs: Number(event.target.value) || 15000 }) }))} /></label>
+            {project.commands.evidenceCapture.mode === "electron" ? <label>Electron 入口<Input aria-label="Electron 入口" value={project.commands.evidenceCapture.electronEntry} onChange={(event) => updateProject((current) => {
+              const capture = current.commands.evidenceCapture;
+              return capture?.mode === "electron" ? { ...current, commands: { ...current.commands, evidenceCapture: { ...capture, electronEntry: event.target.value } } } : current;
+            })} /></label> : null}
+            {project.commands.evidenceCapture.mode === "command" ? <label>证据命令<Input aria-label="证据命令" value={project.commands.evidenceCapture.command} onChange={(event) => updateProject((current) => {
+              const capture = current.commands.evidenceCapture;
+              return capture?.mode === "command" ? { ...current, commands: { ...current.commands, evidenceCapture: { ...capture, command: event.target.value } } } : current;
+            })} /></label> : null}
+            {project.commands.evidenceCapture.mode === "browser" ? <p className="field-wide project-local-note">浏览器采集需要启动命令和 localhost 验收 URL。</p> : null}
+          </> : null}
+        </div></section></div> : null}
         {allManifests.map((manifest) => {
           const value = project.integrations[manifest.id] ?? { enabled: false, config: {}, secretConfigured: {} };
           const state = feedback[manifest.id] ?? { saving: false, error: "", message: "" };
@@ -313,4 +339,68 @@ function withUnavailableManifests(manifests: IntegrationPluginManifest[], initia
 
 function commandLabel(key: "install" | "test" | "start" | "acceptanceUrl"): string {
   return ({ install: "安装命令", test: "测试命令", start: "启动命令", acceptanceUrl: "验收 URL" })[key];
+}
+
+function setEvidenceCaptureMode(
+  commands: ProjectFormValue["commands"],
+  mode: EvidenceCaptureMode,
+): ProjectFormValue["commands"] {
+  if (mode === "agent") {
+    const { evidenceCapture: _capture, ...rest } = commands;
+    return rest;
+  }
+  const shared = {
+    label: commands.evidenceCapture?.label ?? "验收证据",
+    timeoutMs: commands.evidenceCapture?.timeoutMs ?? 15_000,
+  };
+  const evidenceCapture = mode === "browser"
+    ? { mode, ...shared }
+    : mode === "electron"
+      ? {
+          mode,
+          ...shared,
+          electronEntry: commands.evidenceCapture?.mode === "electron"
+            ? commands.evidenceCapture.electronEntry
+            : "",
+        }
+      : {
+          mode,
+          ...shared,
+          command: commands.evidenceCapture?.mode === "command"
+            ? commands.evidenceCapture.command
+            : "",
+        };
+  return { ...commands, evidenceCapture };
+}
+
+function updateEvidenceCapture(
+  commands: ProjectFormValue["commands"],
+  patch: { label?: string; timeoutMs?: number },
+): ProjectFormValue["commands"] {
+  return commands.evidenceCapture
+    ? { ...commands, evidenceCapture: { ...commands.evidenceCapture, ...patch } }
+    : commands;
+}
+
+function normalizeCommands(
+  commands: ProjectFormValue["commands"],
+): ProjectFormValue["commands"] {
+  const normalized = Object.fromEntries(
+    Object.entries(commands).filter(([key, value]) =>
+      key === "evidenceCapture" || (typeof value === "string" && value.trim().length > 0)),
+  ) as ProjectFormValue["commands"];
+  const capture = commands.evidenceCapture;
+  if (!capture) return normalized;
+  const shared = {
+    label: capture.label.trim(),
+    ...(capture.timeoutMs ? { timeoutMs: capture.timeoutMs } : {}),
+  };
+  return {
+    ...normalized,
+    evidenceCapture: capture.mode === "browser"
+      ? { mode: "browser", ...shared }
+      : capture.mode === "electron"
+        ? { mode: "electron", ...shared, electronEntry: capture.electronEntry.trim() }
+        : { mode: "command", ...shared, command: capture.command.trim() },
+  };
 }
