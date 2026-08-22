@@ -70,6 +70,20 @@ describe("browser development Runtime client", () => {
     };
     const snapshot = {
       integrationPlugins: [],
+      workspaceProviders: [{ id: "git", name: "Git Worktree", configFields: [] }],
+      projectInspections: {
+        "project-1": {
+          path: project.path,
+          name: project.name,
+          key: project.key,
+          workspaces: {
+            git: {
+              available: true,
+              properties: [{ key: "remoteUrl", label: "远程仓库", value: "git@example.com:openai/oh-my-bug.git" }],
+            },
+          },
+        },
+      },
       projects: [project],
       issues: [issue],
       issueEvents: {
@@ -103,6 +117,7 @@ describe("browser development Runtime client", () => {
           fetch: typeof fetchSnapshot;
         }) => {
           integrationPlugins(): Promise<unknown>;
+          workspaceProviders(): Promise<unknown>;
           projects(): Promise<unknown>;
           project(id: string): Promise<unknown>;
           inspectProject(path: string): Promise<unknown>;
@@ -123,26 +138,23 @@ describe("browser development Runtime client", () => {
       fetch: fetchSnapshot,
     });
 
-    const [plugins, projects, issues, health] = await Promise.all([
+    const [plugins, workspaces, projects, issues, health] = await Promise.all([
       transport?.integrationPlugins(),
+      transport?.workspaceProviders(),
       transport?.projects(),
       transport?.issues(),
       transport?.integrationHealth(),
     ]);
 
-    expect({ plugins, projects, issues, health }).toEqual({
+    expect({ plugins, workspaces, projects, issues, health }).toEqual({
       plugins: [],
+      workspaces: snapshot.workspaceProviders,
       projects: [project],
       issues: [issue],
       health: {},
     });
     expect(await transport?.project("project-1")).toEqual(project);
-    expect(await transport?.inspectProject(project.path)).toEqual({
-      path: project.path,
-      name: project.name,
-      key: project.key,
-      workspaces: {},
-    });
+    expect(await transport?.inspectProject(project.path)).toEqual(snapshot.projectInspections["project-1"]);
     expect(await transport?.issue("issue-1")).toEqual(issue);
     let delivered: { events: unknown[]; cursor: number } | undefined;
     transport?.subscribeIssueEvents("issue-1", 0, (events, cursor) => {

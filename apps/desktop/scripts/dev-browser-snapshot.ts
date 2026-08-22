@@ -43,9 +43,7 @@ function fallbackSnapshot(
     data: { content },
     receivedAt: timestamp,
   });
-  return {
-    ...snapshot,
-    projects: [
+  const projects: DesktopRuntimeSnapshot["projects"] = [
       {
         id: projectId,
         key: "OHMYBUG",
@@ -84,13 +82,25 @@ function fallbackSnapshot(
         path: "~/Documents/Workspace/storefront",
         commands: { test: "pnpm test" },
         agent: { plugin: "codex" },
-      integrations: {},
-      workspace: { provider: "local", config: {} },
+        integrations: {},
+        workspace: { provider: "local", config: {} },
         revision: 3,
         createdAt: yesterday,
         updatedAt: yesterday,
       },
-    ],
+    ];
+  return {
+    ...snapshot,
+    projects,
+    projectInspections: Object.fromEntries(projects.map((project) => [project.id, {
+      path: project.path,
+      name: project.name ?? project.key,
+      key: project.key,
+      workspaces: {
+        local: { available: true },
+        git: { available: false, reason: "示例项目未连接本机 Git 仓库" },
+      },
+    }])),
     issues: [{
       id: "dev-style-issue-assessment",
       projectId,

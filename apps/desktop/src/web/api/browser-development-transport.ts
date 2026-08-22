@@ -5,12 +5,14 @@ import type {
   IntegrationHealth,
   IssueDto,
   ProjectDto,
+  ProjectInspection,
 } from "./types.js";
 import type { ProductTransport } from "./transport.js";
 
 export interface DevelopmentSnapshot {
   integrationPlugins: IntegrationPluginManifest[];
   workspaceProviders?: WorkspaceProviderManifest[];
+  projectInspections?: Record<string, ProjectInspection>;
   projects: ProjectDto[];
   issues: IssueDto[];
   issueEvents: Record<string, AgentEventDto[]>;
@@ -49,6 +51,8 @@ export function createBrowserDevelopmentTransport(
     inspectProject: async (path) => {
       const project = (await snapshot()).projects.find((candidate) => candidate.path === path);
       if (!project) throw new Error("PROJECT_NOT_FOUND");
+      const inspected = (await snapshot()).projectInspections?.[project.id];
+      if (inspected) return inspected;
       return {
         path: project.path,
         name: project.name ?? project.key,

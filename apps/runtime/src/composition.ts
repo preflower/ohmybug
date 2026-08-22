@@ -41,7 +41,11 @@ import { RuntimeCommands } from "./orchestration/commands.js";
 import { WorkspaceCoordinator } from "./orchestration/workspace-coordinator.js";
 import { OhMyBugRuntime } from "./runtime.js";
 import { RuntimeService } from "./service.js";
-import type { ProductProject } from "./protocol/types.js";
+import type {
+  ProductProject,
+  ProjectInspection,
+  WorkspaceProviderManifest,
+} from "./protocol/types.js";
 import { demoAgent } from "./testing/demo-agent.js";
 
 export interface CreateRuntimeOptions {
@@ -77,6 +81,8 @@ export interface DesktopRuntimeSummary {
 
 export interface DesktopRuntimeSnapshot {
   integrationPlugins: IntegrationPluginManifest[];
+  workspaceProviders: WorkspaceProviderManifest[];
+  projectInspections: Record<string, ProjectInspection>;
   projects: ProductProject[];
   issues: Issue[];
   issueEvents: Record<string, IssueEvent[]>;
@@ -147,8 +153,14 @@ export async function inspectDesktopRuntimeSnapshot(
   const integrationRegistry = new IntegrationRegistry([sentryPlugin(), dingTalkPlugin()]);
   const workspaceRegistry = new WorkspaceRegistry();
   workspaceRegistry.register(localWorkspaceFactory);
+  const gitManifest = gitWorkspaceFactory({
+    state: { get: () => undefined, set: () => undefined, delete: () => undefined },
+    worktreeRoot: join(options.dataRoot, "worktrees"),
+  }).manifest;
   const empty = (): DesktopRuntimeSnapshot => ({
     integrationPlugins: integrationRegistry.manifests(),
+    workspaceProviders: [localWorkspaceFactory.manifest, gitManifest],
+    projectInspections: {},
     projects: [],
     issues: [],
     issueEvents: {},
@@ -172,14 +184,26 @@ export async function inspectDesktopRuntimeSnapshot(
   }));
   try {
     const issues = store.listIssues();
+    const projects = store.listProjects().map((project) => snapshotProject(
+      project,
+      integrationRegistry,
+      workspacePersistence,
+      workspaceRegistry,
+    ));
+    const projectInspections = Object.fromEntries(await Promise.all(projects.map(async (project) => [
+      project.id,
+      {
+        path: project.path,
+        name: project.name ?? project.key,
+        key: project.key,
+        workspaces: await workspaceRegistry.inspectProject(project.path),
+      },
+    ])));
     return {
       integrationPlugins: integrationRegistry.manifests(),
-      projects: store.listProjects().map((project) => snapshotProject(
-        project,
-        integrationRegistry,
-        workspacePersistence,
-        workspaceRegistry,
-      )),
+      workspaceProviders: workspaceRegistry.manifests(),
+      projectInspections,
+      projects,
       issues,
       issueEvents: Object.fromEntries(issues.map((issue) => [issue.id, store.readEvents(issue.id)])),
       integrationHealth: {},

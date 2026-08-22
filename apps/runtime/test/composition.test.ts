@@ -127,6 +127,21 @@ describe("Runtime composition boundary", () => {
           }],
         },
         integrationHealth: {},
+        workspaceProviders: expect.arrayContaining([
+          expect.objectContaining({ id: "local", name: "本机目录" }),
+          expect.objectContaining({ id: "git", name: "Git Worktree" }),
+        ]),
+        projectInspections: {
+          "project-1": {
+            path: dataRoot,
+            name: "Oh My Bug",
+            key: "OMB",
+            workspaces: {
+              local: { available: true },
+              git: expect.objectContaining({ available: false }),
+            },
+          },
+        },
       });
       expect(JSON.stringify(snapshot)).not.toContain("secretRefs");
     } finally {
