@@ -276,6 +276,9 @@ importers:
       '@oh-my-bug/core':
         specifier: workspace:*
         version: link:../core
+      '@oh-my-bug/module-api':
+        specifier: workspace:*
+        version: link:../module-api
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3

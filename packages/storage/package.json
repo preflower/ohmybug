@@ -13,6 +13,7 @@
   "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
   "dependencies": {
     "@oh-my-bug/core": "workspace:*",
+    "@oh-my-bug/module-api": "workspace:*",
     "better-sqlite3": "^13.0.3",
     "cross-keychain": "^1.1.0",
     "mediainfo.js": "0.3.7",

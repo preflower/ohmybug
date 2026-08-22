@@ -54,6 +54,29 @@ CREATE TABLE IF NOT EXISTS integration_inputs (
   UNIQUE(project_id, integration, input_key)
 );
 
+CREATE TABLE IF NOT EXISTS workspace_project_configurations (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  provider_id TEXT NOT NULL,
+  config_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workspace_bindings (
+  issue_id TEXT PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
+  provider_id TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('PREPARING', 'READY', 'FAILED', 'RELEASED')),
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS module_resources (
+  module_id TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  data_json TEXT NOT NULL,
+  PRIMARY KEY(module_id, resource_id)
+);
+
 CREATE TABLE IF NOT EXISTS issue_events (
   id TEXT PRIMARY KEY,
   issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
