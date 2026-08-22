@@ -170,6 +170,7 @@ describe("workspace architecture boundaries", () => {
       "@oh-my-bug/storage",
       "@oh-my-bug/workspace-git",
       "@oh-my-bug/workspace-local",
+      "playwright",
       "sharp",
       "zod",
     ]);

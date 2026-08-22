@@ -94,6 +94,7 @@ describe("SQLite-backed Runtime acceptance", () => {
       "ASSESSMENT_READY",
       "ASSESSMENT_APPROVED",
       "REPAIR_STARTED",
+      "IMPLEMENTATION_READY",
       "DELIVERY_READY",
       "EVIDENCE_CHECK_STARTED",
       "EVIDENCE_ACCEPTED",

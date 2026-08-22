@@ -31,6 +31,8 @@ import {
 } from "@oh-my-bug/storage";
 
 import { AgentRegistry } from "./agents/registry.js";
+import type { EvidenceCaptureProvider } from "./evidence/capture-provider.js";
+import { PlaywrightEvidenceCaptureProvider } from "./evidence/playwright-capture-provider.js";
 import { IntegrationManager } from "./integrations/manager.js";
 import { IntegrationRegistry } from "./integrations/registry.js";
 import { RuntimeLifecycleHooks } from "./modules/lifecycle-hooks.js";
@@ -54,6 +56,7 @@ export interface CreateRuntimeOptions {
   databasePath: string;
   evidenceRoot?: string;
   agent?: AgentAdapter;
+  evidenceCapture?: EvidenceCaptureProvider;
   id?: () => string;
   now?: () => string;
 }
@@ -63,6 +66,7 @@ export interface DesktopRuntimeOverrides {
   secrets?: SecretStore;
   sentry?: SentryPluginOptions;
   dingTalk?: DingTalkPluginOptions;
+  evidenceCapture?: EvidenceCaptureProvider;
   id?: () => string;
   now?: () => string;
 }
@@ -121,6 +125,7 @@ export function createRuntime(options: CreateRuntimeOptions): OhMyBugRuntime {
     secrets: new MemorySecretStore(),
     id: options.id,
     now: options.now,
+    evidenceCapture: options.evidenceCapture,
   }).runtime;
 }
 
@@ -256,6 +261,7 @@ export function createDesktopRuntimeComposition(
     secrets: overrides.secrets ?? new LocalSecretStore(),
     id: overrides.id,
     now: overrides.now,
+    evidenceCapture: overrides.evidenceCapture,
   });
 }
 
@@ -296,6 +302,7 @@ interface InternalCompositionOptions {
   secrets: SecretStore;
   id?: () => string;
   now?: () => string;
+  evidenceCapture?: EvidenceCaptureProvider;
 }
 
 function createRuntimeComposition(options: InternalCompositionOptions): RuntimeComposition {
@@ -375,6 +382,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     store,
     agents,
     evidence,
+    capture: options.evidenceCapture ?? new PlaywrightEvidenceCaptureProvider(),
     workspaces: workspaceCoordinator,
     hooks,
     integrations,

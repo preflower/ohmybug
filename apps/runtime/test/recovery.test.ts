@@ -133,6 +133,7 @@ describe("Runtime recovery", () => {
   it.each([
     ["ASSESSING", "ASSESS"],
     ["REPAIRING", "REPAIR"],
+    ["EVIDENCE_CAPTURE", "CAPTURE_EVIDENCE"],
     ["EVIDENCE_CHECK", "EVIDENCE"],
   ] as const)("requeues interrupted %s as %s once", (status, operation) => {
     const { store } = createHarness(new FakeAgent());
@@ -150,6 +151,13 @@ describe("Runtime recovery", () => {
         assessment,
         repair: {
           iteration: 2,
+          ...(status === "EVIDENCE_CAPTURE" ? {
+            deliveryDraft: {
+              summary: "Implemented",
+              repairIteration: 2,
+              implementationCompletedAt: now,
+            },
+          } : {}),
           ...(status === "EVIDENCE_CHECK" ? { delivery } : {}),
         },
       }),

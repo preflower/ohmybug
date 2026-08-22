@@ -25,6 +25,37 @@ function repairingIssue(id: string) {
 }
 
 describe("Runtime repair worker", () => {
+  it("persists a draft and queues evidence when Repair returns none", async () => {
+    const agent = new FakeAgent();
+    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    const { store, agents, evidence, workspaces } = createHarness(agent);
+    const issue = repairingIssue("repair-draft");
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-draft"),
+      now: () => now,
+    }).drainOne();
+
+    expect(store.getIssue(issue.id)).toMatchObject({
+      status: "EVIDENCE_CAPTURE",
+      repair: {
+        iteration: 1,
+        evidenceRetries: 0,
+        deliveryDraft: {
+          summary: "Implemented",
+          repairIteration: 1,
+          implementationCompletedAt: now,
+        },
+      },
+    });
+    expect(store.listPendingOperations()[0]?.operation).toBe("CAPTURE_EVIDENCE");
+  });
+
   it("imports scoped Agent evidence and reaches human acceptance", async () => {
     const agent = new FakeAgent();
     const { store, agents, evidence, workspaces } = createHarness(agent);
@@ -73,7 +104,7 @@ describe("Runtime repair worker", () => {
     expect(evidence.cleaned).toBe(1);
   });
 
-  it("returns unusable evidence to the same session with safe feedback", async () => {
+  it("returns unusable evidence to evidence capture with safe feedback", async () => {
     const agent = new FakeAgent();
     const { store, agents, evidence, workspaces } = createHarness(agent);
     evidence.nextInspection = { ...evidence.nextInspection, exists: false, byteLength: 0 };
@@ -92,15 +123,19 @@ describe("Runtime repair worker", () => {
     await worker.drainOne();
 
     expect(store.getIssue(issue.id)).toMatchObject({
-      status: "REPAIRING",
+      status: "EVIDENCE_CAPTURE",
       agentSession: issue.agentSession,
-      repair: { iteration: 2, feedback: expect.stringContaining("does not exist") },
+      repair: {
+        iteration: 1,
+        evidenceRetries: 1,
+        feedback: expect.stringContaining("does not exist"),
+      },
     });
-    expect(store.listPendingOperations()[0]?.operation).toBe("REPAIR");
+    expect(store.listPendingOperations()[0]?.operation).toBe("CAPTURE_EVIDENCE");
     expect(evidence.cleaned).toBe(1);
   });
 
-  it("redacts evidence import failures and requeues Repair", async () => {
+  it("redacts evidence import failures and requeues evidence capture", async () => {
     const agent = new FakeAgent();
     const { store, agents, evidence, workspaces } = createHarness(agent);
     evidence.importError = new Error("/private/secret/token.png");
@@ -112,13 +147,15 @@ describe("Runtime repair worker", () => {
 
     const repaired = store.getIssue(issue.id);
     expect(repaired).toMatchObject({
-      status: "REPAIRING",
+      status: "EVIDENCE_CAPTURE",
       repair: {
-        iteration: 2,
+        iteration: 1,
+        evidenceRetries: 1,
         feedback: "Evidence could not be imported or verified. Produce new screenshot or recording evidence.",
       },
     });
     expect(JSON.stringify(repaired)).not.toContain("private/secret");
+    expect(store.listPendingOperations()[0]?.operation).toBe("CAPTURE_EVIDENCE");
     expect(evidence.cleaned).toBe(1);
   });
 

@@ -14,6 +14,12 @@ import type {
 } from "@oh-my-bug/core";
 import sharp from "sharp";
 
+import type {
+  EvidenceCaptureArtifact,
+  EvidenceCaptureProvider,
+  EvidenceCaptureRequest,
+} from "../../src/evidence/capture-provider.js";
+
 export const evidenceId = `sha256-${"b".repeat(64)}`;
 export const fakeAssessment: Assessment = {
   revision: 1,
@@ -163,5 +169,21 @@ export class FakeEvidenceStore implements EvidenceStore, EvidenceInspector {
   ): Promise<EvidenceInspection> {
     if (this.inspectError) throw this.inspectError;
     return { ...this.nextInspection, evidenceId: requestedEvidenceId, repairIteration };
+  }
+}
+
+export class FakeEvidenceCaptureProvider implements EvidenceCaptureProvider {
+  inputs: EvidenceCaptureRequest[] = [];
+  error?: Error;
+
+  async capture(input: EvidenceCaptureRequest): Promise<EvidenceCaptureArtifact> {
+    this.inputs.push(input);
+    if (this.error) throw this.error;
+    await mkdir(input.intakeDirectory, { recursive: true });
+    const path = join(input.intakeDirectory, "host-proof.png");
+    await sharp({
+      create: { width: 4, height: 4, channels: 3, background: "#45a978" },
+    }).png().toFile(path);
+    return { type: "screenshot", label: input.capture.label, path };
   }
 }

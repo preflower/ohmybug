@@ -60,6 +60,9 @@ export function reconcileInterruptedIssues(dependencies: RecoveryDependencies): 
 export function interruptedOperation(issue: Issue): PendingOperation | undefined {
   if (issue.status === "ASSESSING") return "ASSESS";
   if (issue.status === "REPAIRING") return "REPAIR";
+  if (issue.status === "EVIDENCE_CAPTURE" && issue.repair?.deliveryDraft) {
+    return "CAPTURE_EVIDENCE";
+  }
   if (issue.status === "EVIDENCE_CHECK" && issue.repair?.delivery) return "EVIDENCE";
   return undefined;
 }

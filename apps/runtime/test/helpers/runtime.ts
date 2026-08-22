@@ -19,7 +19,12 @@ import { RuntimeLifecycleHooks } from "../../src/modules/lifecycle-hooks.js";
 import { WorkspaceRegistry } from "../../src/modules/workspace-registry.js";
 import { RuntimeCommands } from "../../src/orchestration/commands.js";
 import { WorkspaceCoordinator } from "../../src/orchestration/workspace-coordinator.js";
-import { fakeAssessment, FakeAgent, FakeEvidenceStore } from "./fakes.js";
+import {
+  fakeAssessment,
+  FakeAgent,
+  FakeEvidenceCaptureProvider,
+  FakeEvidenceStore,
+} from "./fakes.js";
 
 export const now = "2026-08-20T15:00:00.000Z";
 export const project: RuntimeProject = {
@@ -57,6 +62,7 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
   const plugin: AgentPlugin = { id: "fake", create: () => agent };
   const agents = new AgentRegistry([plugin], { sessions });
   const evidence = new FakeEvidenceStore();
+  const capture = new FakeEvidenceCaptureProvider();
   const manual = new ManualIntegrationAdapter({ id: () => "input-1", now: () => new Date(now) });
   const commands = new RuntimeCommands({
     store,
@@ -74,6 +80,7 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
     sessions,
     agents,
     evidence,
+    capture,
     workspacePersistence,
     workspaceRegistry,
     workspaces,

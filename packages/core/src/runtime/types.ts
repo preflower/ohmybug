@@ -7,6 +7,7 @@ export type PendingOperation =
   | "PREPARE"
   | "ASSESS"
   | "REPAIR"
+  | "CAPTURE_EVIDENCE"
   | "EVIDENCE"
   | "FINALIZE";
 export type IssueEventActor = "SYSTEM" | "USER" | "AGENT";

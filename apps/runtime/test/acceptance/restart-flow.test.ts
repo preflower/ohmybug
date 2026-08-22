@@ -126,17 +126,18 @@ describe("SQLite-backed review and recovery acceptance", () => {
 
     expect(runtime.getIssue(issue.id)).toMatchObject({
       status: "ACCEPTANCE_REVIEW",
-      repair: { iteration: 2 },
+      repair: { iteration: 1, evidenceRetries: 1 },
     });
-    expect(agent.repairInputs[1]?.feedback).toContain("Evidence could not be imported or verified");
+    expect(agent.evidenceInputs[0]?.feedback).toContain("Evidence could not be imported or verified");
     runtime.rejectDelivery(issue.id, "Please show the restored payment route.");
     await runtime.drain();
     expect(runtime.getIssue(issue.id)).toMatchObject({
       status: "ACCEPTANCE_REVIEW",
-      repair: { iteration: 3 },
+      repair: { iteration: 2 },
     });
-    expect(agent.repairInputs[2]?.feedback).toBe("Please show the restored payment route.");
-    expect(agent.repairSessions).toEqual(["session-1", "session-1", "session-1"]);
+    expect(agent.repairInputs[1]?.feedback).toBe("Please show the restored payment route.");
+    expect(agent.repairSessions).toEqual(["session-1", "session-1"]);
+    expect(agent.evidenceSessions).toEqual(["session-1"]);
     await runtime.stop();
   });
 
