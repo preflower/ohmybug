@@ -11,6 +11,7 @@ import type {
 } from "@oh-my-bug/core";
 import type {
   WorkspacePersistence,
+  WorkspaceBranchDiscovery,
   WorkspaceProjectConfiguration,
   WorkspaceProviderManifest,
 } from "@oh-my-bug/module-api";
@@ -115,6 +116,20 @@ export class RuntimeService implements RuntimeApi {
     return { path, name, key: projectKey(name), workspaces };
   }
 
+  async inspectProjectBranches(input: {
+    path: string;
+    providerId: string;
+    refreshRemote: boolean;
+  }): Promise<WorkspaceBranchDiscovery> {
+    this.assertAccepting();
+    const path = await canonicalDirectory(input.path);
+    return this.dependencies.workspaceRegistry.inspectProjectBranches(
+      input.providerId,
+      path,
+      { refreshRemote: input.refreshRemote },
+    );
+  }
+
   async getProject(input: { id: string }): Promise<ProductProject> {
     this.assertAccepting();
     return this.toProductProject(this.requireProject(input.id));
@@ -124,7 +139,7 @@ export class RuntimeService implements RuntimeApi {
     return this.mutateProject(async () => {
       const path = await canonicalDirectory(input.path);
       const timestamp = this.dependencies.now();
-      const workspace = cloneWorkspaceConfiguration(
+      const selectedWorkspace = cloneWorkspaceConfiguration(
         input.workspace ?? defaultWorkspaceConfiguration(),
       );
       const { workspace: _workspace, ...projectInput } = input;
@@ -140,10 +155,14 @@ export class RuntimeService implements RuntimeApi {
         updatedAt: timestamp,
       };
       this.validateIntegrations(project);
-      this.dependencies.workspaceRegistry.validate(workspace.provider, workspace.config);
+      await this.dependencies.workspaceRegistry.validateProject(
+        selectedWorkspace.provider,
+        path,
+        selectedWorkspace.config,
+      );
       const saved = this.dependencies.workspacePersistence.transaction(() => {
         this.dependencies.runtime.registerProject(project);
-        this.dependencies.workspacePersistence.setProjectConfiguration(project.id, workspace);
+        this.dependencies.workspacePersistence.setProjectConfiguration(project.id, selectedWorkspace);
         return this.requireProject(project.id);
       });
       await this.dependencies.integrations.refreshProject(saved);
@@ -170,9 +189,11 @@ export class RuntimeService implements RuntimeApi {
       const selectedWorkspace = cloneWorkspaceConfiguration(
         workspace ?? existingWorkspace ?? defaultWorkspaceConfiguration(),
       );
-      if (workspace) {
-        this.dependencies.workspaceRegistry.validate(workspace.provider, workspace.config);
-      }
+      await this.dependencies.workspaceRegistry.validateProject(
+        selectedWorkspace.provider,
+        path,
+        selectedWorkspace.config,
+      );
       const updated = this.dependencies.workspacePersistence.transaction(() => {
         const saved = this.dependencies.store.updateProject(next, input.input.expectedRevision);
         if (workspace || !existingWorkspace) {

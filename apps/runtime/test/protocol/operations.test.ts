@@ -11,6 +11,7 @@ describe("Runtime protocol operation registry", () => {
       "listWorkspaceProviders",
       "listProjects",
       "inspectProject",
+      "inspectProjectBranches",
       "getProject",
       "createProject",
       "updateProject",
@@ -38,6 +39,18 @@ describe("Runtime protocol operation registry", () => {
     expect(rendererOperationNames).not.toContain("health");
     expect(rendererOperationNames).toContain("rebuildAgentSession");
     expect(rendererOperationNames).toContain("readEvidence");
+  });
+
+  it("validates grouped project branch discovery", () => {
+    const input = { path: "/repo", providerId: "git", refreshRemote: true };
+    const output = {
+      localBranches: ["main"],
+      remoteBranches: ["origin/main"],
+      remote: { name: "origin", url: "git@example.com:team/repo.git" },
+    };
+
+    expect(runtimeOperations.inspectProjectBranches.input.parse(input)).toEqual(input);
+    expect(runtimeOperations.inspectProjectBranches.output.parse(output)).toEqual(output);
   });
 
   it("validates published branch information outside the Core Issue", () => {

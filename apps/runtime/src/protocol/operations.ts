@@ -23,6 +23,7 @@ import {
   projectInspectionSchema,
   runtimeHealthSchema,
   updateProjectInputSchema,
+  workspaceBranchDiscoverySchema,
 } from "./schema-definitions.js";
 
 export interface RuntimeOperationDefinition<Input = unknown, Output = unknown> {
@@ -78,6 +79,16 @@ export const runtimeOperations = {
     output: projectInspectionSchema,
     renderer: true,
     invoke: (service, input) => service.inspectProject(input),
+  }),
+  inspectProjectBranches: operation({
+    input: z.object({
+      path: identifierSchema,
+      providerId: identifierSchema,
+      refreshRemote: z.boolean(),
+    }).strict(),
+    output: workspaceBranchDiscoverySchema,
+    renderer: true,
+    invoke: (service, input) => service.inspectProjectBranches(input),
   }),
   getProject: operation({
     input: projectIdSchema,

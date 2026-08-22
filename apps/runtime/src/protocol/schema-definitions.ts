@@ -48,12 +48,24 @@ const workspaceInspectionPropertySchema = z.object({
   value: z.string().min(1),
   description: z.string().min(1).optional(),
 }).strict();
+export const workspaceRemoteDescriptionSchema = z.object({
+  name: identifierSchema,
+  url: z.string().min(1),
+}).strict();
+export const workspaceBranchDiscoverySchema = z.object({
+  localBranches: z.array(z.string().min(1)),
+  remoteBranches: z.array(z.string().min(1)),
+  remote: workspaceRemoteDescriptionSchema.optional(),
+  remoteUnavailableReason: z.string().min(1).optional(),
+  refreshError: z.string().min(1).optional(),
+}).strict();
 const workspaceProviderInspectionSchema = z.object({
   available: z.boolean(),
   reason: z.string().min(1).optional(),
   configPatch: configSchema.optional(),
   fields: z.record(identifierSchema, workspaceInspectionFieldStateSchema).optional(),
   properties: z.array(workspaceInspectionPropertySchema).optional(),
+  branches: workspaceBranchDiscoverySchema.optional(),
 }).strict();
 
 const projectFields = {

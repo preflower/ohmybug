@@ -1,4 +1,5 @@
 import type {
+  WorkspaceBranchDiscovery,
   WorkspaceProvider,
   WorkspaceProviderFactory,
   WorkspaceProviderInspection,
@@ -28,6 +29,16 @@ export class WorkspaceRegistry {
     this.require(id).validate(structuredClone(config));
   }
 
+  async validateProject(
+    id: string,
+    path: string,
+    config: Record<string, ConfigValue>,
+  ): Promise<void> {
+    const factory = this.require(id);
+    factory.validate(structuredClone(config));
+    await factory.validateProjectConfiguration?.(path, structuredClone(config));
+  }
+
   has(id: string): boolean {
     return this.factories.has(id);
   }
@@ -51,6 +62,18 @@ export class WorkspaceRegistry {
       }
     }));
     return Object.fromEntries(entries);
+  }
+
+  async inspectProjectBranches(
+    id: string,
+    path: string,
+    input: { refreshRemote: boolean },
+  ): Promise<WorkspaceBranchDiscovery> {
+    const factory = this.require(id);
+    if (!factory.inspectProjectBranches) {
+      throw new Error(`WORKSPACE_BRANCH_DISCOVERY_NOT_AVAILABLE:${id}`);
+    }
+    return structuredClone(await factory.inspectProjectBranches(path, input));
   }
 
   private require(id: string): WorkspaceProviderFactory {

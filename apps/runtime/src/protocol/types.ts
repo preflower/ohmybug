@@ -10,6 +10,7 @@ import type {
 } from "@oh-my-bug/core";
 import type {
   BranchInfo,
+  WorkspaceBranchDiscovery,
   WorkspaceBinding,
   WorkspaceProjectConfiguration,
   WorkspaceProviderInspection,
@@ -116,6 +117,11 @@ export interface RuntimeApi {
   listWorkspaceProviders(input: Record<string, never>): Promise<WorkspaceProviderManifest[]>;
   listProjects(input: Record<string, never>): Promise<ProductProject[]>;
   inspectProject(input: { path: string }): Promise<ProjectInspection>;
+  inspectProjectBranches(input: {
+    path: string;
+    providerId: string;
+    refreshRemote: boolean;
+  }): Promise<WorkspaceBranchDiscovery>;
   getProject(input: { id: string }): Promise<ProductProject>;
   createProject(input: CreateProjectInput): Promise<ProductProject>;
   updateProject(input: { id: string; input: UpdateProjectInput }): Promise<ProductProject>;

@@ -125,6 +125,54 @@ async function harness(
 }
 
 describe("RuntimeService", () => {
+  it("discovers branches and validates the selected base ref before persistence", async () => {
+    const { root, service, workspaceRegistry } = await harness();
+    const projectDirectory = join(root, "branch-project");
+    const invalidDirectory = join(root, "invalid");
+    await import("node:fs/promises").then(({ mkdir }) => Promise.all([
+      mkdir(projectDirectory),
+      mkdir(invalidDirectory),
+    ]));
+    const branchFactory: WorkspaceProviderFactory = {
+      id: "branches",
+      manifest: { id: "branches", name: "Branches", configFields: [] },
+      validate() {},
+      validateProjectConfiguration: async (path, config) => {
+        if (path.endsWith("invalid") || config.baseBranch === "missing") {
+          throw new Error("BASE_BRANCH_NOT_FOUND");
+        }
+      },
+      inspectProjectBranches: async () => ({
+        localBranches: ["main"],
+        remoteBranches: ["origin/main"],
+      }),
+      create: () => ({
+        id: "branches",
+        acquire: async () => ({ projectPath: "/repo", resourceId: "branches:1" }),
+        publish: async () => undefined,
+        release: async () => undefined,
+      }),
+    };
+    workspaceRegistry.register(branchFactory);
+
+    await expect(service.inspectProjectBranches({
+      path: projectDirectory,
+      providerId: "branches",
+      refreshRemote: true,
+    })).resolves.toEqual({
+      localBranches: ["main"],
+      remoteBranches: ["origin/main"],
+    });
+    await expect(service.createProject({
+      path: projectDirectory,
+      key: "BAD",
+      workspace: {
+        provider: "branches",
+        config: { baseBranch: "missing" },
+      },
+    })).rejects.toThrow("BASE_BRANCH_NOT_FOUND");
+  });
+
   it("returns branch information outside the Core Issue", async () => {
     const issue = reviewedIssue({ status: "COMPLETED", resolution: "FIXED" });
     const branch = { name: "ohmybug/omb-2", commit: "abc123" };
