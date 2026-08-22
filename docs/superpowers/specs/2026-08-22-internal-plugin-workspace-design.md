@@ -10,13 +10,12 @@ This mechanism exists to keep first-party project modules loosely coupled. It is
 
 - All modules are developed by this project and compiled into the application.
 - Modules may be enabled, disabled, or selected through project configuration.
-- Core does not know about Cordis, Workspace, Git, Worktree, or AliyunXiao.
+- Core does not know about Cordis, Workspace, Git, or Worktree.
 - Core stores only the concrete project directory assigned to an Issue as `Issue.projectPath`.
 - Assessment, Repair, and Evidence use `Issue.projectPath`; they do not derive a path from `RuntimeProject.path`.
 - Git creates no diff report, test run, or checkpoint commit automatically.
 - Git commits only after the user approves the delivery.
 - Git delivery returns explicit `BranchInfo`, not a generic delivery artifact.
-- A future AliyunXiao module is optional and must not block the normal Issue flow.
 - Dynamic package installation, a plugin marketplace, hot reload, and third-party permission isolation are out of scope.
 
 ## Architecture
@@ -45,7 +44,6 @@ flowchart LR
         git["GitWorkspace"]
         codex["Codex Agent"]
         sources["Sentry and DingTalk"]
-        aliyun["Future AliyunXiao"]
     end
 
     subgraph coreLayer["Core"]
@@ -64,7 +62,6 @@ flowchart LR
     cordis --> git
     cordis --> codex
     cordis --> sources
-    cordis --> aliyun
 
     runtime --> workspace
     runtime --> agent
@@ -77,7 +74,6 @@ flowchart LR
     git -.->|"Registers optional provider"| workspace
     codex -.->|"Registers provider"| agent
     sources -.->|"Register input sources"| integration
-    aliyun -.->|"Subscribes when enabled"| hooks
 
     workspace --> issue
     agent --> issue
@@ -88,7 +84,7 @@ Only the Composition Root imports concrete modules. Runtime depends on stable co
 
 ## Cordis responsibilities
 
-Cordis provides module mounting, dependency readiness, lifecycle ownership, and cleanup. A disabled module is not mounted or its Fiber is disposed. Runtime business logic contains no checks such as `if (gitEnabled)` or `if (aliyunEnabled)`.
+Cordis provides module mounting, dependency readiness, lifecycle ownership, and cleanup. A disabled module is not mounted or its Fiber is disposed. Runtime business logic contains no provider-specific enablement checks.
 
 Cordis is not exposed to Core. No additional public `OhMyBugPluginAPI`, dynamic loader, or global arbitrary-string event bus is introduced in the first phase.
 
@@ -241,12 +237,6 @@ These hooks are for observation and optional follow-up behavior. Required return
 
 Hook failures are recorded against the owning module and do not roll back an already completed Core transition. Work that needs durable retry uses Runtime operations rather than an in-memory hook alone.
 
-## Optional future modules
-
-AliyunXiao is not required for the first implementation. A future enabled instance consumes persisted `BranchInfo`, starts the configured pipeline for that branch, and automates configured review nodes. When disabled, absent, or failed, it does not prevent the Issue from completing. Its pipeline execution has its own durable operation and retry status.
-
-AliyunXiao depends on the stable branch information contract, not the GitWorkspace implementation.
-
 ## Intake isolation fix
 
 Integration input idempotency is project-scoped. Storage lookup and uniqueness change from:
@@ -287,7 +277,7 @@ The first implementation includes:
 - Workspace acquire and publish retry behavior.
 - Project-scoped integration input idempotency.
 
-AliyunXiao implementation, dynamic third-party plugins, automatic tests, diff reports, checkpoint commits, plugin marketplace features, and broad Runtime concurrency redesign are out of scope.
+Dynamic third-party plugins, automatic tests, diff reports, checkpoint commits, plugin marketplace features, and broad Runtime concurrency redesign are out of scope.
 
 ## Verification
 
@@ -297,4 +287,3 @@ AliyunXiao implementation, dynamic third-party plugins, automatic tests, diff re
 - Git tests use temporary repositories to verify worktree isolation, stable paths across iterations, no pre-approval commit, local delivery, remote delivery, retry after publish failure, and restart recovery.
 - Integration tests prove identical input keys in different projects create or update only their own Issues.
 - Module lifecycle tests prove enabling registers behavior and Fiber disposal removes it without affecting the baseline flow.
-- AliyunXiao is represented only by a contract-level test double proving optional BranchInfo consumers can be absent without blocking completion.
