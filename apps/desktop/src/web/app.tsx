@@ -26,8 +26,14 @@ import { IssueStatusBadge } from "./issues/issue-status.js";
 import { AgentActivity } from "./issues/agent-activity.js";
 import { newestIssuesFirst } from "./issues/issue-order.js";
 import { useIssueEvents } from "./issues/use-issue-events.js";
+import {
+  SHORTCUTS,
+  isEditableShortcutTarget,
+  matchesShortcut,
+} from "./keyboard/shortcuts.js";
 import { ProjectList } from "./projects/project-list.js";
 import { ProjectForm, type ProjectFormValue } from "./projects/project-form.js";
+import { KeyboardShortcutOverview } from "./settings/keyboard-shortcuts.js";
 import { ThemeSelector } from "./settings/theme-selector.js";
 import { ThemeProvider } from "./theme/theme-provider.js";
 
@@ -127,20 +133,19 @@ function AppContent() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (matchesShortcut(event, SHORTCUTS.dismissTransient)) {
         setNewIssueOpen(false);
         setCommandOpen(false);
         return;
       }
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (isEditableShortcutTarget(event.target)) return;
+      if (matchesShortcut(event, SHORTCUTS.openCommandMenu)) {
         event.preventDefault();
         setCommandOpen(true);
-      } else if (canCreateIssue && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "n") {
+      } else if (canCreateIssue && matchesShortcut(event, SHORTCUTS.createIssue)) {
         event.preventDefault();
         setNewIssueOpen(true);
-      } else if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "o") {
+      } else if (matchesShortcut(event, SHORTCUTS.openProject)) {
         event.preventDefault();
         setCommandOpen(false);
         void openProjectDirectory();
@@ -275,7 +280,7 @@ function AppContent() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><img alt="" className="brand-mark" draggable="false" src={appIconUrl} /><span className="brand-name">Oh My Bug ?!</span></div>
-        {canCreateIssue ? <NewIssueDialog open={newIssueOpen} projects={projects} trigger={<Button aria-label="新建 Issue" className="new-issue" type="button"><span>新建 Issue</span><KbdShortcut className="shortcut" keyName="N" /><Plus aria-hidden="true" size={14} /></Button>} onOpenChange={setNewIssueOpen} onCreated={(issue) => { setIssues((current) => newestIssuesFirst([...current, issue])); setSelectedId(issue.id); setSelectedIssue(issue); goTo("issues"); }} /> : null}
+        {canCreateIssue ? <NewIssueDialog open={newIssueOpen} projects={projects} trigger={<Button aria-label="新建 Issue" className="new-issue" type="button"><span>新建 Issue</span><Plus aria-hidden="true" size={14} /></Button>} onOpenChange={setNewIssueOpen} onCreated={(issue) => { setIssues((current) => newestIssuesFirst([...current, issue])); setSelectedId(issue.id); setSelectedIssue(issue); goTo("issues"); }} /> : null}
         <nav aria-label="主导航" className="nav-list">
           <a aria-label="Issues" aria-current={view === "issues" && !activeProjectId ? "page" : undefined} className="nav-item" href={routeHref("issues")} onClick={navigate("issues")}><CircleDot aria-hidden="true" size={15} strokeWidth={1.7} /><span>Issues</span></a>
           <a aria-label="Projects" aria-current={view === "projects" ? "page" : undefined} className="nav-item" href={routeHref("projects")} onClick={navigate("projects")}><FolderKanban aria-hidden="true" size={15} strokeWidth={1.7} /><span>Projects</span></a>
@@ -450,7 +455,7 @@ function MetadataRailToggle({ open, onToggle }: { open: boolean; onToggle: () =>
   const Icon = open ? PanelRightClose : PanelRightOpen;
   return <Tooltip>
     <TooltipTrigger render={<Button aria-keyshortcuts="Control+Shift+B Meta+Shift+B" aria-label={label} className={open ? "metadata-rail-toggle" : undefined} size="icon-sm" type="button" variant="ghost" onClick={onToggle}><Icon aria-hidden="true" size={15} /></Button>} />
-    <TooltipContent className="flex items-center gap-2" side="bottom"><span>{label}</span><KbdShortcut keyName="B" shift /></TooltipContent>
+    <TooltipContent className="flex items-center gap-2" side="bottom"><span>{label}</span><KbdShortcut shortcut={SHORTCUTS.toggleIssueDetails} /></TooltipContent>
   </Tooltip>;
 }
 
@@ -498,5 +503,36 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, in
 
 function SettingsWorkspace({ health }: { health: Record<string, { state: string; lastError?: string; nextRetryAt?: string }> }) {
   const entries = Object.entries(health);
-  return <section className="settings-page"><div className="settings-card"><h2>集成运行状态</h2>{entries.length ? <ul className="health-list">{entries.map(([id, value]) => <li key={id}><span className={`state-dot ${value.state === "backoff" || value.state === "disconnected" ? "state-dot-error" : ""}`} /><code>{id}</code><strong>{value.state}</strong>{value.lastError ? <span>{value.lastError}</span> : null}</li>)}</ul> : <p>尚未启用集成插件。</p>}</div><section aria-labelledby="preferences-heading" className="settings-card preferences-card"><h2 id="preferences-heading">偏好设置</h2><div className="settings-list"><div className="settings-option"><div><h3>外观</h3><p>显式主题会覆盖系统外观设置，并保存在当前浏览器中。</p></div><ThemeSelector /></div></div></section></section>;
+  return (
+    <section className="settings-page">
+      <div className="settings-card">
+        <h2>集成运行状态</h2>
+        {entries.length ? (
+          <ul className="health-list">
+            {entries.map(([id, value]) => (
+              <li key={id}>
+                <span className={`state-dot ${value.state === "backoff" || value.state === "disconnected" ? "state-dot-error" : ""}`} />
+                <code>{id}</code>
+                <strong>{value.state}</strong>
+                {value.lastError ? <span>{value.lastError}</span> : null}
+              </li>
+            ))}
+          </ul>
+        ) : <p>尚未启用集成插件。</p>}
+      </div>
+      <section aria-labelledby="preferences-heading" className="settings-card preferences-card">
+        <h2 id="preferences-heading">偏好设置</h2>
+        <div className="settings-list">
+          <div className="settings-option">
+            <div>
+              <h3>外观</h3>
+              <p>显式主题会覆盖系统外观设置，并保存在当前浏览器中。</p>
+            </div>
+            <ThemeSelector />
+          </div>
+          <KeyboardShortcutOverview />
+        </div>
+      </section>
+    </section>
+  );
 }

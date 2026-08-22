@@ -19,6 +19,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "../components/ui/tooltip.js";
+import type { KeyboardShortcut } from "../keyboard/shortcuts.js";
+import { SHORTCUTS } from "../keyboard/shortcuts.js";
 
 interface CommandMenuProps {
   open: boolean;
@@ -68,12 +70,12 @@ export function CommandMenu({
             <Button className="w-full justify-start" type="button" variant="ghost" onClick={() => closeAfter(onNewIssue)}>
               <Plus aria-hidden="true" size={14} />
               <span>新建 Issue</span>
-              <KbdShortcut keyName="N" />
+              <KbdShortcut shortcut={SHORTCUTS.createIssue} />
             </Button>
           ) : null}
           <CommandAction
             icon={<FolderOpen aria-hidden="true" size={14} />}
-            keyName="O"
+            shortcut={SHORTCUTS.openProject}
             label="打开项目"
             onClick={() => closeAfter(onOpenProject)}
           />
@@ -85,20 +87,20 @@ export function CommandMenu({
 
 function CommandAction({
   icon,
-  keyName,
   label,
   onClick,
+  shortcut,
 }: {
   icon: ReactNode;
-  keyName: string;
   label: string;
   onClick(): void;
+  shortcut: KeyboardShortcut;
 }) {
   return (
     <Button className="w-full justify-start" type="button" variant="ghost" onClick={onClick}>
       {icon}
       <span>{label}</span>
-      <KbdShortcut keyName={keyName} />
+      <KbdShortcut shortcut={shortcut} />
     </Button>
   );
 }

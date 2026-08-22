@@ -57,6 +57,37 @@ afterEach(() => {
 });
 
 describe("keyboard and theme interactions", () => {
+  it("shows the current platform shortcut catalog only in discovery surfaces", async () => {
+    stubProductApi();
+    installLightSystemTheme();
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    render(<App />);
+    await act(async () => Promise.resolve());
+
+    const createTrigger = screen.getByRole("button", { name: "新建 Issue" });
+    expect(createTrigger.querySelector('[data-slot="kbd-group"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+    const overview = screen.getByRole("region", { name: "键盘快捷键" });
+    const items = within(overview).getAllByRole("listitem");
+    expect(items).toHaveLength(5);
+    expect(within(items[0]!).getByText("打开命令菜单")).toBeVisible();
+    expect(within(items[0]!).getByLabelText("⌘ + K")).toBeVisible();
+    expect(within(items[3]!).getByText("选中 Issue 时")).toBeVisible();
+    expect(within(items[3]!).getByLabelText("⌘ + Shift + B")).toBeVisible();
+    expect(within(items[4]!).getByLabelText("Esc")).toBeVisible();
+    expect(within(overview).getAllByText("+", {
+      selector: '[data-slot="kbd-separator"]',
+    })).toHaveLength(5);
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const commandMenu = screen.getByRole("dialog", { name: "命令菜单" });
+    expect(within(commandMenu).getByRole("button", { name: "新建 Issue" }))
+      .toHaveTextContent("⌘+N");
+    expect(within(commandMenu).getByRole("button", { name: "打开项目" }))
+      .toHaveTextContent("⌘+O");
+  });
+
   it("limits the command menu to creating issues and opening projects", async () => {
     stubProductApi();
     installLightSystemTheme();
