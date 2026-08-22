@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 
 import appIconUrl from "../../assets/icons/oh-my-bug.png";
 import { api } from "./api/client.js";
+import type { DirectorySelection } from "./api/transport.js";
 import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
@@ -91,21 +92,38 @@ function AppContent() {
   const [error, setError] = useState("");
   const canCreateIssue = loaded && projects.length > 0;
 
-  const openProjectDirectory = useCallback(async () => {
+  const selectProjectDirectory = useCallback(async (): Promise<DirectorySelection> => {
     setError("");
+    try {
+      return await api.openProjectDirectory();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "无法打开项目目录");
+      return { canceled: true };
+    }
+  }, []);
+
+  const openProjectDirectory = useCallback(async () => {
     writeRoute("projects");
     setView("projects");
     setProjectEditor(undefined);
     setProjectInspection(undefined);
-    try {
-      const selection = await api.openProjectDirectory();
-      if (selection.canceled) return;
-      setProjectInspection(selection.inspection);
-      setProjectEditor("new");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "无法打开项目目录");
-    }
-  }, []);
+    const selection = await selectProjectDirectory();
+    if (selection.canceled) return;
+    setProjectInspection(selection.inspection);
+    setProjectEditor("new");
+  }, [selectProjectDirectory]);
+
+  useEffect(() => {
+    let active = true;
+    if (!projectEditor || projectEditor === "new") return () => { active = false; };
+    setProjectInspection(undefined);
+    void api.inspectProject(projectEditor.path).then((next) => {
+      if (active) setProjectInspection(next);
+    }).catch(() => {
+      if (active) setProjectInspection(undefined);
+    });
+    return () => { active = false; };
+  }, [projectEditor]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -280,6 +298,7 @@ function AppContent() {
             projects={projects}
             onEdit={setProjectEditor}
             onOpenProjectDirectory={openProjectDirectory}
+            onSelectProjectDirectory={selectProjectDirectory}
             onManualProject={() => { setProjectInspection(undefined); setProjectEditor("new"); }}
             onSave={saveProject}
             onSaveSecrets={saveProjectSecrets}
@@ -373,7 +392,7 @@ function Welcome() {
   return <div className="welcome"><div className="welcome-kicker"><Sparkles aria-hidden="true" size={14} />本地 AI 改动实现</div><h2>从 Integration Input 到可验证交付</h2><p>Agent 负责分析与实现；Runtime 负责编排、会话、证据与两次明确确认。</p><div className="flow-preview">{flow.map(([title, description, gate], index) => <div className="flow-step" key={title}><span className="flow-step-number">0{index + 1}</span><div><strong>{title}</strong><span>{description}</span></div><span className="gate-chip">{gate}</span></div>)}</div></div>;
 }
 
-function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, inspection, onEdit, onOpenProjectDirectory, onManualProject, onSave, onSaveSecrets }: {
+function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, inspection, onEdit, onOpenProjectDirectory, onSelectProjectDirectory, onManualProject, onSave, onSaveSecrets }: {
   projects: ProjectDto[];
   manifests: IntegrationPluginManifest[];
   workspaceProviders: WorkspaceProviderManifest[];
@@ -381,6 +400,7 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, in
   inspection?: ProjectInspection;
   onEdit: (project: ProjectDto | "new" | undefined) => void;
   onOpenProjectDirectory: () => Promise<void>;
+  onSelectProjectDirectory: () => Promise<DirectorySelection>;
   onManualProject: () => void;
   onSave: (project: ProjectFormValue) => Promise<ProjectDto | void>;
   onSaveSecrets: (projectId: string, pluginId: string, patch: Record<string, string | null>) => Promise<ProjectDto>;
@@ -400,7 +420,7 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, in
 
   if (editor) {
     const initial = editor === "new" ? undefined : editor;
-    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={formSession} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} onCancel={() => onEdit(undefined)} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
+    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={formSession} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
   }
   return <section className="projects-page">{projects.length ? <ProjectList manifests={manifests} projects={projects} onEdit={onEdit} /> : <div className="page-empty"><FolderKanban size={24} /><h2>打开第一个本机项目</h2><p>选择一个本机目录，然后确认 Agent 与可插拔集成配置。</p><div className="onboarding-actions"><Button type="button" onClick={() => void onOpenProjectDirectory()}>打开项目目录</Button><Button type="button" variant="secondary" onClick={onManualProject}>高级：手动输入路径</Button></div></div>}</section>;
 }

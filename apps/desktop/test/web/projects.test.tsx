@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { IntegrationPluginManifest, ProjectDto, WorkspaceProviderManifest } from "../../src/web/api/types.js";
+import type { IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "../../src/web/api/types.js";
 import { ProjectForm } from "../../src/web/projects/project-form.js";
 
 class ResizeObserverMock {
@@ -30,7 +30,6 @@ const manifests: IntegrationPluginManifest[] = [{
   ],
 }];
 
-const inspection = { path: "/work/checkout", name: "checkout", key: "CHECKOUT", workspaces: {} };
 const workspaceProviders: WorkspaceProviderManifest[] = [
   { id: "local", name: "本机目录", configFields: [] },
   {
@@ -38,11 +37,25 @@ const workspaceProviders: WorkspaceProviderManifest[] = [
     name: "Git Worktree",
     configFields: [
       { key: "baseBranch", type: "string", label: "基线分支", required: true, defaultValue: "main" },
-      { key: "delivery", type: "string", label: "交付方式", required: true, defaultValue: "local" },
-      { key: "remote", type: "string", label: "远程仓库", required: false, defaultValue: "origin" },
+      { key: "pushToRemote", type: "boolean", label: "完成后推送到远程", required: true, defaultValue: false },
     ],
   },
 ];
+const inspection: ProjectInspection = {
+  path: "/work/checkout",
+  name: "checkout",
+  key: "CHECKOUT",
+  workspaces: {
+    local: { available: true },
+    git: {
+      available: true,
+      fields: {
+        pushToRemote: { enabled: false, reason: "当前 Git 仓库未配置远程仓库" },
+      },
+      properties: [],
+    },
+  },
+};
 
 const configuredProject: ProjectDto = {
   id: "project-1",
@@ -78,7 +91,7 @@ describe("Project configuration", () => {
       onSave={async () => undefined}
     />);
 
-    selectTab("工作目录");
+    expect(screen.queryByRole("tab", { name: "工作目录" })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "工作目录方式" }))
       .toHaveTextContent("本机目录");
     expect(screen.queryByLabelText("基线分支")).not.toBeInTheDocument();
@@ -91,16 +104,26 @@ describe("Project configuration", () => {
     await waitFor(() => expect(git).toHaveFocus());
     fireEvent.keyDown(git, { key: "Enter" });
     expect(await screen.findByLabelText("基线分支")).toHaveValue("main");
-    expect(screen.getByLabelText("交付方式")).toHaveValue("local");
-    expect(screen.getByLabelText("远程仓库")).toHaveValue("origin");
+    expect(screen.getByRole("checkbox", { name: "完成后推送到远程" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByText("当前 Git 仓库未配置远程仓库")).toBeVisible();
+    expect(screen.queryByLabelText("远程仓库")).not.toBeInTheDocument();
   });
 
   it("prefills a new project from directory inspection without assuming Git", () => {
-    render(<ProjectForm inspection={inspection} manifests={manifests} onSave={async () => undefined} />);
+    render(<ProjectForm
+      inspection={inspection}
+      manifests={manifests}
+      onSelectDirectory={async () => ({ canceled: true })}
+      onSave={async () => undefined}
+    />);
     expect(screen.getByLabelText("项目名称")).toHaveAttribute("data-slot", "input");
     expect(screen.getByLabelText("项目名称")).toHaveValue("checkout");
     expect(screen.getByLabelText("项目标识")).toHaveValue("CHECKOUT");
     expect(screen.getByLabelText("本机项目路径")).toHaveValue("/work/checkout");
+    expect(screen.getByLabelText("本机项目路径")).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "重新选择目录" })).toBeEnabled();
+    expect(screen.getByText("项目路径和配置仅保存在这台电脑上。")).toBeVisible();
+    expect(screen.queryByText("本机项目已注册")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/remote|分支/i)).not.toBeInTheDocument();
   });
 
@@ -109,7 +132,7 @@ describe("Project configuration", () => {
     const tabs = screen.getByRole("tablist", { name: "项目配置" });
     expect(tabs).toHaveAttribute("aria-orientation", "vertical");
     expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "项目", "工作目录", "Agent", "命令与验收", "Example source",
+      "项目", "Agent", "命令与验收", "Example source",
     ]);
     selectTab("Example source");
     expect(screen.getByRole("checkbox", { name: "启用" })).toHaveAttribute(
@@ -123,6 +146,78 @@ describe("Project configuration", () => {
     expect(screen.getByLabelText("API token")).toHaveAttribute("type", "password");
     expect(screen.getByLabelText("API token")).toHaveAttribute("placeholder", "已配置；输入新值可替换");
     expect(screen.queryByDisplayValue(/token/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the inspected remote path read-only and stores its internal name", async () => {
+    const onSave = vi.fn(async () => undefined);
+    render(<ProjectForm
+      inspection={{
+        ...inspection,
+        workspaces: {
+          ...inspection.workspaces,
+          git: {
+            available: true,
+            configPatch: { remote: "origin" },
+            fields: { pushToRemote: { enabled: true } },
+            properties: [{
+              key: "remoteUrl",
+              label: "远程仓库",
+              value: "git@example.com:team/checkout.git",
+              description: "Git remote: origin",
+            }],
+          },
+        },
+      }}
+      manifests={manifests}
+      workspaceProviders={workspaceProviders}
+      onSave={onSave}
+    />);
+
+    const trigger = screen.getByRole("combobox", { name: "工作目录方式" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const local = await screen.findByRole("option", { name: "本机目录" });
+    fireEvent.keyDown(local, { key: "ArrowDown" });
+    const git = screen.getByRole("option", { name: "Git Worktree" });
+    fireEvent.keyDown(git, { key: "Enter" });
+    expect(await screen.findByText("git@example.com:team/checkout.git")).toBeVisible();
+    expect(screen.queryByDisplayValue("origin")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "完成后推送到远程" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      workspace: {
+        provider: "git",
+        config: { baseBranch: "main", pushToRemote: true, remote: "origin" },
+      },
+    })));
+  });
+
+  it("reselects a directory without saving and ignores picker cancellation", async () => {
+    const selectDirectory = vi.fn()
+      .mockResolvedValueOnce({ canceled: true })
+      .mockResolvedValueOnce({
+        canceled: false,
+        inspection: {
+          ...inspection,
+          path: "/work/other",
+          name: "other",
+          key: "OTHER",
+        },
+      });
+    render(<ProjectForm
+      inspection={inspection}
+      manifests={manifests}
+      workspaceProviders={workspaceProviders}
+      onSelectDirectory={selectDirectory}
+      onSave={async () => undefined}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "重新选择目录" }));
+    await waitFor(() => expect(selectDirectory).toHaveBeenCalledOnce());
+    expect(screen.getByLabelText("本机项目路径")).toHaveValue("/work/checkout");
+    fireEvent.click(screen.getByRole("button", { name: "重新选择目录" }));
+    await waitFor(() => expect(screen.getByLabelText("本机项目路径")).toHaveValue("/work/other"));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("collects generic config and keeps Agent configuration capability-only", async () => {

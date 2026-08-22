@@ -1,4 +1,8 @@
-import type { ConfigValue, WorkspaceProviderManifest } from "../api/types.js";
+import type {
+  ConfigValue,
+  WorkspaceProviderInspection,
+  WorkspaceProviderManifest,
+} from "../api/types.js";
 
 import { Button } from "../components/ui/button.js";
 import { Checkbox } from "../components/ui/checkbox.js";
@@ -8,18 +12,22 @@ interface ConfigFieldsProps {
   fields: WorkspaceProviderManifest["configFields"];
   config: Record<string, ConfigValue>;
   idPrefix?: string;
+  inspection?: WorkspaceProviderInspection;
   onChange(key: string, value: ConfigValue): void;
 }
 
-export function ConfigFields({ fields, config, idPrefix = "config", onChange }: ConfigFieldsProps) {
+export function ConfigFields({ fields, config, idPrefix = "config", inspection, onChange }: ConfigFieldsProps) {
   return <>{fields.map((field) => {
     const description = field.description ? `${idPrefix}-${field.key}-description` : undefined;
+    const state = inspection?.fields?.[field.key];
+    const stateReason = state?.reason ? `${idPrefix}-${field.key}-availability` : undefined;
+    const describedBy = [description, stateReason].filter(Boolean).join(" ") || undefined;
     if (field.type === "boolean") {
-      return <label className="switch-row" key={field.key}>
-        <Checkbox aria-describedby={description} checked={Boolean(config[field.key] ?? field.defaultValue ?? false)} onCheckedChange={(checked) => onChange(field.key, Boolean(checked))} />
-        {field.label}
+      return <div className="switch-field" key={field.key}>
+        <label className="switch-row"><Checkbox aria-describedby={describedBy} checked={Boolean(config[field.key] ?? field.defaultValue ?? false)} disabled={state ? !state.enabled : false} onCheckedChange={(checked) => onChange(field.key, Boolean(checked))} />{field.label}</label>
         {field.description ? <small id={description}>{field.description}</small> : null}
-      </label>;
+        {state?.reason ? <small id={stateReason}>{state.reason}</small> : null}
+      </div>;
     }
     if (field.type === "number") {
       return <label key={field.key}>{field.label}
@@ -43,5 +51,10 @@ export function ConfigFields({ fields, config, idPrefix = "config", onChange }: 
       <Input aria-describedby={description} required={field.required} value={String(config[field.key] ?? field.defaultValue ?? "")} onChange={(event) => onChange(field.key, event.target.value)} />
       {field.description ? <small id={description}>{field.description}</small> : null}
     </label>;
-  })}</>;
+  })}{inspection?.properties?.length ? <dl className="workspace-inspection-properties">
+    {inspection.properties.map((property) => <div key={property.key}>
+      <dt>{property.label}</dt>
+      <dd><code>{property.value}</code>{property.description ? <small>{property.description}</small> : null}</dd>
+    </div>)}
+  </dl> : null}</>;
 }
