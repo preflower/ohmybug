@@ -81,6 +81,7 @@ function AppContent() {
   const [manifests, setManifests] = useState<IntegrationPluginManifest[]>([]);
   const [workspaceProviders, setWorkspaceProviders] = useState<WorkspaceProviderManifest[]>([]);
   const [issues, setIssues] = useState<IssueDto[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string>();
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedIssue, setSelectedIssue] = useState<IssueDto>();
   const [projectEditor, setProjectEditor] = useState<ProjectDto | "new">();
@@ -151,7 +152,9 @@ function AppContent() {
 
   useEffect(() => {
     const onRouteChange = () => {
-      setView(viewFromPath(currentRoute()));
+      const nextView = viewFromPath(currentRoute());
+      setView(nextView);
+      if (nextView !== "issues") setActiveProjectId(undefined);
       setProjectEditor(undefined);
       setProjectInspection(undefined);
     };
@@ -215,8 +218,17 @@ function AppContent() {
   const goTo = (next: View) => {
     writeRoute(next);
     setView(next);
+    if (next === "issues") setActiveProjectId(undefined);
     setProjectEditor(undefined);
     setProjectInspection(undefined);
+  };
+
+  const goToProjectIssues = (projectId: string) => {
+    goTo("issues");
+    setActiveProjectId(projectId);
+    const nextIssue = issues.find((issue) => issue.projectId === projectId);
+    setSelectedId(nextIssue?.id);
+    setSelectedIssue((current) => current?.id === nextIssue?.id ? current : undefined);
   };
 
   const navigate = (next: View) => (event: MouseEvent<HTMLAnchorElement>) => {
@@ -254,6 +266,10 @@ function AppContent() {
   const pageTitle = view === "issues" ? "Issues" : view === "projects" ? "Projects" : "Settings";
   const projectEditing = view === "projects" && Boolean(projectEditor);
   const viewTitle = projectEditing ? "项目配置" : pageTitle;
+  const activeProject = projects.find((project) => project.id === activeProjectId);
+  const visibleIssues = activeProjectId
+    ? issues.filter((issue) => issue.projectId === activeProjectId)
+    : issues;
 
   return (
     <div className="app-shell">
@@ -261,13 +277,13 @@ function AppContent() {
         <div className="brand"><img alt="" className="brand-mark" draggable="false" src={appIconUrl} /><span className="brand-name">Oh My Bug ?!</span></div>
         {canCreateIssue ? <NewIssueDialog open={newIssueOpen} projects={projects} trigger={<Button aria-label="新建 Issue" className="new-issue" type="button"><span>新建 Issue</span><KbdShortcut className="shortcut" keyName="N" /><Plus aria-hidden="true" size={14} /></Button>} onOpenChange={setNewIssueOpen} onCreated={(issue) => { setIssues((current) => newestIssuesFirst([...current, issue])); setSelectedId(issue.id); setSelectedIssue(issue); goTo("issues"); }} /> : null}
         <nav aria-label="主导航" className="nav-list">
-          <a aria-label="Issues" aria-current={view === "issues" ? "page" : undefined} className="nav-item" href={routeHref("issues")} onClick={navigate("issues")}><CircleDot aria-hidden="true" size={15} strokeWidth={1.7} /><span>Issues</span></a>
+          <a aria-label="Issues" aria-current={view === "issues" && !activeProjectId ? "page" : undefined} className="nav-item" href={routeHref("issues")} onClick={navigate("issues")}><CircleDot aria-hidden="true" size={15} strokeWidth={1.7} /><span>Issues</span></a>
           <a aria-label="Projects" aria-current={view === "projects" ? "page" : undefined} className="nav-item" href={routeHref("projects")} onClick={navigate("projects")}><FolderKanban aria-hidden="true" size={15} strokeWidth={1.7} /><span>Projects</span></a>
           <a aria-label="Settings" aria-current={view === "settings" ? "page" : undefined} className="nav-item" href={routeHref("settings")} onClick={navigate("settings")}><Settings aria-hidden="true" size={15} strokeWidth={1.7} /><span>Settings</span></a>
         </nav>
         <div className="sidebar-section">
           <p className="sidebar-label">Projects</p>
-          {projects.map((project) => <Button className="nav-item" key={project.id} type="button" variant="ghost" onClick={() => { goTo("projects"); setProjectInspection(undefined); setProjectEditor(project); }}><span className="project-dot" /><span>{project.name ?? project.key}</span></Button>)}
+          {projects.map((project) => <Button aria-current={view === "issues" && activeProjectId === project.id ? "page" : undefined} className="nav-item" key={project.id} type="button" variant="ghost" onClick={() => goToProjectIssues(project.id)}><span className="project-dot" /><span>{project.name ?? project.key}</span></Button>)}
           {loaded && projects.length === 0 ? <Button className="nav-item" type="button" variant="ghost" onClick={() => goTo("projects")}><span className="project-dot" /><span>打开本机项目</span></Button> : null}
         </div>
         <div className="sidebar-footer"><div className="agent-mode"><Activity size={13} /><span>Codex</span><i /></div></div>
@@ -275,7 +291,7 @@ function AppContent() {
 
       <main className="main-area">
         <header className="location-header">
-          <div className="breadcrumb"><Bug aria-hidden="true" size={14} /><strong>{pageTitle}</strong><span>/</span><span>{view === "issues" ? "全部" : view === "projects" ? projectEditor && projectEditor !== "new" ? projectEditor.name ?? projectEditor.key : "本机项目" : "运行环境"}</span></div>
+          <div className="breadcrumb"><Bug aria-hidden="true" size={14} /><strong>{pageTitle}</strong><span>/</span><span>{view === "issues" ? activeProject?.name ?? activeProject?.key ?? "全部" : view === "projects" ? projectEditor && projectEditor !== "new" ? projectEditor.name ?? projectEditor.key : "本机项目" : "运行环境"}</span></div>
           <div className="system-state"><span className={`state-dot ${error ? "state-dot-error" : ""}`} /><span>{error || "Codex 已连接"}</span></div>
         </header>
         {view !== "issues" ? <header className="view-header">
@@ -286,7 +302,7 @@ function AppContent() {
         </header> : null}
 
         {view === "issues" ? (
-          <IssueWorkspace issues={issues} projects={projects} selected={selectedIssue} selectedId={selectedId} onSelect={setSelectedId} onDeselect={() => { setSelectedId(undefined); setSelectedIssue(undefined); }} onRefresh={refreshIssue} onUpdated={updateIssue} />
+          <IssueWorkspace issues={visibleIssues} projects={projects} selected={selectedIssue} selectedId={selectedId} onSelect={setSelectedId} onDeselect={() => { setSelectedId(undefined); setSelectedIssue(undefined); }} onRefresh={refreshIssue} onUpdated={updateIssue} />
         ) : view === "projects" ? (
           <ProjectsWorkspace
             editor={projectEditor}
