@@ -38,6 +38,8 @@ flowchart LR
 
 `@oh-my-bug/core` 只定义纯状态转换和跨包端口。具体 Agent、Integration 与 Storage 实现互不依赖，只有 `apps/runtime/src/composition.ts` 可以导入并组装它们。Integration 插件是内置包，但通过同一清单、校验和生命周期合同可插拔；Desktop 不包含任何渠道字段分支。
 
+Runtime Worker 使用单进程有界调度器，同时推进最多 3 个不同 Issue。新进入队列的 Issue 会在存在空闲槽位时立即启动；同一 Issue 的 Workspace、Assessment、Repair、Evidence 与 Finalize 操作始终串行。每个 Issue 的独立 worktree 继续作为文件系统隔离边界，SQLite compare-and-swap 更新继续作为持久状态保护。
+
 ## Issue 主流程
 
 ```mermaid
