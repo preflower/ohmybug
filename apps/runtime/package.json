@@ -9,11 +9,13 @@
   },
   "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
   "dependencies": {
+    "@cordisjs/core": "3.18.1",
     "@oh-my-bug/agent-codex": "workspace:*",
     "@oh-my-bug/core": "workspace:*",
     "@oh-my-bug/integration-dingtalk": "workspace:*",
     "@oh-my-bug/integration-manual": "workspace:*",
     "@oh-my-bug/integration-sentry": "workspace:*",
+    "@oh-my-bug/module-api": "workspace:*",
     "@oh-my-bug/storage": "workspace:*",
     "sharp": "^0.35.3",
     "zod": "^4.1.11"

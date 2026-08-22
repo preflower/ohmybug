@@ -187,6 +187,9 @@ importers:
 
   apps/runtime:
     dependencies:
+      '@cordisjs/core':
+        specifier: 3.18.1
+        version: 3.18.1
       '@oh-my-bug/agent-codex':
         specifier: workspace:*
         version: link:../../packages/agent-codex
@@ -202,6 +205,9 @@ importers:
       '@oh-my-bug/integration-sentry':
         specifier: workspace:*
         version: link:../../packages/integration-sentry
+      '@oh-my-bug/module-api':
+        specifier: workspace:*
+        version: link:../../packages/module-api
       '@oh-my-bug/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -471,6 +477,9 @@ packages:
   '@bramus/specificity@2.4.2':
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
+
+  '@cordisjs/core@3.18.1':
+    resolution: {integrity: sha512-yRuATOamFxeD1ztE2L3o1SaHuT2zw5DTXijQYxt9azVNeILbvtomfGG6sLZegrynJO9XZbNvXbOlQ7LBJDOlAg==}
 
   '@csstools/color-helpers@6.1.1':
     resolution: {integrity: sha512-gLNsunvwf3mCi5u5o46/Z/JcJMnhbHSaZ69rkgPzNM3J4s8hWwpPUQB6/tt0EDFyCiWzxANlx+2LJwpYj4zS1w==}
@@ -2285,6 +2294,9 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  cosmokit@1.8.1:
+    resolution: {integrity: sha512-PDBv4l90xZKrUsZ0vtoycgZpO/j4iFsqJXrAxsyBDsnQRI7ZMJXIjgDJsKNjd5L8jnVnnlrDCdhkFbTncgCVjQ==}
 
   cross-dirname@0.1.0:
     resolution: {integrity: sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q==}
@@ -5082,6 +5094,10 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
+  '@cordisjs/core@3.18.1':
+    dependencies:
+      cosmokit: 1.8.1
+
   '@csstools/color-helpers@6.1.1': {}
 
   '@csstools/css-calc@3.3.0(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)':
@@ -6919,6 +6935,8 @@ snapshots:
       parse-json: 5.2.0
     optionalDependencies:
       typescript: 6.0.3
+
+  cosmokit@1.8.1: {}
 
   cross-dirname@0.1.0: {}
 
