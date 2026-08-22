@@ -150,6 +150,11 @@ export const branchInfoSchema = z.object({
   commit: identifierSchema,
   remote: identifierSchema.optional(),
 }).strict();
+export const issueWorkspaceInfoSchema = z.object({
+  providerId: identifierSchema,
+  status: z.enum(["PREPARING", "READY", "FAILED", "RELEASED"]),
+  branch: identifierSchema.optional(),
+}).strict();
 export const approvalResultSchema = z.object({
   issue: issueSchema,
   branch: branchInfoSchema.optional(),

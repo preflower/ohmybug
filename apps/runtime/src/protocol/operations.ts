@@ -16,6 +16,7 @@ import {
   identifierSchema,
   integrationHealthSchema,
   issueEventPageSchema,
+  issueWorkspaceInfoSchema,
   manualIssueCommandSchema,
   outputSchemas,
   productProjectSchema,
@@ -123,6 +124,12 @@ export const runtimeOperations = {
     output: outputSchemas.issue,
     renderer: true,
     invoke: (service, input) => service.getIssue(input),
+  }),
+  getIssueWorkspace: operation({
+    input: projectIdSchema,
+    output: issueWorkspaceInfoSchema.nullable(),
+    renderer: true,
+    invoke: (service, input) => service.getIssueWorkspace(input),
   }),
   submitManual: operation({
     input: manualIssueCommandSchema,

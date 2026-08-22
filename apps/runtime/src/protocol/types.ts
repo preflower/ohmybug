@@ -10,6 +10,7 @@ import type {
 } from "@oh-my-bug/core";
 import type {
   BranchInfo,
+  WorkspaceBinding,
   WorkspaceProjectConfiguration,
   WorkspaceProviderInspection,
   WorkspaceProviderManifest,
@@ -103,6 +104,12 @@ export interface ApprovalResult {
   branch?: BranchInfo;
 }
 
+export interface IssueWorkspaceInfo {
+  providerId: string;
+  status: WorkspaceBinding["status"];
+  branch?: string;
+}
+
 export interface RuntimeApi {
   health(input: Record<string, never>): Promise<RuntimeHealth>;
   listIntegrationPlugins(input: Record<string, never>): Promise<IntegrationPluginManifest[]>;
@@ -120,6 +127,7 @@ export interface RuntimeApi {
   integrationHealth(input: Record<string, never>): Promise<Record<string, IntegrationHealth>>;
   listIssues(input: { id?: string }): Promise<Issue[]>;
   getIssue(input: { id: string }): Promise<Issue>;
+  getIssueWorkspace(input: { id: string }): Promise<IssueWorkspaceInfo | null>;
   submitManual(input: ManualIssueCommand): Promise<Issue>;
   approveAssessment(input: { id: string; input: ApproveAssessmentInput }): Promise<Issue>;
   /** @deprecated Use approveAssessment. */

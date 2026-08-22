@@ -140,6 +140,25 @@ describe("RuntimeService", () => {
     expect(issue).not.toHaveProperty("branch");
   });
 
+  it("returns null workspace metadata and preserves missing-Issue errors", async () => {
+    const { root, service } = await harness();
+    const projectDirectory = join(root, "workspace-metadata-project");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+    const project = await service.createProject({
+      path: projectDirectory,
+      key: "META",
+    });
+    const created = await service.submitManual({
+      projectId: project.id,
+      commandId: "manual-workspace-metadata",
+      content: "Show workspace metadata",
+    });
+
+    await expect(service.getIssueWorkspace({ id: created.id })).resolves.toBeNull();
+    await expect(service.getIssueWorkspace({ id: "missing-issue" }))
+      .rejects.toThrow("ISSUE_NOT_FOUND");
+  });
+
   it("inspects a directory without Git and creates a manifest-configured Project", async () => {
     const { root, service } = await harness();
     const projectDirectory = join(root, "checkout app");

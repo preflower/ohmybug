@@ -18,6 +18,7 @@ describe("Runtime protocol operation registry", () => {
       "integrationHealth",
       "listIssues",
       "getIssue",
+      "getIssueWorkspace",
       "submitManual",
       "approveAssessment",
       "approveBugAssessment",
@@ -53,5 +54,18 @@ describe("Runtime protocol operation registry", () => {
       ...issue,
       branch: { name: "ohmybug/omb-2", commit: "abc123" },
     })).toThrow();
+  });
+
+  it("validates nullable Issue workspace metadata", () => {
+    expect(runtimeOperations.getIssueWorkspace.output.parse({
+      providerId: "git",
+      status: "READY",
+      branch: "ohmybug/omb-1",
+    })).toEqual({
+      providerId: "git",
+      status: "READY",
+      branch: "ohmybug/omb-1",
+    });
+    expect(runtimeOperations.getIssueWorkspace.output.parse(null)).toBeNull();
   });
 });

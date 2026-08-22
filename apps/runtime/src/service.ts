@@ -24,12 +24,14 @@ import type {
   ApprovalResult,
   CreateProjectInput,
   EvidencePayload,
+  IssueWorkspaceInfo,
   ProductProject,
   ProjectInspection,
   RuntimeApi,
   RuntimeHealth,
   UpdateProjectInput,
 } from "./protocol/types.js";
+import { readIssueWorkspaceInfo } from "./workspaces/issue-workspace-info.js";
 
 interface RuntimeFacade {
   health(): RuntimeHealth;
@@ -255,6 +257,16 @@ export class RuntimeService implements RuntimeApi {
   async getIssue(input: { id: string }): Promise<Issue> {
     this.assertAccepting();
     return this.dependencies.runtime.getIssue(input.id);
+  }
+
+  async getIssueWorkspace(input: { id: string }): Promise<IssueWorkspaceInfo | null> {
+    this.assertAccepting();
+    const issue = this.dependencies.runtime.getIssue(input.id);
+    return readIssueWorkspaceInfo({
+      issue,
+      persistence: this.dependencies.workspacePersistence,
+      registry: this.dependencies.workspaceRegistry,
+    });
   }
 
   async submitManual(input: {
