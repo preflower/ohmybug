@@ -72,6 +72,7 @@ describe("Issue workflow", () => {
     );
 
     const remainingActions = [
+      "IMPLEMENTATION_READY",
       "DELIVERY_READY",
       "EVIDENCE_ACCEPTED",
       "APPROVE_DELIVERY",
@@ -90,7 +91,7 @@ describe("Issue workflow", () => {
       title: "支付页无法打开",
       titleSource: "assessment",
       repair: { iteration: 1 },
-      revision: 8,
+      revision: 9,
     });
   });
 
@@ -115,6 +116,7 @@ describe("Issue workflow", () => {
     );
 
     const implemented = ([
+      "IMPLEMENTATION_READY",
       "DELIVERY_READY",
       "EVIDENCE_ACCEPTED",
       "APPROVE_DELIVERY",
@@ -245,7 +247,8 @@ describe("Issue workflow", () => {
   it.each([
     ["ASSESSMENT_REVIEW", "REQUEST_REASSESSMENT", "ASSESSING"],
     ["ASSESSMENT_FAILED", "RETRY_ASSESSMENT", "ASSESSING"],
-    ["EVIDENCE_CHECK", "EVIDENCE_REJECTED", "REPAIRING"],
+    ["EVIDENCE_CHECK", "EVIDENCE_REJECTED", "EVIDENCE_CAPTURE"],
+    ["EVIDENCE_FAILED", "RETRY_EVIDENCE", "EVIDENCE_CAPTURE"],
     ["REPAIR_FAILED", "RETRY_REPAIR", "REPAIRING"],
     ["ACCEPTANCE_REVIEW", "REJECT_DELIVERY", "REPAIRING"],
   ] as const)("%s + %s -> %s", (from, action, to) => {
@@ -285,7 +288,7 @@ describe("Issue workflow", () => {
     expect(result.lastFailure).toBeUndefined();
   });
 
-  it("increments the repair iteration when a system or human rejection loops", () => {
+  it("increments only implementation retries, not evidence retries", () => {
     const rejectedEvidence = transitionIssue(
       {
         ...issueAt("EVIDENCE_CHECK"),
@@ -303,7 +306,7 @@ describe("Issue workflow", () => {
       "2026-08-20T07:35:00.000Z",
     );
 
-    expect(rejectedEvidence.repair).toEqual({ iteration: 3 });
+    expect(rejectedEvidence.repair).toEqual({ iteration: 2 });
     expect(rejectedDelivery.repair).toEqual({ iteration: 6 });
   });
 

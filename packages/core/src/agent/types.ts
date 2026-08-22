@@ -13,6 +13,12 @@ export type AgentSessionRef = z.infer<typeof agentSessionRefSchema>;
 export type VisualEvidence = z.infer<typeof visualEvidenceSchema>;
 export type Delivery = z.infer<typeof deliverySchema>;
 
+export interface DeliveryDraft {
+  summary: string;
+  repairIteration: number;
+  implementationCompletedAt: string;
+}
+
 export interface RepairEvidencePath {
   type: VisualEvidence["type"];
   label: string;

@@ -122,8 +122,14 @@ export function recordDelivery(
     ...next,
     repair: {
       iteration: issue.repair?.iteration ?? 1,
+      ...(issue.repair?.evidenceRetries !== undefined
+        ? { evidenceRetries: issue.repair.evidenceRetries }
+        : {}),
       ...(issue.repair?.automaticEvidenceRetries !== undefined
         ? { automaticEvidenceRetries: issue.repair.automaticEvidenceRetries }
+        : {}),
+      ...(issue.repair?.deliveryDraft
+        ? { deliveryDraft: issue.repair.deliveryDraft }
         : {}),
       delivery,
     },
@@ -138,14 +144,56 @@ export function recordEvidenceRejection(
 ): Issue {
   const feedback = required(feedbackInput, "FEEDBACK_REQUIRED");
   const next = transitionIssue(issue, "EVIDENCE_REJECTED", now);
+  const { delivery: _delivery, ...repair } = next.repair ?? { iteration: 1 };
   return {
     ...next,
-    repair: { ...(next.repair ?? { iteration: 1 }), feedback },
+    repair: { ...repair, feedback },
   };
 }
 
 export function recordEvidenceAcceptance(issue: Issue, now: string): Issue {
   return transitionIssue(issue, "EVIDENCE_ACCEPTED", now);
+}
+
+export function recordImplementationDraft(
+  issue: Issue,
+  summaryInput: string,
+  now: string,
+): Issue {
+  const summary = required(summaryInput, "DELIVERY_SUMMARY_REQUIRED");
+  const iteration = issue.repair?.iteration ?? 1;
+  const next = transitionIssue(issue, "IMPLEMENTATION_READY", now);
+  return {
+    ...next,
+    repair: {
+      iteration,
+      evidenceRetries: issue.repair?.evidenceRetries ?? 0,
+      deliveryDraft: {
+        summary,
+        repairIteration: iteration,
+        implementationCompletedAt: now,
+      },
+    },
+    lastFailure: undefined,
+  };
+}
+
+export function recordEvidenceFailure(
+  issue: Issue,
+  errorCode: string,
+  now: string,
+): Issue {
+  return withFailure(
+    transitionIssue(issue, "EVIDENCE_ERRORED", now),
+    { stage: "EVIDENCE", code: required(errorCode, "ERROR_CODE_REQUIRED") },
+  );
+}
+
+export function retryEvidence(issue: Issue, now: string): Issue {
+  return {
+    ...transitionIssue(issue, "RETRY_EVIDENCE", now),
+    lastFailure: undefined,
+  };
 }
 
 export function recordRepairFailure(

@@ -14,7 +14,9 @@ export const issueStatusSchema = z.enum([
   "ASSESSMENT_REVIEW",
   "ASSESSMENT_FAILED",
   "REPAIRING",
+  "EVIDENCE_CAPTURE",
   "EVIDENCE_CHECK",
+  "EVIDENCE_FAILED",
   "REPAIR_FAILED",
   "ACCEPTANCE_REVIEW",
   "APPROVED",
@@ -41,15 +43,21 @@ export const issueSchema: z.ZodType<Issue> = z
     repair: z
       .object({
         iteration: z.number().int().positive(),
+        evidenceRetries: z.number().int().nonnegative().optional(),
         automaticEvidenceRetries: z.number().int().nonnegative().optional(),
         feedback: z.string().trim().min(1).optional(),
+        deliveryDraft: z.object({
+          summary: z.string().trim().min(1),
+          repairIteration: z.number().int().positive(),
+          implementationCompletedAt: z.iso.datetime(),
+        }).strict().optional(),
         delivery: deliverySchema.optional(),
       })
       .strict()
       .optional(),
     lastFailure: z
       .object({
-        stage: z.enum(["ASSESSMENT", "REPAIR"]),
+        stage: z.enum(["ASSESSMENT", "REPAIR", "EVIDENCE"]),
         code: z.string().trim().min(1),
       })
       .strict()

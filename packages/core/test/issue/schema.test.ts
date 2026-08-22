@@ -9,7 +9,7 @@ const issue: Issue = {
   identifier: "OMB-1",
   title: "支付页无法打开",
   titleSource: "assessment",
-  status: "REPAIR_FAILED",
+  status: "EVIDENCE_FAILED",
   inputs: [{
     id: "input-1",
     integration: "manual",
@@ -21,6 +21,12 @@ const issue: Issue = {
   agentSession: { agent: "fake", sessionId: "session-1" },
   repair: {
     iteration: 2,
+    evidenceRetries: 2,
+    deliveryDraft: {
+      summary: "支付页已恢复",
+      repairIteration: 2,
+      implementationCompletedAt: "2026-08-20T11:08:00.000Z",
+    },
     feedback: "Show the full response",
     delivery: {
       summary: "支付页已恢复",
@@ -31,7 +37,7 @@ const issue: Issue = {
       }],
     },
   },
-  lastFailure: { stage: "REPAIR", code: "AGENT_FAILURE" },
+  lastFailure: { stage: "EVIDENCE", code: "EVIDENCE_RETRY_LIMIT_REACHED" },
   revision: 7,
   createdAt: "2026-08-20T11:00:00.000Z",
   updatedAt: "2026-08-20T11:10:00.000Z",

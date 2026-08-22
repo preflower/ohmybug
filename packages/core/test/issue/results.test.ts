@@ -6,7 +6,9 @@ import {
   recordAssessmentFailure,
   recordDelivery,
   recordEvidenceAcceptance,
+  recordEvidenceFailure,
   recordEvidenceRejection,
+  recordImplementationDraft,
   recordRepairFailure,
   replaceAgentSession,
   requestAssessmentChanges,
@@ -34,6 +36,11 @@ const delivery: Delivery = {
     label: "支付页正常打开",
     evidenceId: `sha256-${"a".repeat(64)}`,
   }],
+};
+const draft = {
+  summary: delivery.summary,
+  repairIteration: 2,
+  implementationCompletedAt: now,
 };
 
 function issueAt(status: IssueStatus): Issue {
@@ -140,9 +147,18 @@ describe("Issue workflow results", () => {
     });
   });
 
-  it("preserves the previous Delivery and explicit feedback across repair loops", () => {
-    const repaired = recordDelivery(
+  it("persists implementation before evidence and retries proof without a new iteration", () => {
+    const drafted = recordImplementationDraft(
       { ...issueAt("REPAIRING"), repair: { iteration: 2 } },
+      delivery.summary,
+      now,
+    );
+    expect(drafted).toMatchObject({
+      status: "EVIDENCE_CAPTURE",
+      repair: { iteration: 2, evidenceRetries: 0, deliveryDraft: draft },
+    });
+    const repaired = recordDelivery(
+      drafted,
       delivery,
       now,
     );
@@ -150,8 +166,12 @@ describe("Issue workflow results", () => {
 
     const evidenceRejected = recordEvidenceRejection(repaired, "Screenshot is unreadable", now);
     expect(evidenceRejected).toMatchObject({
-      status: "REPAIRING",
-      repair: { iteration: 3, feedback: "Screenshot is unreadable", delivery },
+      status: "EVIDENCE_CAPTURE",
+      repair: {
+        iteration: 2,
+        feedback: "Screenshot is unreadable",
+        deliveryDraft: draft,
+      },
     });
     const humanRejected = requestDeliveryChanges(
       { ...repaired, status: "ACCEPTANCE_REVIEW" },
@@ -171,11 +191,14 @@ describe("Issue workflow results", () => {
       status: "REPAIR_FAILED",
       lastFailure: { stage: "REPAIR", code: "AGENT_FAILURE" },
     });
-    expect(recordRepairFailure(issueAt("EVIDENCE_CHECK"), "EVIDENCE_INSPECTION_FAILED", now))
-      .toMatchObject({
-        status: "REPAIR_FAILED",
-        lastFailure: { stage: "REPAIR", code: "EVIDENCE_INSPECTION_FAILED" },
-      });
+    expect(recordEvidenceFailure({
+      ...issueAt("EVIDENCE_CAPTURE"),
+      repair: { iteration: 2, deliveryDraft: draft },
+    }, "EVIDENCE_RETRY_LIMIT_REACHED", now)).toMatchObject({
+      status: "EVIDENCE_FAILED",
+      repair: { iteration: 2, deliveryDraft: draft },
+      lastFailure: { stage: "EVIDENCE", code: "EVIDENCE_RETRY_LIMIT_REACHED" },
+    });
   });
 
   it("persists assessment feedback and rejects blank diagnostics", () => {
