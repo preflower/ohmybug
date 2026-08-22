@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,6 +12,25 @@ import * as runtimeComposition from "../src/composition.js";
 const { createDesktopRuntimeComposition } = runtimeComposition;
 
 describe("Runtime composition boundary", () => {
+  it("keeps concrete Workspace packages in composition only", () => {
+    const runtimeSource = resolve(import.meta.dirname, "../src");
+    const sourceFiles = (directory: string): string[] =>
+      readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const path = resolve(directory, entry.name);
+        return entry.isDirectory() ? sourceFiles(path) : /\.tsx?$/.test(path) ? [path] : [];
+      });
+    const compositionPath = resolve(runtimeSource, "composition.ts");
+    const nonComposition = sourceFiles(runtimeSource)
+      .filter((path) => path !== compositionPath)
+      .map((path) => readFileSync(path, "utf8"))
+      .join("\n");
+    const composition = readFileSync(compositionPath, "utf8");
+
+    expect(nonComposition).not.toMatch(/@oh-my-bug\/workspace-(local|git)/);
+    expect(composition).toContain("localWorkspaceFactory");
+    expect(composition).toContain("gitWorkspaceFactory");
+  });
+
   it("reads a browser-safe snapshot from the persisted desktop Runtime", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "omb-runtime-browser-snapshot-"));
     const timestamp = "2026-08-21T08:00:00.000Z";

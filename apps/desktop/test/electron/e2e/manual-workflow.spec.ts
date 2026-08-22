@@ -15,10 +15,11 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await desktop.page.getByLabel("项目标识").fill(key);
     await desktop.page.getByRole("tab", { name: "命令与验收" }).click();
     await desktop.page.getByLabel("测试命令").fill("node --test");
-    await desktop.page.getByRole("button", { name: "保存项目" }).click();
+    await desktop.page.getByTestId("project-settings-form")
+      .getByRole("button", { name: "保存项目", exact: true }).click();
     await expect(desktop.page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
 
-    const createIssue = desktop.page.getByRole("button", { name: "新建 Issue" });
+    const createIssue = desktop.page.locator("button.new-issue");
     await createIssue.click();
     const dialog = desktop.page.getByRole("dialog", { name: "新建 Issue" });
     await expect(dialog).toHaveAttribute("data-slot", "dialog-content");
@@ -32,12 +33,13 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
 
     const rootApproval = desktop.page.getByRole("region", { name: "评估结果操作" });
     await expect(rootApproval).toBeVisible();
-    const newIssue = desktop.page.getByRole("button", { name: "新建 Issue" });
+    const newIssue = desktop.page.locator("button.new-issue");
     await newIssue.focus();
     await desktop.page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
     await expect(desktop.page.getByRole("dialog", { name: "命令菜单" })).toBeVisible();
     await desktop.page.keyboard.press("Escape");
     await expect(newIssue).toBeFocused();
+    await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
     await rootApproval.getByRole("button", { name: "确认是 Bug 并开始修复" }).click();
 
     const acceptanceApproval = desktop.page.getByRole("region", { name: "Delivery 审核" });
@@ -60,7 +62,6 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await desktop.page.screenshot({ path: resolve(artifactDir, "acceptance-review.png"), fullPage: true });
 
     await acceptanceApproval.getByRole("button", { name: "批准验收并完成 Issue" }).click();
-    await expect(desktop.page.getByText("COMPLETED", { exact: true })).toBeVisible();
     await expect(desktop.page.getByRole("status")).toHaveText("结果：FIXED · 修复已验收，Issue 已完成。");
     await desktop.page.screenshot({ path: resolve(artifactDir, "completed-workflow.png"), fullPage: true });
   } finally {

@@ -86,6 +86,14 @@ function workspaceRelativeEscapes(): Array<{ path: string; specifier: string }> 
 }
 
 describe("Core architecture boundary", () => {
+  it("does not know about module hosts or concrete Workspace implementations", () => {
+    const coreSources = sourceFiles(sourceRoot)
+      .map((path) => readFileSync(path, "utf8"))
+      .join("\n");
+
+    expect(coreSources).not.toMatch(/cordis|WorkspaceProvider|GitWorkspace|worktree/i);
+  });
+
   it("has zod as its only runtime dependency", () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
       dependencies?: Record<string, string>;

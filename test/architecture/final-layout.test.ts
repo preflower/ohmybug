@@ -34,7 +34,10 @@ describe("final monorepo layout", () => {
       "integration-dingtalk",
       "integration-manual",
       "integration-sentry",
+      "module-api",
       "storage",
+      "workspace-git",
+      "workspace-local",
     ]);
   });
 

@@ -20,6 +20,14 @@ function resolvesToSource(importer: string, specifier: string): boolean {
 }
 
 describe("Desktop Runtime boundary", () => {
+  it("does not import Cordis or concrete Workspace implementations", () => {
+    const desktopSources = sourceFiles(sourceRoot)
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+
+    expect(desktopSources).not.toMatch(/@cordisjs|@oh-my-bug\/workspace-(local|git)/);
+  });
+
   it("keeps the Runtime package surface limited to its root API and public protocol", () => {
     const manifest = JSON.parse(readFileSync(resolve(desktopRoot, "../runtime/package.json"), "utf8")) as {
       exports?: Record<string, string>;
