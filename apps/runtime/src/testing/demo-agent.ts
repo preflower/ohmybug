@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  AgentTurnInterruptedError,
   assessmentSchema,
   canonicalHash,
   type AgentAdapter,
@@ -85,12 +86,12 @@ export class DemoAgentAdapter implements AgentAdapter {
 
   async cancel(
     session: AgentSessionRef,
-    _reason: AgentInterruptionReason,
+    reason: AgentInterruptionReason,
   ): Promise<void> {
     this.assertRef(session);
     const active = this.active.get(session.sessionId);
     if (!active) return;
-    active.abort.abort("cancel");
+    active.abort.abort(new AgentTurnInterruptedError(reason));
     await active.done;
   }
 
@@ -136,7 +137,11 @@ export class DemoAgentAdapter implements AgentAdapter {
     try {
       return await run(abort.signal);
     } catch (error) {
-      if (abort.signal.aborted) throw new Error("RUN_CANCELED", { cause: error });
+      if (abort.signal.aborted) {
+        throw abort.signal.reason instanceof Error
+          ? abort.signal.reason
+          : new Error("RUN_CANCELED", { cause: error });
+      }
       throw error;
     } finally {
       this.active.delete(session.sessionId);

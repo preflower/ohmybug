@@ -55,10 +55,14 @@ export class OhMyBugRuntime {
       this.state = "stopping";
       this.stopped = true;
       this.dependencies.commands.stopAccepting();
+      this.worker.beginShutdown();
       await this.dependencies.integrations?.stop();
       await Promise.allSettled(
         this.dependencies.store.listIssues().flatMap((issue) => issue.agentSession
-          ? [this.dependencies.agents.forSession(issue.agentSession).cancel(issue.agentSession)]
+          ? [this.dependencies.agents.forSession(issue.agentSession).cancel(
+              issue.agentSession,
+              "RUNTIME_STOPPING",
+            )]
           : []),
       );
       await this.worker.drain();

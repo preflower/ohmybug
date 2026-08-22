@@ -42,15 +42,21 @@ const MAX_AUTOMATIC_EVIDENCE_RETRIES = 2;
 
 export class RuntimeWorker {
   private running?: Promise<void>;
+  private accepting = true;
 
   constructor(private readonly dependencies: RuntimeWorkerDependencies) {}
 
   kick(): void {
+    if (!this.accepting) return;
     this.running ??= this.runUntilIdle().finally(() => { this.running = undefined; });
   }
 
+  beginShutdown(): void {
+    this.accepting = false;
+  }
+
   async drain(): Promise<void> {
-    this.kick();
+    if (this.accepting) this.kick();
     await this.running;
   }
 
@@ -66,7 +72,10 @@ export class RuntimeWorker {
   }
 
   private async runUntilIdle(): Promise<void> {
-    while (this.dependencies.store.listPendingOperations().length > 0) await this.drainOne();
+    while (
+      this.accepting &&
+      this.dependencies.store.listPendingOperations().length > 0
+    ) await this.drainOne();
   }
 
   private event(issueId: string, type: string, actor: "SYSTEM" | "AGENT" = "SYSTEM", data = {}) {

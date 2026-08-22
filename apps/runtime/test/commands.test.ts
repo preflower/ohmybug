@@ -262,7 +262,7 @@ describe("Runtime human commands", () => {
     expect(agent.createdSessions).toEqual([]);
   });
 
-  it("cancels through the session-selected Agent before persisting", async () => {
+  it("persists cancellation before aborting the session-selected Agent", async () => {
     const agent = new FakeAgent();
     const { commands, store } = createHarness(agent);
     const issue = reviewedIssue({
@@ -270,11 +270,21 @@ describe("Runtime human commands", () => {
       agentSession: { agent: "fake", sessionId: "session-active" },
     });
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
+    agent.cancel = async (session, reason) => {
+      expect(store.getIssue(issue.id)?.status).toBe("CANCELED");
+      agent.canceledSessions.push(session.sessionId);
+      agent.cancellations.push({ sessionId: session.sessionId, reason });
+    };
 
     await expect(commands.cancelIssue(issue.id)).resolves.toMatchObject({
       status: "CANCELED",
       resolution: "CANCELED",
     });
     expect(agent.canceledSessions).toEqual(["session-active"]);
+    expect(agent.cancellations).toEqual([{
+      sessionId: "session-active",
+      reason: "USER_CANCELED",
+    }]);
+    expect(store.listPendingOperations()).toEqual([]);
   });
 });

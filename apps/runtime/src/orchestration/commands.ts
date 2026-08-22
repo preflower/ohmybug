@@ -231,10 +231,26 @@ export class RuntimeCommands {
 
   async cancelIssue(issueId: string): Promise<Issue> {
     this.assertAccepting();
-    const issue = this.getIssue(issueId);
-    if (issue.agentSession) await this.dependencies.agents.forSession(issue.agentSession).cancel(issue.agentSession);
-    return this.change(issueId, "ISSUE_CANCELED", null, (current, now) =>
+    const canceled = this.change(issueId, "ISSUE_CANCELED", null, (current, now) =>
       transitionIssue(current, "CANCEL", now));
+    if (!canceled.agentSession) return canceled;
+
+    try {
+      await this.dependencies.agents.forSession(canceled.agentSession).cancel(
+        canceled.agentSession,
+        "USER_CANCELED",
+      );
+    } catch (error) {
+      this.dependencies.store.transaction((tx) => tx.appendEvent({
+        id: this.dependencies.id(),
+        issueId,
+        type: "AGENT_CANCEL_FAILED",
+        actor: "SYSTEM",
+        data: { message: publicModuleError(error) },
+        occurredAt: this.dependencies.now(),
+      }));
+    }
+    return canceled;
   }
 
   private change(
