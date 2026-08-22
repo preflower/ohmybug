@@ -42,6 +42,23 @@ export const workspaceProviderManifestSchema = z.object({
   name: identifierSchema,
   configFields: z.array(configFieldSchema),
 }).strict();
+const workspaceInspectionFieldStateSchema = z.object({
+  enabled: z.boolean(),
+  reason: z.string().min(1).optional(),
+}).strict();
+const workspaceInspectionPropertySchema = z.object({
+  key: identifierSchema,
+  label: identifierSchema,
+  value: z.string().min(1),
+  description: z.string().min(1).optional(),
+}).strict();
+const workspaceProviderInspectionSchema = z.object({
+  available: z.boolean(),
+  reason: z.string().min(1).optional(),
+  configPatch: configSchema.optional(),
+  fields: z.record(identifierSchema, workspaceInspectionFieldStateSchema).optional(),
+  properties: z.array(workspaceInspectionPropertySchema).optional(),
+}).strict();
 
 const projectFields = {
   path: identifierSchema,
@@ -84,6 +101,7 @@ export const projectInspectionSchema = z.object({
   path: identifierSchema,
   name: identifierSchema,
   key: z.string().regex(/^[A-Z][A-Z0-9-]*$/),
+  workspaces: z.record(identifierSchema, workspaceProviderInspectionSchema),
 }).strict();
 export const manualIssueCommandSchema = z.object({
   projectId: identifierSchema,

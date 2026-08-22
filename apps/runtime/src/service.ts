@@ -109,7 +109,8 @@ export class RuntimeService implements RuntimeApi {
     this.assertAccepting();
     const path = await canonicalDirectory(input.path);
     const name = basename(path);
-    return { path, name, key: projectKey(name) };
+    const workspaces = await this.dependencies.workspaceRegistry.inspectProject(path);
+    return { path, name, key: projectKey(name), workspaces };
   }
 
   async getProject(input: { id: string }): Promise<ProductProject> {

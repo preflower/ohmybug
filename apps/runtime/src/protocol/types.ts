@@ -11,11 +11,13 @@ import type {
 import type {
   BranchInfo,
   WorkspaceProjectConfiguration,
+  WorkspaceProviderInspection,
   WorkspaceProviderManifest,
 } from "@oh-my-bug/module-api";
 
 export type { ConfigValue, IntegrationHealth, IntegrationPluginManifest } from "@oh-my-bug/core";
 export type { BranchInfo, WorkspaceProjectConfiguration, WorkspaceProviderManifest } from "@oh-my-bug/module-api";
+export type { WorkspaceProviderInspection } from "@oh-my-bug/module-api";
 
 export type RuntimeHealth = {
   state: "starting" | "ready" | "stopping" | "stopped";
@@ -25,6 +27,7 @@ export interface ProjectInspection {
   path: string;
   name: string;
   key: string;
+  workspaces: Record<string, WorkspaceProviderInspection>;
 }
 
 export interface ProjectIntegrationInput {

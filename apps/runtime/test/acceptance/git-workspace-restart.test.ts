@@ -63,6 +63,10 @@ describe("Git Workspace restart acceptance", () => {
     if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
     await runtime.drain();
     const assessed = runtime.getIssue(created.issue.id);
+    expect(assessed).toMatchObject({
+      status: "ASSESSMENT_REVIEW",
+      assessment,
+    });
     runtime.approveAssessment(assessed.id, {
       assessmentRevision: assessment.revision,
       assessmentContentHash: assessment.contentHash,

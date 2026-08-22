@@ -205,7 +205,11 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     }
 
     const remoteUrl = configuration.pushToRemote
-      ? await runGit(repositoryPath, ["remote", "get-url", configuration.remote!])
+      ? await tryRunGit(
+          repositoryPath,
+          ["remote", "get-url", configuration.remote!],
+          [2],
+        )
       : undefined;
     const state: GitWorkspaceState = {
       issueId: input.issue.id,

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { IntegrationPlugin } from "@oh-my-bug/core";
 import { ManualIntegrationAdapter } from "@oh-my-bug/integration-manual";
 import { localWorkspaceFactory } from "@oh-my-bug/workspace-local";
+import type { WorkspaceProviderFactory } from "@oh-my-bug/module-api";
 import {
   LocalEvidenceStore,
   MemorySecretStore,
@@ -107,6 +108,7 @@ async function harness(
     store,
     secrets,
     workspacePersistence,
+    workspaceRegistry,
     service: new RuntimeService({
       runtime,
       store,
@@ -147,6 +149,7 @@ describe("RuntimeService", () => {
       path: await realpath(projectDirectory),
       name: "checkout app",
       key: "CHECKOUT-APP",
+      workspaces: { local: { available: true } },
     });
     const created = await service.createProject({
       path: projectDirectory,
@@ -170,6 +173,46 @@ describe("RuntimeService", () => {
     await expect(service.listWorkspaceProviders({})).resolves.toEqual([
       expect.objectContaining({ id: "local", name: "本机目录" }),
     ]);
+  });
+
+  it("isolates Workspace provider inspection evidence and failures", async () => {
+    const { root, service, workspaceRegistry } = await harness();
+    const projectDirectory = join(root, "checkout");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+    const provider = (id: string, inspectProject: WorkspaceProviderFactory["inspectProject"]): WorkspaceProviderFactory => ({
+      id,
+      manifest: { id, name: id, configFields: [] },
+      validate() {},
+      create: () => ({
+        id,
+        acquire: async () => ({ projectPath: projectDirectory, resourceId: `${id}:1` }),
+        publish: async () => undefined,
+        release: async () => undefined,
+      }),
+      inspectProject,
+    });
+    workspaceRegistry.register(provider("git", async () => ({
+      available: true,
+      configPatch: { remote: "origin" },
+      fields: { pushToRemote: { enabled: true } },
+      properties: [{ key: "remoteUrl", label: "远程仓库", value: "/srv/git/checkout.git" }],
+    })));
+    workspaceRegistry.register(provider("broken", async () => {
+      throw new Error("INSPECTION_FAILED");
+    }));
+
+    await expect(service.inspectProject({ path: projectDirectory })).resolves.toMatchObject({
+      workspaces: {
+        local: { available: true },
+        git: {
+          available: true,
+          configPatch: { remote: "origin" },
+          fields: { pushToRemote: { enabled: true } },
+          properties: [{ key: "remoteUrl", label: "远程仓库", value: "/srv/git/checkout.git" }],
+        },
+        broken: { available: false, reason: "INSPECTION_FAILED" },
+      },
+    });
   });
 
   it("rejects unavailable Workspace providers without partially updating the Project", async () => {
