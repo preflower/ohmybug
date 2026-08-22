@@ -7,6 +7,7 @@ import {
   type AgentAdapter,
   type AgentPlugin,
   type AgentPluginContext,
+  type AgentInterruptionReason,
   type AgentSessionRef,
   type AssessInput,
   type Assessment,
@@ -82,7 +83,10 @@ export class DemoAgentAdapter implements AgentAdapter {
     });
   }
 
-  async cancel(session: AgentSessionRef): Promise<void> {
+  async cancel(
+    session: AgentSessionRef,
+    _reason: AgentInterruptionReason,
+  ): Promise<void> {
     this.assertRef(session);
     const active = this.active.get(session.sessionId);
     if (!active) return;

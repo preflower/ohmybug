@@ -6,6 +6,28 @@ import type {
   RepairResult,
 } from "./types.js";
 
+export type AgentInterruptionReason = "RUNTIME_STOPPING" | "USER_CANCELED";
+
+export class AgentTurnInterruptedError extends Error {
+  readonly code = "AGENT_TURN_INTERRUPTED" as const;
+
+  constructor(readonly reason: AgentInterruptionReason) {
+    super(`AGENT_TURN_INTERRUPTED:${reason}`);
+    this.name = "AgentTurnInterruptedError";
+  }
+}
+
+export function isAgentTurnInterruptedError(
+  value: unknown,
+): value is AgentTurnInterruptedError {
+  return value instanceof AgentTurnInterruptedError;
+}
+
+export interface AgentContinuation {
+  reason: "RUNTIME_INTERRUPTED";
+  previousAttemptId?: string;
+}
+
 export interface ProjectCommands {
   install?: string;
   test?: string;
@@ -29,6 +51,7 @@ export interface AssessInput {
   issue: Issue;
   project: ProjectContext;
   feedback?: string;
+  continuation?: AgentContinuation;
 }
 
 export interface RepairInput {
@@ -38,6 +61,7 @@ export interface RepairInput {
   evidenceDirectory: string;
   previousDelivery?: Delivery;
   feedback?: string;
+  continuation?: AgentContinuation;
 }
 
 export interface AgentAdapter {
@@ -47,5 +71,8 @@ export interface AgentAdapter {
     input: AssessInput,
   ): Promise<Assessment>;
   repair(session: AgentSessionRef, input: RepairInput): Promise<RepairResult>;
-  cancel(session: AgentSessionRef): Promise<void>;
+  cancel(
+    session: AgentSessionRef,
+    reason: AgentInterruptionReason,
+  ): Promise<void>;
 }

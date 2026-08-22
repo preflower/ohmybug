@@ -1,6 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import type {
+import {
+  AgentTurnInterruptedError,
+  isAgentTurnInterruptedError,
+  type AgentInterruptionReason,
   AgentAdapter,
   AgentSessionRef,
   Assessment,
@@ -30,6 +33,22 @@ const project = {
 } satisfies ProjectContext;
 
 describe("AgentAdapter", () => {
+  it.each(["RUNTIME_STOPPING", "USER_CANCELED"] as const)(
+    "preserves the typed %s interruption reason",
+    (reason) => {
+      const error = new AgentTurnInterruptedError(reason);
+
+      expect(error).toMatchObject({
+        name: "AgentTurnInterruptedError",
+        code: "AGENT_TURN_INTERRUPTED",
+        reason,
+        message: `AGENT_TURN_INTERRUPTED:${reason}`,
+      });
+      expect(isAgentTurnInterruptedError(error)).toBe(true);
+      expect(isAgentTurnInterruptedError(new Error(error.message))).toBe(false);
+    },
+  );
+
   it("exposes only session, assessment, repair, and cancellation capabilities", () => {
     expectTypeOf<keyof AgentAdapter>().toEqualTypeOf<
       "createSession" | "assess" | "repair" | "cancel"
@@ -38,7 +57,10 @@ describe("AgentAdapter", () => {
 
   it("reuses one logical session for assessment and repair", async () => {
     const usedSessions: string[] = [];
-    const canceledSessions: string[] = [];
+    const cancellations: Array<{
+      sessionId: string;
+      reason: AgentInterruptionReason;
+    }> = [];
     const session: AgentSessionRef = { agent: "fake", sessionId: "session-1" };
     const assessment: Assessment = {
       revision: 1,
@@ -70,8 +92,8 @@ describe("AgentAdapter", () => {
         usedSessions.push(ref.sessionId);
         return repair;
       },
-      async cancel(ref) {
-        canceledSessions.push(ref.sessionId);
+      async cancel(ref, reason) {
+        cancellations.push({ sessionId: ref.sessionId, reason });
       },
     };
 
@@ -83,9 +105,12 @@ describe("AgentAdapter", () => {
       assessment,
       evidenceDirectory: "/tmp/evidence/issue-1/1",
     });
-    await adapter.cancel(ref);
+    await adapter.cancel(ref, "USER_CANCELED");
 
     expect(usedSessions).toEqual(["session-1", "session-1"]);
-    expect(canceledSessions).toEqual(["session-1"]);
+    expect(cancellations).toEqual([{
+      sessionId: "session-1",
+      reason: "USER_CANCELED",
+    }]);
   });
 });

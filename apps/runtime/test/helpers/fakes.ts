@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type {
   AgentAdapter,
+  AgentInterruptionReason,
   AgentSessionRef,
   Assessment,
   EvidenceInspection,
@@ -40,6 +41,10 @@ export class FakeAgent implements AgentAdapter {
   repairSessions: string[] = [];
   repairInputs: Parameters<AgentAdapter["repair"]>[1][] = [];
   canceledSessions: string[] = [];
+  cancellations: Array<{
+    sessionId: string;
+    reason: AgentInterruptionReason;
+  }> = [];
   assessError?: Error;
   repairError?: Error;
   nextAssessment: Assessment = fakeAssessment;
@@ -71,8 +76,12 @@ export class FakeAgent implements AgentAdapter {
     return this.nextRepairResult;
   }
 
-  async cancel(session: AgentSessionRef): Promise<void> {
+  async cancel(
+    session: AgentSessionRef,
+    reason: AgentInterruptionReason,
+  ): Promise<void> {
     this.canceledSessions.push(session.sessionId);
+    this.cancellations.push({ sessionId: session.sessionId, reason });
   }
 }
 

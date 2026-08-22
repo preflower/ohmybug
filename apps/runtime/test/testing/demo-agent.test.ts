@@ -96,7 +96,7 @@ describe("demo Agent adapter", () => {
 
     const assessing = adapter.assess(session, { issue, project });
     await Promise.resolve();
-    await adapter.cancel(session);
+    await adapter.cancel(session, "USER_CANCELED");
 
     await expect(assessing).rejects.toThrow("RUN_CANCELED");
   });
