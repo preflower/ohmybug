@@ -4,6 +4,7 @@ import type {
   AgentEventDto,
   IntegrationHealth,
   IssueDto,
+  IssueWorkspaceInfoDto,
   ProjectDto,
   ProjectInspection,
 } from "./types.js";
@@ -15,6 +16,7 @@ export interface DevelopmentSnapshot {
   projectInspections?: Record<string, ProjectInspection>;
   projects: ProjectDto[];
   issues: IssueDto[];
+  issueWorkspaces?: Record<string, Exclude<IssueWorkspaceInfoDto, null>>;
   issueEvents: Record<string, AgentEventDto[]>;
   integrationHealth: Record<string, IntegrationHealth>;
 }
@@ -74,6 +76,7 @@ export function createBrowserDevelopmentTransport(
       if (!issue) throw new Error("ISSUE_NOT_FOUND");
       return issue;
     },
+    issueWorkspace: async (id) => (await snapshot()).issueWorkspaces?.[id] ?? null,
     submitManual: readOnly,
     approveAssessment: readOnly,
     confirmNotABug: readOnly,

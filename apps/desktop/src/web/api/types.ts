@@ -13,6 +13,7 @@ import type {
 
 export type ProjectDto = ProductProject;
 export type IssueDto = RuntimeOperationOutput<"getIssue">;
+export type IssueWorkspaceInfoDto = RuntimeOperationOutput<"getIssueWorkspace">;
 export type ApprovalResultDto = RuntimeOperationOutput<"approveDelivery">;
 export type BranchInfoDto = NonNullable<ApprovalResultDto["branch"]>;
 export type AgentEventDto = RuntimeOperationOutput<"issueEvents">["items"][number];

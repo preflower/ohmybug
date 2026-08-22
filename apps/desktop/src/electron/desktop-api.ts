@@ -38,6 +38,7 @@ export interface DesktopApi {
   integrationHealth(): Promise<RuntimeOperationOutput<"integrationHealth">>;
   listIssues(projectId?: string): Promise<RuntimeOperationOutput<"listIssues">>;
   getIssue(id: string): Promise<RuntimeOperationOutput<"getIssue">>;
+  getIssueWorkspace(id: string): Promise<RuntimeOperationOutput<"getIssueWorkspace">>;
   submitManual(input: ManualIssueCommand): Promise<RuntimeOperationOutput<"submitManual">>;
   approveAssessment(
     id: string,
@@ -102,6 +103,7 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     integrationHealth: () => request("integrationHealth", {}),
     listIssues: (id) => request("listIssues", { id }),
     getIssue: (id) => request("getIssue", { id }),
+    getIssueWorkspace: (id) => request("getIssueWorkspace", { id }),
     submitManual: (input) => request("submitManual", input),
     approveAssessment: (id, input) => request("approveAssessment", { id, input }),
     approveBugAssessment: (id, input) => request("approveBugAssessment", { id, input }),

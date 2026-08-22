@@ -14,7 +14,7 @@ describe("preload desktop API", () => {
     expect(Object.isFrozen(api)).toBe(true);
     expect(Object.keys(api).sort()).toEqual([
       "approveAssessment", "approveBugAssessment", "approveDelivery", "cancelIssue", "confirmDuplicate",
-      "confirmNotABug", "createProject", "getIssue", "getProject", "listIntegrationPlugins",
+      "confirmNotABug", "createProject", "getIssue", "getIssueWorkspace", "getProject", "listIntegrationPlugins",
       "inspectProject", "listIssues", "listProjects", "listWorkspaceProviders", "onRuntimeState", "openProjectDirectory",
       "readEvidence", "rebuildAgentSession", "rejectDelivery", "requestReassessment", "retryIssue",
       "setIntegrationSecrets", "submitManual", "subscribeIssueEvents", "integrationHealth", "updateProject"
@@ -35,6 +35,7 @@ describe("preload desktop API", () => {
     await expect(api.listProjects()).resolves.toEqual([{ id: "project-1" }]);
     await api.inspectProject("/work/checkout");
     await api.openProjectDirectory();
+    await api.getIssueWorkspace("issue-1");
 
     expect(ipc.invoke).toHaveBeenNthCalledWith(1, "oh-my-bug:request", {
       operation: "listProjects",
@@ -45,5 +46,9 @@ describe("preload desktop API", () => {
       payload: { path: "/work/checkout" }
     });
     expect(ipc.invoke).toHaveBeenNthCalledWith(3, "oh-my-bug:open-project-directory");
+    expect(ipc.invoke).toHaveBeenNthCalledWith(4, "oh-my-bug:request", {
+      operation: "getIssueWorkspace",
+      payload: { id: "issue-1" },
+    });
   });
 });

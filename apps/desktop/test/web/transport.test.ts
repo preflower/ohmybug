@@ -31,6 +31,11 @@ describe("renderer product transports", () => {
         issue: { id: "issue-1", status: "COMPLETED" },
         branch: { name: "ohmybug/chk-1", commit: "abc123" },
       })),
+      getIssueWorkspace: vi.fn(async () => ({
+        providerId: "git",
+        status: "READY" as const,
+        branch: "ohmybug/chk-1",
+      })),
       subscribeIssueEvents: vi.fn((_id: string, _cursor: number, listener: (event: unknown) => void) => {
         listener({ issueId: "issue-1", cursor: 2, events: [{ id: "event-2", sequence: 2 }] });
         return unsubscribe;
@@ -53,6 +58,12 @@ describe("renderer product transports", () => {
       issue: { id: "issue-1", status: "COMPLETED" },
       branch: { name: "ohmybug/chk-1", commit: "abc123" },
     });
+    await expect(transport.issueWorkspace("issue-1")).resolves.toEqual({
+      providerId: "git",
+      status: "READY",
+      branch: "ohmybug/chk-1",
+    });
+    expect(bridge.getIssueWorkspace).toHaveBeenCalledWith("issue-1");
     const stop = transport.subscribeIssueEvents("issue-1", 1, listener);
     stop();
     const evidence = await transport.evidenceSource("issue-1", "evidence-1");

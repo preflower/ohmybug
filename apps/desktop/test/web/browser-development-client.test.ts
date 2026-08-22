@@ -86,6 +86,13 @@ describe("browser development Runtime client", () => {
       },
       projects: [project],
       issues: [issue],
+      issueWorkspaces: {
+        "issue-1": {
+          providerId: "git",
+          status: "READY" as const,
+          branch: "ohmybug/omb-1",
+        },
+      },
       issueEvents: {
         "issue-1": [{
           id: "issue-1:1",
@@ -123,6 +130,7 @@ describe("browser development Runtime client", () => {
           inspectProject(path: string): Promise<unknown>;
           issues(): Promise<unknown>;
           issue(id: string): Promise<unknown>;
+          issueWorkspace(id: string): Promise<unknown>;
           integrationHealth(): Promise<unknown>;
           subscribeIssueEvents(
             id: string,
@@ -156,6 +164,10 @@ describe("browser development Runtime client", () => {
     expect(await transport?.project("project-1")).toEqual(project);
     expect(await transport?.inspectProject(project.path)).toEqual(snapshot.projectInspections["project-1"]);
     expect(await transport?.issue("issue-1")).toEqual(issue);
+    expect(await transport?.issueWorkspace("issue-1")).toEqual(
+      snapshot.issueWorkspaces["issue-1"],
+    );
+    expect(await transport?.issueWorkspace("missing-issue")).toBeNull();
     let delivered: { events: unknown[]; cursor: number } | undefined;
     transport?.subscribeIssueEvents("issue-1", 0, (events, cursor) => {
       delivered = { events, cursor };

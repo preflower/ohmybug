@@ -13,6 +13,7 @@ import type {
   AssessmentReference,
   IntegrationHealth,
   IssueDto,
+  IssueWorkspaceInfoDto,
   ProjectDto,
   ProjectInspection,
 } from "./types.js";
@@ -35,6 +36,7 @@ export interface ProductTransport {
   ): Promise<ProjectDto>;
   issues(): Promise<IssueDto[]>;
   issue(id: string): Promise<IssueDto>;
+  issueWorkspace(id: string): Promise<IssueWorkspaceInfoDto>;
   submitManual(input: {
     projectId: string;
     commandId: string;
