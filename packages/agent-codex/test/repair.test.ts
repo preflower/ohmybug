@@ -16,6 +16,25 @@ const assessment: Assessment = {
 };
 
 describe("Codex repair", () => {
+  it("allows implementation to finish before evidence is available", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-draft", "thread-draft");
+    const adapter = new CodexAgentAdapter({
+      sessions,
+      client: new FixtureClient([JSON.stringify({ summary: "Implemented", evidence: [] })]),
+    });
+
+    await expect(adapter.repair(
+      { agent: "codex", sessionId: "logical-draft" },
+      {
+        issue: issue({ status: "REPAIRING", assessment, repair: { iteration: 1 } }),
+        project,
+        assessment,
+        evidenceDirectory: "/private/intake/issue-1/1",
+      },
+    )).resolves.toEqual({ summary: "Implemented", evidence: [] });
+  });
+
   it("implements an approved Feature assessment", async () => {
     const featureAssessment: Assessment = {
       ...assessment,

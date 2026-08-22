@@ -3,6 +3,8 @@ import type {
   AgentSessionRef,
   Assessment,
   Delivery,
+  DeliveryDraft,
+  RepairEvidencePath,
   RepairResult,
 } from "./types.js";
 
@@ -64,6 +66,20 @@ export interface RepairInput {
   continuation?: AgentContinuation;
 }
 
+export interface EvidenceCaptureInput {
+  issue: Issue;
+  project: ProjectContext;
+  assessment: Assessment;
+  deliveryDraft: DeliveryDraft;
+  evidenceDirectory: string;
+  feedback?: string;
+  continuation?: AgentContinuation;
+}
+
+export interface EvidenceCaptureResult {
+  evidence: RepairEvidencePath[];
+}
+
 export interface AgentAdapter {
   createSession(input: CreateSessionInput): Promise<AgentSessionRef>;
   assess(
@@ -71,6 +87,10 @@ export interface AgentAdapter {
     input: AssessInput,
   ): Promise<Assessment>;
   repair(session: AgentSessionRef, input: RepairInput): Promise<RepairResult>;
+  captureEvidence(
+    session: AgentSessionRef,
+    input: EvidenceCaptureInput,
+  ): Promise<EvidenceCaptureResult>;
   cancel(
     session: AgentSessionRef,
     reason: AgentInterruptionReason,

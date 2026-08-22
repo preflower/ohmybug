@@ -1,4 +1,4 @@
-import type { AssessInput, RepairInput } from "@oh-my-bug/core";
+import type { AssessInput, EvidenceCaptureInput, RepairInput } from "@oh-my-bug/core";
 
 export function assessmentPrompt(input: AssessInput): string {
   return [
@@ -30,8 +30,28 @@ export function repairPrompt(input: RepairInput): string {
   ].join("\n\n");
 }
 
+export function evidencePrompt(input: EvidenceCaptureInput): string {
+  return [
+    "Capture real visual evidence for the already completed implementation. Do not reimplement or refactor the product change.",
+    ...continuationPrompt(input.continuation),
+    "Inspect the existing files and prior verification first. Modify product code only if the acceptance run exposes a real defect.",
+    `Write screenshots or recordings under: ${input.evidenceDirectory}`,
+    "Visual evidence must directly capture a real acceptance run that proves the change. Never submit generated, reconstructed, mocked, or illustrative visuals.",
+    "Return only screenshots or recordings using relative paths beneath that directory; do not return absolute paths.",
+    `Issue: ${JSON.stringify(input.issue)}`,
+    `Approved Assessment: ${JSON.stringify(input.assessment)}`,
+    `Completed implementation: ${JSON.stringify(input.deliveryDraft)}`,
+    `Project commands: ${JSON.stringify(input.project.commands ?? {})}`,
+    `Project instructions: ${input.project.instructions ?? "None"}`,
+    ...(input.feedback ? [`Human/evidence feedback: ${input.feedback}`] : []),
+  ].join("\n\n");
+}
+
 function continuationPrompt(
-  continuation: AssessInput["continuation"] | RepairInput["continuation"],
+  continuation:
+    | AssessInput["continuation"]
+    | RepairInput["continuation"]
+    | EvidenceCaptureInput["continuation"],
 ): string[] {
   return continuation?.reason === "RUNTIME_INTERRUPTED"
     ? [

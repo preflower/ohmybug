@@ -41,6 +41,8 @@ export class FakeAgent implements AgentAdapter {
   assessInputs: Parameters<AgentAdapter["assess"]>[1][] = [];
   repairSessions: string[] = [];
   repairInputs: Parameters<AgentAdapter["repair"]>[1][] = [];
+  evidenceSessions: string[] = [];
+  evidenceInputs: Parameters<AgentAdapter["captureEvidence"]>[1][] = [];
   canceledSessions: string[] = [];
   cancellations: Array<{
     sessionId: string;
@@ -48,8 +50,12 @@ export class FakeAgent implements AgentAdapter {
   }> = [];
   assessError?: Error;
   repairError?: Error;
+  evidenceError?: Error;
   nextAssessment: Assessment = fakeAssessment;
   nextRepairResult: RepairResult = repairResult;
+  nextEvidenceResult: Awaited<ReturnType<AgentAdapter["captureEvidence"]>> = {
+    evidence: repairResult.evidence,
+  };
 
   async createSession(): Promise<AgentSessionRef> {
     const session = { agent: this.id, sessionId: `session-${this.nextSession++}` };
@@ -79,6 +85,20 @@ export class FakeAgent implements AgentAdapter {
       create: { width: 4, height: 4, channels: 3, background: "#45a978" },
     }).png().toFile(join(input.evidenceDirectory, "proof.png"));
     return this.nextRepairResult;
+  }
+
+  async captureEvidence(
+    session: AgentSessionRef,
+    input: Parameters<AgentAdapter["captureEvidence"]>[1],
+  ): Promise<Awaited<ReturnType<AgentAdapter["captureEvidence"]>>> {
+    this.evidenceSessions.push(session.sessionId);
+    this.evidenceInputs.push(input);
+    if (this.evidenceError) throw this.evidenceError;
+    await mkdir(input.evidenceDirectory, { recursive: true });
+    await sharp({
+      create: { width: 4, height: 4, channels: 3, background: "#45a978" },
+    }).png().toFile(join(input.evidenceDirectory, "proof.png"));
+    return this.nextEvidenceResult;
   }
 
   async cancel(

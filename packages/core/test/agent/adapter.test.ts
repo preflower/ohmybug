@@ -49,9 +49,9 @@ describe("AgentAdapter", () => {
     },
   );
 
-  it("exposes only session, assessment, repair, and cancellation capabilities", () => {
+  it("exposes session, assessment, repair, evidence, and cancellation capabilities", () => {
     expectTypeOf<keyof AgentAdapter>().toEqualTypeOf<
-      "createSession" | "assess" | "repair" | "cancel"
+      "createSession" | "assess" | "repair" | "captureEvidence" | "cancel"
     >();
   });
 
@@ -92,6 +92,10 @@ describe("AgentAdapter", () => {
         usedSessions.push(ref.sessionId);
         return repair;
       },
+      async captureEvidence(ref) {
+        usedSessions.push(ref.sessionId);
+        return { evidence: repair.evidence };
+      },
       async cancel(ref, reason) {
         cancellations.push({ sessionId: ref.sessionId, reason });
       },
@@ -105,9 +109,20 @@ describe("AgentAdapter", () => {
       assessment,
       evidenceDirectory: "/tmp/evidence/issue-1/1",
     });
+    await adapter.captureEvidence(ref, {
+      issue,
+      project,
+      assessment,
+      deliveryDraft: {
+        summary: repair.summary,
+        repairIteration: 1,
+        implementationCompletedAt: "2026-08-20T06:15:00.000Z",
+      },
+      evidenceDirectory: "/tmp/evidence/issue-1/1",
+    });
     await adapter.cancel(ref, "USER_CANCELED");
 
-    expect(usedSessions).toEqual(["session-1", "session-1"]);
+    expect(usedSessions).toEqual(["session-1", "session-1", "session-1"]);
     expect(cancellations).toEqual([{
       sessionId: "session-1",
       reason: "USER_CANCELED",

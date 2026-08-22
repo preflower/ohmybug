@@ -16,6 +16,8 @@ import {
   type AssessInput,
   type Assessment,
   type CreateSessionInput,
+  type EvidenceCaptureInput,
+  type EvidenceCaptureResult,
   type Issue,
   type RepairInput,
   type RepairResult,
@@ -31,14 +33,16 @@ import { isNativeThreadUnavailableError, SdkCodexClient } from "./codex-client.j
 import {
   assessmentOutputSchema,
   parseAssessmentOutput,
+  parseEvidenceOutput,
   parseRepairOutput,
+  evidenceOutputSchema,
   repairOutputSchema,
 } from "./output-schemas.js";
-import { assessmentPrompt, repairPrompt } from "./prompts.js";
+import { assessmentPrompt, evidencePrompt, repairPrompt } from "./prompts.js";
 
 export interface CodexActivity {
   sessionId: string;
-  stage: "ASSESSMENT" | "REPAIR";
+  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE";
   event: CodexClientEvent;
 }
 
@@ -137,6 +141,42 @@ export class CodexAgentAdapter implements AgentAdapter {
     };
   }
 
+  async captureEvidence(
+    session: AgentSessionRef,
+    input: EvidenceCaptureInput,
+  ): Promise<EvidenceCaptureResult> {
+    if (input.assessment.verdict !== "BUG" && input.assessment.verdict !== "FEATURE") {
+      throw new Error("IMPLEMENTABLE_ASSESSMENT_REQUIRED");
+    }
+    const rawOutput = await this.turn(
+      session,
+      input,
+      "EVIDENCE",
+      {
+        workingDirectory: requireProjectPath(input.issue),
+        sandboxMode: "workspace-write",
+        networkAccessEnabled: false,
+        approvalPolicy: "never",
+      },
+      evidencePrompt(input),
+      evidenceOutputSchema,
+    );
+    let output: ReturnType<typeof parseEvidenceOutput>;
+    try {
+      output = parseEvidenceOutput(rawOutput);
+    } catch (error) {
+      await this.reportFailure(session.sessionId, "EVIDENCE", error);
+      throw error;
+    }
+    return {
+      evidence: output.evidence.map((evidence) => ({
+        type: evidence.type,
+        label: evidence.label,
+        relativePath: validateEvidencePath(evidence.relativePath),
+      })),
+    };
+  }
+
   async cancel(
     session: AgentSessionRef,
     reason: AgentInterruptionReason,
@@ -150,7 +190,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   private async turn(
     session: AgentSessionRef,
-    input: AssessInput | RepairInput,
+    input: AssessInput | RepairInput | EvidenceCaptureInput,
     stage: CodexActivity["stage"],
     threadOptions: CodexThreadOptions,
     prompt: string,
@@ -213,7 +253,7 @@ export class CodexAgentAdapter implements AgentAdapter {
   private assertState(
     state: AgentSessionRecord | undefined,
     session: AgentSessionRef,
-    input: AssessInput | RepairInput,
+    input: AssessInput | RepairInput | EvidenceCaptureInput,
   ): asserts state is AgentSessionRecord {
     if (!state) throw new Error("AGENT_SESSION_NOT_FOUND");
     if (state.lifecycle !== "ACTIVE") throw new Error("AGENT_SESSION_RETIRED");
@@ -314,7 +354,7 @@ function publicActivity(
   stage: CodexActivity["stage"],
   event: CodexClientEvent,
 ): AgentActivityUpdate | undefined {
-  const stageName = stage === "ASSESSMENT" ? "分析" : "实现";
+  const stageName = stage === "ASSESSMENT" ? "分析" : stage === "REPAIR" ? "实现" : "采集证据";
   if (event.type === "thread.started") {
     return activity(sessionId, stage, "AGENT_SESSION_CONNECTED", "Codex 会话已连接");
   }

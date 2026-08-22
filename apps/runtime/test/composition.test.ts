@@ -253,6 +253,7 @@ describe("Runtime composition boundary", () => {
             throw new Error("NETWORK_FAILURE");
           },
           async repair() { throw new Error("NOT_USED"); },
+          async captureEvidence() { throw new Error("NOT_USED"); },
           async cancel() {},
         };
       },

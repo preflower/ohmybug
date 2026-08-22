@@ -7,6 +7,7 @@ const adapter: AgentAdapter = {
   createSession: async () => ({ agent: "codex", sessionId: "logical-1" }),
   assess: async () => { throw new Error("UNUSED"); },
   repair: async () => { throw new Error("UNUSED"); },
+  captureEvidence: async () => { throw new Error("UNUSED"); },
   cancel: async () => undefined,
 };
 

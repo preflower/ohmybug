@@ -18,6 +18,10 @@ export interface RepairOutput {
   evidence: RepairEvidenceOutput[];
 }
 
+export interface EvidenceOutput {
+  evidence: RepairEvidenceOutput[];
+}
+
 export const assessmentOutputSchema = {
   type: "object",
   properties: {
@@ -45,7 +49,7 @@ export const repairOutputSchema = {
     summary: { type: "string", minLength: 1 },
     evidence: {
       type: "array",
-      minItems: 1,
+      minItems: 0,
       maxItems: 20,
       items: {
         type: "object",
@@ -60,6 +64,20 @@ export const repairOutputSchema = {
     },
   },
   required: ["summary", "evidence"],
+  additionalProperties: false,
+} as const;
+
+export const evidenceOutputSchema = {
+  type: "object",
+  properties: {
+    evidence: {
+      type: "array",
+      minItems: 1,
+      maxItems: 20,
+      items: repairOutputSchema.properties.evidence.items,
+    },
+  },
+  required: ["evidence"],
   additionalProperties: false,
 } as const;
 
@@ -90,21 +108,31 @@ export function parseAssessmentOutput(value: unknown): AssessmentOutput {
 
 export function parseRepairOutput(value: unknown): RepairOutput {
   const object = strictObject(value, ["summary", "evidence"]);
-  if (!Array.isArray(object.evidence) || object.evidence.length === 0 || object.evidence.length > 20) {
-    throw new Error("VISUAL_EVIDENCE_REQUIRED");
+  if (!Array.isArray(object.evidence) || object.evidence.length > 20) {
+    throw new Error("VISUAL_EVIDENCE_INVALID");
   }
   return {
     summary: requiredString(object.summary, "DELIVERY_SUMMARY_REQUIRED"),
-    evidence: object.evidence.map((entry) => {
-      const item = strictObject(entry, ["type", "label", "relativePath"]);
-      const type = requiredString(item.type, "EVIDENCE_TYPE_REQUIRED");
-      if (type !== "screenshot" && type !== "recording") throw new Error("EVIDENCE_TYPE_INVALID");
-      return {
-        type,
-        label: requiredString(item.label, "EVIDENCE_LABEL_REQUIRED"),
-        relativePath: requiredString(item.relativePath, "EVIDENCE_PATH_REQUIRED"),
-      };
-    }),
+    evidence: object.evidence.map(parseEvidenceItem),
+  };
+}
+
+export function parseEvidenceOutput(value: unknown): EvidenceOutput {
+  const object = strictObject(value, ["evidence"]);
+  if (!Array.isArray(object.evidence) || object.evidence.length === 0 || object.evidence.length > 20) {
+    throw new Error("VISUAL_EVIDENCE_REQUIRED");
+  }
+  return { evidence: object.evidence.map(parseEvidenceItem) };
+}
+
+function parseEvidenceItem(entry: unknown): RepairEvidenceOutput {
+  const item = strictObject(entry, ["type", "label", "relativePath"]);
+  const type = requiredString(item.type, "EVIDENCE_TYPE_REQUIRED");
+  if (type !== "screenshot" && type !== "recording") throw new Error("EVIDENCE_TYPE_INVALID");
+  return {
+    type,
+    label: requiredString(item.label, "EVIDENCE_LABEL_REQUIRED"),
+    relativePath: requiredString(item.relativePath, "EVIDENCE_PATH_REQUIRED"),
   };
 }
 
