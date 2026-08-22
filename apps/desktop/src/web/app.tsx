@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react
 import appIconUrl from "../../assets/icons/oh-my-bug.png";
 import { api } from "./api/client.js";
 import type { DirectorySelection } from "./api/transport.js";
-import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
+import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, IssueWorkspaceInfoDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
 import { KbdShortcut } from "./components/ui/kbd.js";
@@ -321,6 +321,18 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
 }) {
   const action = (operation: Promise<IssueDto>) => operation.then(onUpdated);
   const [branches, setBranches] = useState<Record<string, BranchInfoDto>>({});
+  const [workspaceInfo, setWorkspaceInfo] = useState<IssueWorkspaceInfoDto>(null);
+  useEffect(() => {
+    let active = true;
+    setWorkspaceInfo(null);
+    if (!selected) return () => { active = false; };
+    void api.issueWorkspace(selected.id).then((info) => {
+      if (active) setWorkspaceInfo(info);
+    }).catch(() => {
+      if (active) setWorkspaceInfo(null);
+    });
+    return () => { active = false; };
+  }, [selected?.id, selected?.revision]);
   const approveDelivery = (issue: IssueDto) => api.approveDelivery(issue.id).then((result) => {
     onUpdated(result.issue);
     if (result.branch) {
@@ -346,16 +358,17 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
     <section className={`detail-pane ${selected ? "detail-pane-scroll" : ""}`} aria-label={selected ? "Issue 详情" : "开始使用"}>
       {selected ? <><div className="mobile-detail-toolbar"><Button type="button" variant="ghost" onClick={onDeselect}><ChevronLeft aria-hidden="true" size={15} />返回 Issue 列表</Button></div><IssueDetail branch={branches[selected.id]} issue={selected} onRefresh={onRefresh} onApproveAssessment={(input) => action(api.approveAssessment(selected.id, input))} onConfirmNotABug={(reference) => action(api.confirmNotABug(selected.id, reference))} onConfirmDuplicate={(reference, duplicateOf) => action(api.confirmDuplicate(selected.id, reference, duplicateOf))} onRequestReassessment={(feedback) => action(api.requestReassessment(selected.id, feedback))} onRejectDelivery={(feedback) => action(api.rejectDelivery(selected.id, feedback))} onApproveDelivery={() => approveDelivery(selected)} onCancel={() => action(api.cancel(selected.id))} onRetry={() => action(api.retry(selected.id))} onRebuildSession={() => action(api.rebuildSession(selected.id, selected.revision))} /></> : <Welcome />}
     </section>
-    {selected && metadataOpen ? <IssueMetadataRail active={active} events={events} issue={selected} project={selectedProject} onClose={() => setMetadataOpen(false)} /> : null}
+    {selected && metadataOpen ? <IssueMetadataRail active={active} events={events} issue={selected} project={selectedProject} workspace={workspaceInfo} onClose={() => setMetadataOpen(false)} /> : null}
     </section>
   </>;
 }
 
-function IssueMetadataRail({ active, events, issue, project, onClose }: {
+function IssueMetadataRail({ active, events, issue, project, workspace, onClose }: {
   active: boolean;
   events: Parameters<typeof AgentActivity>[0]["events"];
   issue: IssueDto;
   project?: ProjectDto;
+  workspace: IssueWorkspaceInfoDto;
   onClose: () => void;
 }) {
   const latestInput = issue.inputs.at(-1);
@@ -375,6 +388,7 @@ function IssueMetadataRail({ active, events, issue, project, onClose }: {
     </header>
     <dl className="issue-metadata-list">
       <div><dt>项目</dt><dd><span className="project-dot" />{project?.name ?? project?.key ?? issue.projectId}</dd></div>
+      {workspace?.branch ? <div className="issue-workspace-row"><dt>分支</dt><dd><code title={workspace.branch}>{workspace.branch}</code>{workspace.providerId === "git" ? <span className="workspace-kind-tag">Worktree</span> : null}</dd></div> : null}
       <div><dt>来源</dt><dd>{latestInput?.integration ?? "manual"}</dd></div>
       <div><dt>状态</dt><dd><IssueStatusBadge status={issue.status} /></dd></div>
       <div><dt>Agent 会话</dt><dd><code>{issue.agentSession?.sessionId ?? "尚未创建"}</code></dd></div>

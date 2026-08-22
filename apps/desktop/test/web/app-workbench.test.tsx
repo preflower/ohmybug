@@ -173,4 +173,34 @@ describe("control center workbench", () => {
     expect(screen.getByRole("heading", { name: "项目配置" })).toBeVisible();
     expect(screen.getByRole("button", { name: "返回项目列表" })).toHaveAttribute("data-slot", "button");
   });
+
+  it("shows a persisted branch with a Worktree tag and hides the row without a branch", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    const workspace = vi.spyOn(api, "issueWorkspace").mockResolvedValue({
+      providerId: "git",
+      status: "READY",
+      branch: "ohmybug/chk-1",
+    });
+
+    const view = render(<App />);
+
+    const rail = await screen.findByTestId("issue-metadata-rail");
+    expect(await within(rail).findByText("ohmybug/chk-1")).toBeVisible();
+    expect(within(rail).getByText("Worktree")).toBeVisible();
+    expect(workspace).toHaveBeenCalledWith(issue.id);
+
+    workspace.mockResolvedValue(null);
+    view.unmount();
+    render(<App />);
+    const railWithoutBranch = await screen.findByTestId("issue-metadata-rail");
+    await waitFor(() => expect(workspace).toHaveBeenCalledTimes(2));
+    expect(within(railWithoutBranch).queryByText("分支")).not.toBeInTheDocument();
+    expect(within(railWithoutBranch).queryByText("Worktree")).not.toBeInTheDocument();
+  });
 });
