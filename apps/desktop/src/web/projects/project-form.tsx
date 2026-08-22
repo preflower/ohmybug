@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
@@ -75,15 +75,6 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
   const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(Boolean(initial));
   const [saveConfirmed, setSaveConfirmed] = useState(false);
-
-  useEffect(() => {
-    if (!inspection) return;
-    setProjectInspection(inspection);
-    setProject((current) => ({
-      ...current,
-      workspace: mergeWorkspaceInspection(current.workspace, inspection),
-    }));
-  }, [inspection]);
 
   const updateProject = (update: (current: ProjectFormValue) => ProjectFormValue) => {
     setSaved(false);

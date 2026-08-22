@@ -116,7 +116,6 @@ function AppContent() {
   useEffect(() => {
     let active = true;
     if (!projectEditor || projectEditor === "new") return () => { active = false; };
-    setProjectInspection(undefined);
     void api.inspectProject(projectEditor.path).then((next) => {
       if (active) setProjectInspection(next);
     }).catch(() => {
@@ -243,7 +242,6 @@ function AppContent() {
   const saveProject = async (value: ProjectFormValue) => {
     const saved = value.id ? await api.updateProject(value.id, value) : await api.createProject(value);
     rememberProject(saved);
-    setProjectInspection(undefined);
     return saved;
   };
 
@@ -269,7 +267,7 @@ function AppContent() {
         </nav>
         <div className="sidebar-section">
           <p className="sidebar-label">Projects</p>
-          {projects.map((project) => <Button className="nav-item" key={project.id} type="button" variant="ghost" onClick={() => { goTo("projects"); setProjectEditor(project); }}><span className="project-dot" /><span>{project.name ?? project.key}</span></Button>)}
+          {projects.map((project) => <Button className="nav-item" key={project.id} type="button" variant="ghost" onClick={() => { goTo("projects"); setProjectInspection(undefined); setProjectEditor(project); }}><span className="project-dot" /><span>{project.name ?? project.key}</span></Button>)}
           {loaded && projects.length === 0 ? <Button className="nav-item" type="button" variant="ghost" onClick={() => goTo("projects")}><span className="project-dot" /><span>打开本机项目</span></Button> : null}
         </div>
         <div className="sidebar-footer"><div className="agent-mode"><Activity size={13} /><span>Codex</span><i /></div></div>
@@ -296,7 +294,7 @@ function AppContent() {
             manifests={manifests}
             workspaceProviders={workspaceProviders}
             projects={projects}
-            onEdit={setProjectEditor}
+            onEdit={(editor) => { setProjectInspection(undefined); setProjectEditor(editor); }}
             onOpenProjectDirectory={openProjectDirectory}
             onSelectProjectDirectory={selectProjectDirectory}
             onManualProject={() => { setProjectInspection(undefined); setProjectEditor("new"); }}
@@ -420,7 +418,7 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, in
 
   if (editor) {
     const initial = editor === "new" ? undefined : editor;
-    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={formSession} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
+    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={`${formSession}:${inspection?.path ?? "pending"}`} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
   }
   return <section className="projects-page">{projects.length ? <ProjectList manifests={manifests} projects={projects} onEdit={onEdit} /> : <div className="page-empty"><FolderKanban size={24} /><h2>打开第一个本机项目</h2><p>选择一个本机目录，然后确认 Agent 与可插拔集成配置。</p><div className="onboarding-actions"><Button type="button" onClick={() => void onOpenProjectDirectory()}>打开项目目录</Button><Button type="button" variant="secondary" onClick={onManualProject}>高级：手动输入路径</Button></div></div>}</section>;
 }
