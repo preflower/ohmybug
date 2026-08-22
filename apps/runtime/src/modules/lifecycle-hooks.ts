@@ -18,8 +18,15 @@ export type LifecycleHookFailureHandler = (
   error: unknown,
 ) => void;
 
+export interface LifecycleHookFailure {
+  owner: string;
+  hook: LifecycleEventName;
+  error: unknown;
+}
+
 export class RuntimeLifecycleHooks implements LifecycleHooks {
   private readonly listeners = new Map<LifecycleEventName, ListenerRegistration[]>();
+  private readonly failures: LifecycleHookFailure[] = [];
 
   constructor(private readonly onFailure: LifecycleHookFailureHandler = () => {}) {}
 
@@ -49,8 +56,13 @@ export class RuntimeLifecycleHooks implements LifecycleHooks {
       try {
         registration.listener(payload as never);
       } catch (error) {
+        this.failures.push({ owner: registration.owner, hook: name, error });
         this.onFailure(registration.owner, name, error);
       }
     }
+  }
+
+  takeFailures(): LifecycleHookFailure[] {
+    return this.failures.splice(0);
   }
 }

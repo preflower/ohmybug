@@ -119,6 +119,7 @@ describe("Runtime recovery", () => {
     store.transaction((transaction) => transaction.insertIssue({
       id: "slow-pending-assess",
       projectId: project.id,
+      projectPath: project.path,
       identifier: "OMB-23",
       title: "Slow assess",
       titleSource: "user",

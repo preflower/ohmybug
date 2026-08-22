@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("SQLite-backed Runtime acceptance", () => {
-  it("runs Manual input through both reviews and closes on Delivery approval", async () => {
+  it("runs Manual input through both reviews and persists Delivery approval", async () => {
     const root = mkdtempSync(join(tmpdir(), "omb-runtime-acceptance-"));
     temporaryDirectories.push(root);
     const dataRoot = join(root, "data");
@@ -81,7 +81,7 @@ describe("SQLite-backed Runtime acceptance", () => {
 
     runtime.approveDelivery(assessed.id);
     expect(runtime.getIssue(assessed.id)).toMatchObject({
-      status: "COMPLETED",
+      status: "APPROVED",
       resolution: "FIXED",
       agentSession: { agent: "fake", sessionId: "session-1" },
     });
@@ -89,6 +89,7 @@ describe("SQLite-backed Runtime acceptance", () => {
     expect(agent.repairSessions).toEqual(["session-1"]);
     expect(runtime.readIssueEvents(assessed.id).map((event) => event.type)).toEqual([
       "ISSUE_CREATED",
+      "WORKSPACE_READY",
       "ASSESSMENT_STARTED",
       "ASSESSMENT_READY",
       "ASSESSMENT_APPROVED",

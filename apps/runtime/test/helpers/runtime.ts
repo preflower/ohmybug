@@ -15,6 +15,7 @@ import {
 } from "@oh-my-bug/storage";
 
 import { AgentRegistry } from "../../src/agents/registry.js";
+import { RuntimeLifecycleHooks } from "../../src/modules/lifecycle-hooks.js";
 import { WorkspaceRegistry } from "../../src/modules/workspace-registry.js";
 import { RuntimeCommands } from "../../src/orchestration/commands.js";
 import { WorkspaceCoordinator } from "../../src/orchestration/workspace-coordinator.js";
@@ -43,6 +44,7 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
   const sessions = new SqliteAgentSessionStore(database);
   const workspacePersistence = new SqliteWorkspaceStore(database);
   const workspaceRegistry = new WorkspaceRegistry();
+  const hooks = new RuntimeLifecycleHooks();
   workspaceRegistry.register(localWorkspaceFactory);
   const workspaces = new WorkspaceCoordinator({
     store,
@@ -59,6 +61,7 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
     store,
     manual,
     agents,
+    hooks,
     id,
     now: () => now,
     wake: () => { wakes += 1; },
@@ -72,6 +75,7 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
     evidence,
     workspacePersistence,
     workspaces,
+    hooks,
     wakes: () => wakes,
   };
 }

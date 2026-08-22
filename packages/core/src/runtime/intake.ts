@@ -1,6 +1,7 @@
 import { integrationInputSchema, type IntegrationInput } from "../integration/input.js";
 import { decideIntegrationInput } from "../integration/intake.js";
 import { createIssue } from "../issue/create.js";
+import type { Issue } from "../issue/types.js";
 import type { RuntimeTransaction } from "../ports/runtime-store.js";
 import type { IntakeResult, NewIssueEvent } from "./types.js";
 
@@ -10,6 +11,7 @@ export interface AcceptIntegrationInputCommand {
   transaction: RuntimeTransaction;
   id: () => string;
   now: string;
+  beforeCreate?(issue: Issue): void;
 }
 
 function intakeEvent(
@@ -75,6 +77,7 @@ export function acceptIntegrationInput(
     input,
     now: command.now,
   });
+  command.beforeCreate?.(issue);
   command.transaction.insertIssue(issue, "PREPARE");
   command.transaction.appendEvent(
     intakeEvent(command, issue.id, "ISSUE_CREATED"),

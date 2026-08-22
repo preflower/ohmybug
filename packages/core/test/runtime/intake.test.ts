@@ -132,8 +132,9 @@ describe("atomic Integration intake", () => {
     }]);
   });
 
-  it("creates a new Issue and schedules assessment when no match exists", () => {
+  it("runs beforeCreate and schedules preparation when no match exists", () => {
     const transaction = new MemoryTransaction();
+    const beforeCreate: Issue[] = [];
 
     expect(acceptIntegrationInput({
       projectId: "project-1",
@@ -141,6 +142,10 @@ describe("atomic Integration intake", () => {
       transaction,
       id: () => "event-3",
       now,
+      beforeCreate: (issue) => {
+        expect(transaction.inserted).toBeUndefined();
+        beforeCreate.push(issue);
+      },
     })).toMatchObject({
       kind: "CREATED",
       issue: { id: "issue-2", identifier: "OMB-2", status: "RECEIVED" },
@@ -149,6 +154,7 @@ describe("atomic Integration intake", () => {
       pendingOperation: "PREPARE",
       issue: { inputs: [{ id: "input-1" }] },
     });
+    expect(beforeCreate).toEqual([transaction.inserted?.issue]);
     expect(transaction.events[0]).toEqual({
       id: "event-3",
       issueId: "issue-2",

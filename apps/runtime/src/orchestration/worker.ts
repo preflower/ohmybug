@@ -17,8 +17,13 @@ import {
   type RepairResult,
   type RuntimeStore,
 } from "@oh-my-bug/core";
+import type { LifecycleEventMap } from "@oh-my-bug/module-api";
 
 import type { AgentRegistry } from "../agents/registry.js";
+import type {
+  LifecycleHookFailure,
+  RuntimeLifecycleHooks,
+} from "../modules/lifecycle-hooks.js";
 import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
 
 export interface RuntimeWorkerDependencies {
@@ -26,6 +31,7 @@ export interface RuntimeWorkerDependencies {
   agents: AgentRegistry;
   evidence: EvidenceStore & EvidenceInspector;
   workspaces: Pick<WorkspaceCoordinator, "prepare">;
+  hooks?: RuntimeLifecycleHooks;
   id: () => string;
   now: () => string;
 }
@@ -104,19 +110,30 @@ export class RuntimeWorker {
       return next;
     });
     if (!claimed) return;
+    this.emitLifecycle("assessment.before", { issue: claimed, project });
     try {
       const result = await agent.assess(session, {
         issue: claimed,
         project,
         feedback: claimed.assessmentFeedback,
       });
-      this.complete(claimed, recordAssessment(claimed, result, this.dependencies.now()), "ASSESSMENT_READY");
+      const assessed = recordAssessment(claimed, result, this.dependencies.now());
+      if (this.complete(claimed, assessed, "ASSESSMENT_READY")) {
+        this.emitLifecycle("assessment.after", {
+          issue: assessed,
+          project,
+          assessment: assessed.assessment,
+        });
+      }
     } catch (error) {
-      this.complete(
+      const failed = recordAssessmentFailure(
         claimed,
-        recordAssessmentFailure(claimed, agentFailureCode(error), this.dependencies.now()),
-        "ASSESSMENT_FAILED",
+        agentFailureCode(error),
+        this.dependencies.now(),
       );
+      if (this.complete(claimed, failed, "ASSESSMENT_FAILED")) {
+        this.emitLifecycle("assessment.after", { issue: failed, project });
+      }
     }
   }
 
@@ -145,6 +162,7 @@ export class RuntimeWorker {
       return current;
     });
     const projectPath = requireProjectPath(claimed);
+    this.emitLifecycle("repair.before", { issue: claimed, project });
     let intake: Awaited<ReturnType<EvidenceStore["prepareIntake"]>>;
     try {
       intake = await this.dependencies.evidence.prepareIntake(
@@ -153,11 +171,14 @@ export class RuntimeWorker {
         projectPath,
       );
     } catch {
-      this.complete(
+      const failed = recordRepairFailure(
         claimed,
-        recordRepairFailure(claimed, "EVIDENCE_INTAKE_FAILED", this.dependencies.now()),
-        "REPAIR_FAILED",
+        "EVIDENCE_INTAKE_FAILED",
+        this.dependencies.now(),
       );
+      if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+        this.emitLifecycle("repair.after", { issue: failed, project });
+      }
       return;
     }
     try {
@@ -175,13 +196,18 @@ export class RuntimeWorker {
         const outputFailure = repairOutputFailure(error);
         if (outputFailure) {
           this.requeueRepair(claimed, outputFailure.feedback, outputFailure.code);
+          const retrying = this.dependencies.store.getIssue(claimed.id);
+          if (retrying) this.emitLifecycle("repair.after", { issue: retrying, project });
           return;
         }
-        this.complete(
+        const failed = recordRepairFailure(
           claimed,
-          recordRepairFailure(claimed, agentFailureCode(error), this.dependencies.now()),
-          "REPAIR_FAILED",
+          agentFailureCode(error),
+          this.dependencies.now(),
         );
+        if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+          this.emitLifecycle("repair.after", { issue: failed, project });
+        }
         return;
       }
 
@@ -199,6 +225,7 @@ export class RuntimeWorker {
         const delivery = deliverySchema.parse({ summary: result.summary, evidence });
         const delivered = recordDelivery(claimed, delivery, this.dependencies.now());
         if (!this.complete(claimed, delivered, "DELIVERY_READY")) return;
+        this.emitLifecycle("repair.after", { issue: delivered, project });
 
         const inspections = await Promise.all(delivery.evidence.map((item) =>
           this.dependencies.evidence.inspect(
@@ -314,11 +341,44 @@ export class RuntimeWorker {
       return true;
     });
   }
+
+  private emitLifecycle<K extends keyof LifecycleEventMap>(
+    name: K,
+    payload: LifecycleEventMap[K],
+  ): void {
+    if (!this.dependencies.hooks) return;
+    this.dependencies.hooks.emit(name, payload);
+    this.reportHookFailures(payload.issue.id, this.dependencies.hooks.takeFailures());
+  }
+
+  private reportHookFailures(issueId: string, failures: LifecycleHookFailure[]): void {
+    if (failures.length === 0) return;
+    this.dependencies.store.transaction((transaction) => {
+      for (const failure of failures) {
+        transaction.appendEvent({
+          id: this.dependencies.id(),
+          issueId,
+          type: "MODULE_HOOK_FAILED",
+          actor: "SYSTEM",
+          data: {
+            owner: failure.owner,
+            hook: failure.hook,
+            message: publicModuleError(failure.error),
+          },
+          occurredAt: this.dependencies.now(),
+        });
+      }
+    });
+  }
 }
 
 function requireProjectPath(issue: Issue): string {
   if (!issue.projectPath) throw new Error("ISSUE_PROJECT_PATH_REQUIRED");
   return issue.projectPath;
+}
+
+function publicModuleError(error: unknown): string {
+  return error instanceof Error ? error.message : "MODULE_HOOK_FAILED";
 }
 
 function agentFailureCode(error: unknown): string {

@@ -80,7 +80,7 @@ describe("Runtime human commands", () => {
     expect(store.listPendingOperations()).toEqual([{ issue: retrying, operation: "REPAIR" }]);
   });
 
-  it("completes an approved Delivery as FIXED", () => {
+  it("persists an approved Delivery as FIXED", () => {
     const { commands, store } = createHarness();
     const issue = reviewedIssue({
       id: "issue-delivery",
@@ -91,14 +91,14 @@ describe("Runtime human commands", () => {
     });
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
 
-    const completed = commands.approveDelivery(issue.id);
+    const approved = commands.approveDelivery(issue.id);
 
-    expect(completed).toMatchObject({ status: "COMPLETED", resolution: "FIXED" });
+    expect(approved).toMatchObject({ status: "APPROVED", resolution: "FIXED" });
     expect(store.listPendingOperations()).toEqual([]);
     expect(store.readEvents(issue.id).map((event) => event.type)).toEqual(["DELIVERY_APPROVED"]);
   });
 
-  it("completes an approved Feature Delivery as IMPLEMENTED", () => {
+  it("persists an approved Feature Delivery as IMPLEMENTED", () => {
     const { commands, store } = createHarness();
     const feature = { ...assessment, verdict: "FEATURE" as const, rootCause: undefined };
     const issue = reviewedIssue({
@@ -112,7 +112,7 @@ describe("Runtime human commands", () => {
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
 
     expect(commands.approveDelivery(issue.id)).toMatchObject({
-      status: "COMPLETED",
+      status: "APPROVED",
       resolution: "IMPLEMENTED",
     });
   });

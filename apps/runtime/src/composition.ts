@@ -32,6 +32,7 @@ import {
 import { AgentRegistry } from "./agents/registry.js";
 import { IntegrationManager } from "./integrations/manager.js";
 import { IntegrationRegistry } from "./integrations/registry.js";
+import { RuntimeLifecycleHooks } from "./modules/lifecycle-hooks.js";
 import { ModuleHost } from "./modules/module-host.js";
 import { WorkspaceRegistry } from "./modules/workspace-registry.js";
 import { workspaceModule } from "./modules/workspace-module.js";
@@ -248,6 +249,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
   const checkpoints = new SqliteIntegrationCheckpointStore(database);
   const workspacePersistence = new SqliteWorkspaceStore(database);
   const workspaceRegistry = new WorkspaceRegistry();
+  const hooks = new RuntimeLifecycleHooks();
   const modules = new ModuleHost();
   modules.mount(workspaceModule, {
     factory: localWorkspaceFactory,
@@ -287,6 +289,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     store,
     manual,
     agents,
+    hooks,
     id,
     now,
     wake: () => wake(),
@@ -307,6 +310,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     agents,
     evidence,
     workspaces: workspaceCoordinator,
+    hooks,
     integrations,
     modules,
     id,

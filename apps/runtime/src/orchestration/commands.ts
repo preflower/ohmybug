@@ -15,8 +15,13 @@ import {
   type RuntimeProject,
   type RuntimeStore,
 } from "@oh-my-bug/core";
+import type { LifecycleEventMap } from "@oh-my-bug/module-api";
 
 import type { AgentRegistry } from "../agents/registry.js";
+import type {
+  LifecycleHookFailure,
+  RuntimeLifecycleHooks,
+} from "../modules/lifecycle-hooks.js";
 
 export interface ManualSubmission {
   commandId: string;
@@ -34,6 +39,7 @@ export interface RuntimeCommandDependencies {
   store: RuntimeStore;
   manual: IntegrationAdapter<ManualSubmission>;
   agents: AgentRegistry;
+  hooks?: RuntimeLifecycleHooks;
   id: () => string;
   now: () => string;
   wake: () => void;
@@ -58,15 +64,25 @@ export class RuntimeCommands {
 
   acceptIntegrationInput(projectId: string, input: IntegrationInput): IntakeResult {
     this.assertAccepting();
-    if (!this.dependencies.store.getProject(projectId)) throw new Error("PROJECT_NOT_FOUND");
+    const project = this.dependencies.store.getProject(projectId);
+    if (!project) throw new Error("PROJECT_NOT_FOUND");
+    const beforeCreateFailures: LifecycleHookFailure[] = [];
     const result = this.dependencies.store.transaction((transaction) => acceptCoreInput({
       projectId,
       input,
       transaction,
       id: this.dependencies.id,
       now: this.dependencies.now(),
+      beforeCreate: (issue) => {
+        this.dependencies.hooks?.emit("issue.beforeCreate", { issue, project, input });
+        beforeCreateFailures.push(...this.dependencies.hooks?.takeFailures() ?? []);
+      },
     }));
-    if (result.kind === "CREATED") this.dependencies.wake();
+    if (result.kind === "CREATED") {
+      this.reportHookFailures(result.issue.id, beforeCreateFailures);
+      this.emitLifecycle("issue.created", { issue: result.issue, project });
+      this.dependencies.wake();
+    }
     return result;
   }
 
@@ -132,8 +148,12 @@ export class RuntimeCommands {
   }
 
   approveDelivery(issueId: string): Issue {
-    return this.change(issueId, "DELIVERY_APPROVED", null, (issue, now) =>
+    const approved = this.change(issueId, "DELIVERY_APPROVED", null, (issue, now) =>
       transitionIssue(issue, "APPROVE_DELIVERY", now));
+    const project = this.dependencies.store.getProject(approved.projectId);
+    if (!project) throw new Error("PROJECT_NOT_FOUND");
+    this.emitLifecycle("issue.userApproved", { issue: approved, project });
+    return approved;
   }
 
   retryIssue(issueId: string): Issue {
@@ -237,7 +257,40 @@ export class RuntimeCommands {
     };
   }
 
+  private emitLifecycle<K extends keyof LifecycleEventMap>(
+    name: K,
+    payload: LifecycleEventMap[K],
+  ): void {
+    if (!this.dependencies.hooks) return;
+    this.dependencies.hooks.emit(name, payload);
+    this.reportHookFailures(payload.issue.id, this.dependencies.hooks.takeFailures());
+  }
+
+  private reportHookFailures(issueId: string, failures: LifecycleHookFailure[]): void {
+    if (failures.length === 0) return;
+    this.dependencies.store.transaction((transaction) => {
+      for (const failure of failures) {
+        transaction.appendEvent({
+          id: this.dependencies.id(),
+          issueId,
+          type: "MODULE_HOOK_FAILED",
+          actor: "SYSTEM",
+          data: {
+            owner: failure.owner,
+            hook: failure.hook,
+            message: publicModuleError(failure.error),
+          },
+          occurredAt: this.dependencies.now(),
+        });
+      }
+    });
+  }
+
   private assertAccepting(): void {
     if (!this.accepting) throw new Error("RUNTIME_STOPPED");
   }
+}
+
+function publicModuleError(error: unknown): string {
+  return error instanceof Error ? error.message : "MODULE_HOOK_FAILED";
 }
