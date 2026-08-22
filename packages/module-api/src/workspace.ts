@@ -53,12 +53,20 @@ export interface WorkspaceBinding {
   updatedAt: string;
 }
 
+export interface WorkspaceDescription {
+  branch?: string;
+}
+
 export interface WorkspaceProvider {
   readonly id: string;
   acquire(input: { issue: Issue; project: RuntimeProject }): Promise<{
     projectPath: string;
     resourceId: string;
   }>;
+  describe?(input: {
+    issue: Issue;
+    resourceId: string;
+  }): Promise<WorkspaceDescription>;
   publish(input: {
     issue: Issue;
     resourceId: string;

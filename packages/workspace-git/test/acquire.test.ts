@@ -97,4 +97,22 @@ describe("GitWorkspace acquire", () => {
     expect(await git(recovered.projectPath, "branch", "--show-current"))
       .toBe("ohmybug/omb-1");
   });
+
+  it("describes the persisted Issue branch after provider reconstruction", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const factory = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    });
+    const acquired = await factory.create({ baseBranch: "main", pushToRemote: false })
+      .acquire({ issue: fixture.issue, project: fixture.project });
+
+    const restored = factory.create({});
+
+    await expect(restored.describe?.({
+      issue: fixture.issue,
+      resourceId: acquired.resourceId,
+    })).resolves.toEqual({ branch: "ohmybug/omb-1" });
+  });
 });

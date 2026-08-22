@@ -227,6 +227,14 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     return { projectPath: join(worktreePath, projectRelativePath), resourceId };
   }
 
+  async describe(input: {
+    issue: Issue;
+    resourceId: string;
+  }): Promise<{ branch: string }> {
+    const state = this.getSavedState(input.issue, input.resourceId);
+    return { branch: state.branch };
+  }
+
   async publish(input: {
     issue: Issue;
     resourceId: string;
