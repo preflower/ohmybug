@@ -5,6 +5,7 @@ import {
   replaceAgentSession,
   requestAssessmentChanges,
   requestDeliveryChanges,
+  retryEvidence,
   transitionIssue,
   type ApproveAssessmentInput,
   type IntegrationAdapter,
@@ -176,6 +177,14 @@ export class RuntimeCommands {
     if (issue.status === "REPAIR_FAILED") {
       return this.change(issueId, "REPAIR_RETRIED", "REPAIR", (current, now) =>
         transitionIssue(current, "RETRY_REPAIR", now));
+    }
+    if (issue.status === "EVIDENCE_FAILED" && issue.repair?.deliveryDraft) {
+      return this.change(
+        issueId,
+        "EVIDENCE_RETRIED",
+        "CAPTURE_EVIDENCE",
+        (current, now) => retryEvidence(current, now),
+      );
     }
     throw new Error(`RETRY_NOT_AVAILABLE:${issue.status}`);
   }

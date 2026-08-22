@@ -80,6 +80,41 @@ describe("Runtime human commands", () => {
     expect(store.listPendingOperations()).toEqual([{ issue: retrying, operation: "REPAIR" }]);
   });
 
+  it("retries evidence without scheduling Repair", () => {
+    const { commands, store } = createHarness();
+    const failed = reviewedIssue({
+      id: "issue-retry-evidence",
+      status: "EVIDENCE_FAILED",
+      repair: {
+        iteration: 2,
+        evidenceRetries: 2,
+        deliveryDraft: {
+          summary: "Implemented",
+          repairIteration: 2,
+          implementationCompletedAt: now,
+        },
+      },
+      lastFailure: { stage: "EVIDENCE", code: "EVIDENCE_RETRY_LIMIT_REACHED" },
+      revision: 8,
+    });
+    store.transaction((transaction) => {
+      transaction.insertIssue(failed, "REPAIR");
+      transaction.updateIssue(failed, failed.revision, null);
+    });
+
+    const retrying = commands.retryIssue(failed.id);
+
+    expect(retrying).toMatchObject({
+      status: "EVIDENCE_CAPTURE",
+      repair: { iteration: 2, deliveryDraft: failed.repair?.deliveryDraft },
+    });
+    expect(retrying.lastFailure).toBeUndefined();
+    expect(store.listPendingOperations()).toEqual([{
+      issue: retrying,
+      operation: "CAPTURE_EVIDENCE",
+    }]);
+  });
+
   it("persists an approved Delivery as FIXED", () => {
     const { commands, store } = createHarness();
     const issue = reviewedIssue({

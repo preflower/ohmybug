@@ -5,6 +5,7 @@ import type {
 } from "@oh-my-bug/core";
 
 import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
+import { EVIDENCE_CAPTURE_FAILURE_CODES } from "../evidence/capture-provider.js";
 
 export interface RecoveryDependencies {
   store: RuntimeStore;
@@ -19,6 +20,9 @@ export async function reconcileWorkspaceIssues(
 }
 
 export function reconcileInterruptedIssues(dependencies: RecoveryDependencies): void {
+  for (const issue of dependencies.store.listIssues()) {
+    migrateLegacyFailure(dependencies, issue);
+  }
   const pendingIds = new Set(
     dependencies.store.listPendingOperations().map(({ issue }) => issue.id),
   );
@@ -55,6 +59,96 @@ export function reconcileInterruptedIssues(dependencies: RecoveryDependencies): 
       });
     });
   }
+}
+
+const LEGACY_EVIDENCE_FAILURE_CODES = new Set<string>([
+  ...EVIDENCE_CAPTURE_FAILURE_CODES,
+  "EVIDENCE_INTAKE_FAILED",
+  "EVIDENCE_IMPORT_FAILED",
+  "EVIDENCE_RETRY_LIMIT_REACHED",
+]);
+
+function migrateLegacyFailure(
+  dependencies: RecoveryDependencies,
+  issue: Issue,
+): void {
+  if (
+    issue.status !== "REPAIR_FAILED" ||
+    issue.lastFailure?.stage !== "REPAIR"
+  ) return;
+  if (issue.lastFailure.code === "RUNTIME_INTERRUPTED") {
+    dependencies.store.transaction((transaction) => {
+      const current = dependencies.store.getIssue(issue.id);
+      if (
+        !current ||
+        current.revision !== issue.revision ||
+        current.status !== "REPAIR_FAILED" ||
+        current.lastFailure?.code !== "RUNTIME_INTERRUPTED"
+      ) return;
+      const resumable = {
+        ...current,
+        status: "REPAIRING" as const,
+        lastFailure: undefined,
+        revision: current.revision + 1,
+        updatedAt: dependencies.now(),
+      };
+      transaction.updateIssue(resumable, current.revision, "REPAIR");
+      transaction.appendEvent({
+        id: dependencies.id(),
+        issueId: resumable.id,
+        type: "ISSUE_REPAIR_STATE_RECOVERED",
+        actor: "SYSTEM",
+        data: { from: "REPAIR_FAILED", to: "REPAIRING", operation: "REPAIR" },
+        occurredAt: dependencies.now(),
+      });
+    });
+    return;
+  }
+  if (
+    !LEGACY_EVIDENCE_FAILURE_CODES.has(issue.lastFailure.code) ||
+    !issue.repair?.delivery
+  ) return;
+  dependencies.store.transaction((transaction) => {
+    const current = dependencies.store.getIssue(issue.id);
+    if (
+      !current ||
+      current.revision !== issue.revision ||
+      current.status !== "REPAIR_FAILED" ||
+      !current.repair?.delivery ||
+      current.lastFailure?.stage !== "REPAIR" ||
+      !LEGACY_EVIDENCE_FAILURE_CODES.has(current.lastFailure.code)
+    ) return;
+    const migrated = {
+      ...current,
+      status: "EVIDENCE_FAILED" as const,
+      repair: {
+        ...current.repair,
+        evidenceRetries: current.repair.evidenceRetries
+          ?? current.repair.automaticEvidenceRetries
+          ?? 0,
+        deliveryDraft: current.repair.deliveryDraft ?? {
+          summary: current.repair.delivery.summary,
+          repairIteration: current.repair.iteration,
+          implementationCompletedAt: current.updatedAt,
+        },
+      },
+      lastFailure: {
+        stage: "EVIDENCE" as const,
+        code: current.lastFailure.code,
+      },
+      revision: current.revision + 1,
+      updatedAt: dependencies.now(),
+    };
+    transaction.updateIssue(migrated, current.revision, null);
+    transaction.appendEvent({
+      id: dependencies.id(),
+      issueId: migrated.id,
+      type: "ISSUE_EVIDENCE_STATE_MIGRATED",
+      actor: "SYSTEM",
+      data: { from: "REPAIR_FAILED", to: "EVIDENCE_FAILED" },
+      occurredAt: dependencies.now(),
+    });
+  });
 }
 
 export function interruptedOperation(issue: Issue): PendingOperation | undefined {

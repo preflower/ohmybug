@@ -6,6 +6,87 @@ import { delivery, FakeAgent } from "./helpers/fakes.js";
 import { assessment, createHarness, eventIds, now, project } from "./helpers/runtime.js";
 
 describe("Runtime recovery", () => {
+  it("migrates legacy evidence failures once and preserves their delivery as a draft", () => {
+    const { store } = createHarness();
+    const legacy = {
+      id: "legacy-evidence-failure",
+      projectId: project.id,
+      projectPath: project.path,
+      identifier: "OMB-LEGACY-EVIDENCE",
+      title: "Legacy evidence failure",
+      titleSource: "user" as const,
+      status: "REPAIR_FAILED" as const,
+      inputs: [],
+      agentSession: { agent: "fake", sessionId: "session-1" },
+      assessment,
+      repair: { iteration: 2, automaticEvidenceRetries: 2, delivery },
+      lastFailure: { stage: "REPAIR" as const, code: "EVIDENCE_RETRY_LIMIT_REACHED" },
+      revision: 7,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => {
+      transaction.insertIssue(legacy, "REPAIR");
+      transaction.updateIssue(legacy, legacy.revision, null);
+    });
+    const dependencies = { store, id: eventIds("migration"), now: () => now };
+
+    reconcileInterruptedIssues(dependencies);
+    reconcileInterruptedIssues(dependencies);
+
+    expect(store.getIssue(legacy.id)).toMatchObject({
+      status: "EVIDENCE_FAILED",
+      repair: {
+        iteration: 2,
+        evidenceRetries: 2,
+        deliveryDraft: {
+          summary: delivery.summary,
+          repairIteration: 2,
+          implementationCompletedAt: now,
+        },
+      },
+      lastFailure: { stage: "EVIDENCE", code: "EVIDENCE_RETRY_LIMIT_REACHED" },
+      revision: legacy.revision + 1,
+    });
+    expect(store.listPendingOperations()).toEqual([]);
+    expect(store.readEvents(legacy.id).filter((event) =>
+      event.type === "ISSUE_EVIDENCE_STATE_MIGRATED"))
+      .toHaveLength(1);
+  });
+
+  it("recovers a legacy interrupted Repair failure", () => {
+    const { store } = createHarness();
+    const legacy = {
+      id: "legacy-repair-interrupted",
+      projectId: project.id,
+      projectPath: project.path,
+      identifier: "OMB-LEGACY-REPAIR",
+      title: "Legacy interrupted repair",
+      titleSource: "user" as const,
+      status: "REPAIR_FAILED" as const,
+      inputs: [],
+      agentSession: { agent: "fake", sessionId: "session-1" },
+      assessment,
+      repair: { iteration: 2 },
+      lastFailure: { stage: "REPAIR" as const, code: "RUNTIME_INTERRUPTED" },
+      revision: 4,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => {
+      transaction.insertIssue(legacy, "REPAIR");
+      transaction.updateIssue(legacy, legacy.revision, null);
+    });
+
+    reconcileInterruptedIssues({ store, id: eventIds("legacy-repair"), now: () => now });
+
+    expect(store.getIssue(legacy.id)).toMatchObject({
+      status: "REPAIRING",
+      repair: { iteration: 2 },
+    });
+    expect(store.listPendingOperations()[0]?.operation).toBe("REPAIR");
+  });
+
   it("migrates a legacy pending Issue to a Local binding without losing its operation", async () => {
     const { store, workspaces, workspacePersistence } = createHarness();
     const legacy = {
