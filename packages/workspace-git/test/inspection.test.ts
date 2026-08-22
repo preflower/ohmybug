@@ -19,6 +19,55 @@ async function fixture() {
 }
 
 describe("Git Workspace project inspection", () => {
+  it("lists local refs immediately and appends fetched remote refs", async () => {
+    const value = await fixture();
+    const bare = join(value.root, "origin.git");
+    await git(value.root, "init", "--bare", bare);
+    await git(value.repository, "remote", "add", "origin", bare);
+    await git(value.repository, "push", "origin", "main:main", "main:release");
+
+    const factory = gitWorkspaceFactory({ state: value.state, worktreeRoot: value.worktreeRoot });
+
+    await expect(factory.inspectProjectBranches?.(value.repository, { refreshRemote: false }))
+      .resolves.toMatchObject({
+        localBranches: ["main"],
+        remote: { name: "origin", url: bare },
+      });
+    await expect(factory.inspectProjectBranches?.(value.repository, { refreshRemote: true }))
+      .resolves.toMatchObject({
+        localBranches: ["main"],
+        remoteBranches: ["origin/main", "origin/release"],
+        remote: { name: "origin", url: bare },
+      });
+  });
+
+  it("keeps local refs and reports a failed Fetch", async () => {
+    const value = await fixture();
+    await git(value.repository, "remote", "add", "origin", join(value.root, "missing.git"));
+    const factory = gitWorkspaceFactory({ state: value.state, worktreeRoot: value.worktreeRoot });
+
+    await expect(factory.inspectProjectBranches?.(value.repository, { refreshRemote: true }))
+      .resolves.toMatchObject({
+        localBranches: ["main"],
+        remoteBranches: [],
+        refreshError: "GIT_COMMAND_FAILED:fetch",
+      });
+  });
+
+  it("validates local and remote-tracking base refs before save", async () => {
+    const value = await fixture();
+    const factory = gitWorkspaceFactory({ state: value.state, worktreeRoot: value.worktreeRoot });
+
+    await expect(factory.validateProjectConfiguration?.(value.repository, {
+      baseBranch: "main",
+      pushToRemote: false,
+    })).resolves.toBeUndefined();
+    await expect(factory.validateProjectConfiguration?.(value.repository, {
+      baseBranch: "missing",
+      pushToRemote: false,
+    })).rejects.toThrow("GIT_COMMAND_FAILED:rev-parse");
+  });
+
   it("prefers the current branch remote and exposes its URL as read-only evidence", async () => {
     const value = await fixture();
     await git(value.repository, "remote", "add", "origin", "/srv/git/origin.git");
@@ -78,6 +127,11 @@ describe("Git Workspace project inspection", () => {
         },
       },
       properties: [],
+      branches: {
+        localBranches: ["main"],
+        remoteBranches: [],
+        remoteUnavailableReason: "当前 Git 仓库未配置远程仓库",
+      },
     });
   });
 

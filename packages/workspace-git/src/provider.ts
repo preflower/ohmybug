@@ -5,6 +5,7 @@ import type { ConfigValue, Issue, RuntimeProject } from "@oh-my-bug/core";
 import type {
   BranchInfo,
   ModuleStateStore,
+  WorkspaceBranchDiscovery,
   WorkspaceProvider,
   WorkspaceProviderFactory,
   WorkspaceProviderInspection,
@@ -60,6 +61,12 @@ export interface GitWorkspaceFactoryOptions {
   worktreeRoot: string;
 }
 
+interface GitProjectContext {
+  repositoryPath: string;
+  remote?: { name: string; url: string };
+  remoteUnavailableReason?: string;
+}
+
 export function gitWorkspaceFactory(
   options: GitWorkspaceFactoryOptions,
 ): WorkspaceProviderFactory {
@@ -88,8 +95,21 @@ export function gitWorkspaceFactory(
     inspectProject(projectPath) {
       return inspectGitProject(projectPath);
     },
+    inspectProjectBranches(projectPath, input) {
+      return inspectGitProjectBranches(projectPath, input);
+    },
     validate(config) {
       parseConfiguration(config);
+    },
+    async validateProjectConfiguration(projectPath, config) {
+      const parsed = parseConfiguration(config);
+      const repositoryPath = await runGit(projectPath, ["rev-parse", "--show-toplevel"]);
+      await runGit(repositoryPath, [
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        `${parsed.baseBranch}^{commit}`,
+      ]);
     },
     create(config) {
       return new GitWorkspaceProvider(options, structuredClone(config));
@@ -100,52 +120,129 @@ export function gitWorkspaceFactory(
 export async function inspectGitProject(
   projectPath: string,
 ): Promise<WorkspaceProviderInspection> {
+  const context = await readGitProjectContext(projectPath);
+  if (!context) {
+    return { available: false, reason: "所选目录不在 Git 仓库中" };
+  }
+  const branches = await discoverGitProjectBranches(context, { refreshRemote: false });
+
+  if (!context.remote) {
+    const reason = context.remoteUnavailableReason!;
+    return {
+      available: true,
+      fields: { pushToRemote: { enabled: false, reason } },
+      properties: [],
+      branches,
+    };
+  }
+
+  return {
+    available: true,
+    configPatch: { remote: context.remote.name },
+    fields: { pushToRemote: { enabled: true } },
+    properties: [{
+      key: "remoteUrl",
+      label: "远程仓库",
+      value: context.remote.url,
+      description: `Git remote: ${context.remote.name}`,
+    }],
+    branches,
+  };
+}
+
+async function inspectGitProjectBranches(
+  projectPath: string,
+  input: { refreshRemote: boolean },
+): Promise<WorkspaceBranchDiscovery> {
+  const context = await readGitProjectContext(projectPath);
+  if (!context) throw new Error("WORKSPACE_GIT_NOT_AVAILABLE");
+  return discoverGitProjectBranches(context, input);
+}
+
+async function discoverGitProjectBranches(
+  context: GitProjectContext,
+  input: { refreshRemote: boolean },
+): Promise<WorkspaceBranchDiscovery> {
+  const localBranches = await listRefs(context.repositoryPath, "refs/heads");
+  let refreshError: string | undefined;
+  if (input.refreshRemote && context.remote) {
+    try {
+      await runGit(context.repositoryPath, ["fetch", "--prune", context.remote.name]);
+    } catch (error) {
+      refreshError = error instanceof Error ? error.message : "GIT_COMMAND_FAILED:fetch";
+    }
+  }
+  const remoteBranches = context.remote
+    ? (await listRefs(context.repositoryPath, `refs/remotes/${context.remote.name}`))
+        .filter((ref) => ref !== `${context.remote!.name}/HEAD`)
+    : [];
+  return {
+    localBranches,
+    remoteBranches,
+    ...(context.remote ? { remote: context.remote } : {}),
+    ...(context.remoteUnavailableReason
+      ? { remoteUnavailableReason: context.remoteUnavailableReason }
+      : {}),
+    ...(refreshError ? { refreshError } : {}),
+  };
+}
+
+async function readGitProjectContext(
+  projectPath: string,
+): Promise<GitProjectContext | undefined> {
   const repositoryPath = await tryRunGit(
     projectPath,
     ["rev-parse", "--show-toplevel"],
     [128],
   );
-  if (!repositoryPath) {
-    return { available: false, reason: "所选目录不在 Git 仓库中" };
-  }
-
-  const remoteOutput = await runGit(repositoryPath, ["remote"]);
-  const remotes = remoteOutput.split(/\r?\n/).map((remote) => remote.trim()).filter(Boolean);
+  if (!repositoryPath) return undefined;
+  const remotes = (await runGit(repositoryPath, ["remote"]))
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
   const branch = await runGit(repositoryPath, ["branch", "--show-current"]);
-  const branchRemote = branch
+  const tracked = branch
     ? await tryRunGit(repositoryPath, ["config", "--get", `branch.${branch}.remote`])
     : undefined;
-  const remoteName = branchRemote && branchRemote !== "." && remotes.includes(branchRemote)
-    ? branchRemote
+  const name = tracked && tracked !== "." && remotes.includes(tracked)
+    ? tracked
     : remotes.includes("origin")
       ? "origin"
       : remotes.length === 1
         ? remotes[0]
         : undefined;
-
-  if (!remoteName) {
-    const reason = remotes.length === 0
-      ? "当前 Git 仓库未配置远程仓库"
-      : "当前 Git 仓库有多个远程仓库，且未配置默认上游";
+  if (!name) {
     return {
-      available: true,
-      fields: { pushToRemote: { enabled: false, reason } },
-      properties: [],
+      repositoryPath,
+      remoteUnavailableReason: remotes.length === 0
+        ? "当前 Git 仓库未配置远程仓库"
+        : "当前 Git 仓库有多个远程仓库，且未配置默认上游",
     };
   }
-
-  const remoteUrl = await runGit(repositoryPath, ["remote", "get-url", remoteName]);
   return {
-    available: true,
-    configPatch: { remote: remoteName },
-    fields: { pushToRemote: { enabled: true } },
-    properties: [{
-      key: "remoteUrl",
-      label: "远程仓库",
-      value: remoteUrl,
-      description: `Git remote: ${remoteName}`,
-    }],
+    repositoryPath,
+    remote: {
+      name,
+      url: await runGit(repositoryPath, ["remote", "get-url", name]),
+    },
   };
+}
+
+async function listRefs(repositoryPath: string, prefix: string): Promise<string[]> {
+  const displayPrefix = prefix.startsWith("refs/remotes/") ? "refs/remotes" : prefix;
+  const output = await runGit(repositoryPath, [
+    "for-each-ref",
+    "--format=%(refname)",
+    prefix,
+  ]);
+  return output
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => value.startsWith(`${displayPrefix}/`)
+      ? value.slice(displayPrefix.length + 1)
+      : value)
+    .sort();
 }
 
 class GitWorkspaceProvider implements WorkspaceProvider {
