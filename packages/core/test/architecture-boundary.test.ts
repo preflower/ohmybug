@@ -160,6 +160,7 @@ describe("workspace architecture boundaries", () => {
       "@oh-my-bug/integration-sentry",
       "@oh-my-bug/module-api",
       "@oh-my-bug/storage",
+      "@oh-my-bug/workspace-git",
       "@oh-my-bug/workspace-local",
       "sharp",
       "zod",

@@ -122,6 +122,7 @@ describe("Runtime composition boundary", () => {
     expect(source).toContain("codexAgent");
     expect(source).toContain("sentryPlugin");
     expect(source).toContain("dingTalkPlugin");
+    expect(source).toContain("gitWorkspaceFactory");
     expect(source).toContain("new AgentRegistry");
     expect(source).toContain("new IntegrationRegistry");
     expect(source).not.toContain("new SentryPoller");

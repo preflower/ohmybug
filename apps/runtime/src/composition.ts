@@ -15,6 +15,7 @@ import type {
 import { dingTalkPlugin, type DingTalkPluginOptions } from "@oh-my-bug/integration-dingtalk";
 import { ManualIntegrationAdapter } from "@oh-my-bug/integration-manual";
 import { sentryPlugin, type SentryPluginOptions } from "@oh-my-bug/integration-sentry";
+import { gitWorkspaceFactory } from "@oh-my-bug/workspace-git";
 import { localWorkspaceFactory } from "@oh-my-bug/workspace-local";
 import {
   LocalEvidenceStore,
@@ -165,6 +166,10 @@ export async function inspectDesktopRuntimeSnapshot(
   const database = openRuntimeDatabaseReadOnly(databasePath);
   const store = new SqliteRuntimeStore(database);
   const workspacePersistence = new SqliteWorkspaceStore(database);
+  workspaceRegistry.register(gitWorkspaceFactory({
+    state: workspacePersistence,
+    worktreeRoot: join(options.dataRoot, "worktrees"),
+  }));
   try {
     const issues = store.listIssues();
     return {
@@ -266,6 +271,13 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
   const modules = new ModuleHost();
   modules.mount(workspaceModule, {
     factory: localWorkspaceFactory,
+    registry: workspaceRegistry,
+  });
+  modules.mount(workspaceModule, {
+    factory: gitWorkspaceFactory({
+      state: workspacePersistence,
+      worktreeRoot: join(dirname(options.databasePath), "worktrees"),
+    }),
     registry: workspaceRegistry,
   });
   const workspaceCoordinator = new WorkspaceCoordinator({

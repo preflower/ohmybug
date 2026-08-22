@@ -1,0 +1,13 @@
+{
+  "name": "@oh-my-bug/workspace-git",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": {
+    "@oh-my-bug/core": "workspace:*",
+    "@oh-my-bug/module-api": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}
