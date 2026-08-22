@@ -215,9 +215,10 @@ describe("SQLite-backed review and recovery acceptance", () => {
     await runtime.drain();
     expect(runtime.getIssue(pending.issue.id).status).toBe("ASSESSMENT_REVIEW");
     expect(runtime.getIssue(abandoned.id)).toMatchObject({
-      status: "ASSESSMENT_FAILED",
-      lastFailure: { code: "RUNTIME_INTERRUPTED" },
+      status: "ASSESSMENT_REVIEW",
+      agentSession: { sessionId: "session-2" },
     });
+    expect(runtime.getIssue(abandoned.id)).not.toHaveProperty("lastFailure");
     expect(runtime.readIssueEvents(abandoned.id)
       .filter((event) => event.type === "RUNTIME_INTERRUPTED")).toHaveLength(1);
     await runtime.stop();

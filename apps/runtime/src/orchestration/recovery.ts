@@ -1,9 +1,7 @@
-import {
-  recordAssessmentFailure,
-  recordEvidenceRejection,
-  recordRepairFailure,
-  type Issue,
-  type RuntimeStore,
+import type {
+  Issue,
+  PendingOperation,
+  RuntimeStore,
 } from "@oh-my-bug/core";
 
 import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
@@ -26,41 +24,42 @@ export function reconcileInterruptedIssues(dependencies: RecoveryDependencies): 
   );
   for (const issue of dependencies.store.listIssues()) {
     if (pendingIds.has(issue.id)) continue;
-    const next = interruptedFailure(issue, dependencies.now());
-    if (!next) continue;
+    const operation = interruptedOperation(issue);
+    if (!operation) continue;
     dependencies.store.transaction((transaction) => {
       const current = dependencies.store.getIssue(issue.id);
       if (!current || current.revision !== issue.revision) return;
-      transaction.updateIssue(next, issue.revision, null);
+      const resumable = {
+        ...current,
+        revision: current.revision + 1,
+        updatedAt: dependencies.now(),
+      };
+      transaction.updateIssue(resumable, current.revision, operation);
       transaction.appendEvent({
         id: dependencies.id(),
-        issueId: issue.id,
+        issueId: resumable.id,
         type: "RUNTIME_INTERRUPTED",
         actor: "SYSTEM",
-        data: { from: issue.status, to: next.status },
+        data: {
+          from: resumable.status,
+          to: resumable.status,
+          operation,
+          reason: "PROCESS_EXITED",
+          revision: resumable.revision,
+          ...(resumable.agentSession
+            ? { sessionId: resumable.agentSession.sessionId }
+            : {}),
+          ...(resumable.repair ? { iteration: resumable.repair.iteration } : {}),
+        },
         occurredAt: dependencies.now(),
       });
     });
   }
 }
 
-export function interruptedFailure(issue: Issue, now: string): Issue | undefined {
-  if (issue.status === "ASSESSING") {
-    return recordAssessmentFailure(issue, "RUNTIME_INTERRUPTED", now);
-  }
-  if (issue.status === "REPAIRING") {
-    return recordRepairFailure(issue, "RUNTIME_INTERRUPTED", now);
-  }
-  if (issue.status === "EVIDENCE_CHECK") {
-    return recordRepairFailure(
-      recordEvidenceRejection(
-        issue,
-        "Runtime interrupted during evidence inspection.",
-        now,
-      ),
-      "RUNTIME_INTERRUPTED",
-      now,
-    );
-  }
+export function interruptedOperation(issue: Issue): PendingOperation | undefined {
+  if (issue.status === "ASSESSING") return "ASSESS";
+  if (issue.status === "REPAIRING") return "REPAIR";
+  if (issue.status === "EVIDENCE_CHECK" && issue.repair?.delivery) return "EVIDENCE";
   return undefined;
 }
