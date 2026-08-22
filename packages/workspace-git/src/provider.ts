@@ -7,10 +7,11 @@ import type {
   ModuleStateStore,
   WorkspaceProvider,
   WorkspaceProviderFactory,
+  WorkspaceProviderInspection,
 } from "@oh-my-bug/module-api";
 import { z } from "zod";
 
-import { gitRefExists, runGit } from "./git-client.js";
+import { gitRefExists, runGit, tryRunGit } from "./git-client.js";
 
 const MODULE_ID = "workspace-git";
 
@@ -75,12 +76,66 @@ export function gitWorkspaceFactory(
         },
       ],
     },
+    inspectProject(projectPath) {
+      return inspectGitProject(projectPath);
+    },
     validate(config) {
       parseConfiguration(config);
     },
     create(config) {
       return new GitWorkspaceProvider(options, structuredClone(config));
     },
+  };
+}
+
+export async function inspectGitProject(
+  projectPath: string,
+): Promise<WorkspaceProviderInspection> {
+  const repositoryPath = await tryRunGit(
+    projectPath,
+    ["rev-parse", "--show-toplevel"],
+    [128],
+  );
+  if (!repositoryPath) {
+    return { available: false, reason: "所选目录不在 Git 仓库中" };
+  }
+
+  const remoteOutput = await runGit(repositoryPath, ["remote"]);
+  const remotes = remoteOutput.split(/\r?\n/).map((remote) => remote.trim()).filter(Boolean);
+  const branch = await runGit(repositoryPath, ["branch", "--show-current"]);
+  const branchRemote = branch
+    ? await tryRunGit(repositoryPath, ["config", "--get", `branch.${branch}.remote`])
+    : undefined;
+  const remoteName = branchRemote && branchRemote !== "." && remotes.includes(branchRemote)
+    ? branchRemote
+    : remotes.includes("origin")
+      ? "origin"
+      : remotes.length === 1
+        ? remotes[0]
+        : undefined;
+
+  if (!remoteName) {
+    const reason = remotes.length === 0
+      ? "当前 Git 仓库未配置远程仓库"
+      : "当前 Git 仓库有多个远程仓库，且未配置默认上游";
+    return {
+      available: true,
+      fields: { pushToRemote: { enabled: false, reason } },
+      properties: [],
+    };
+  }
+
+  const remoteUrl = await runGit(repositoryPath, ["remote", "get-url", remoteName]);
+  return {
+    available: true,
+    configPatch: { remote: remoteName },
+    fields: { pushToRemote: { enabled: true } },
+    properties: [{
+      key: "remoteUrl",
+      label: "远程仓库",
+      value: remoteUrl,
+      description: `Git remote: ${remoteName}`,
+    }],
   };
 }
 

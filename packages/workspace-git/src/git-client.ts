@@ -16,6 +16,25 @@ export async function runGit(cwd: string, args: readonly string[]): Promise<stri
   }
 }
 
+export async function tryRunGit(
+  cwd: string,
+  args: readonly string[],
+  allowedExitCodes: readonly number[] = [1],
+): Promise<string | undefined> {
+  try {
+    return await runGit(cwd, args);
+  } catch (error) {
+    const cause = error instanceof Error ? error.cause : undefined;
+    const code = cause && typeof cause === "object" && "code" in cause
+      ? cause.code
+      : undefined;
+    if (typeof code === "number" && allowedExitCodes.includes(code)) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 export async function gitRefExists(repositoryPath: string, ref: string): Promise<boolean> {
   try {
     await runGit(repositoryPath, ["show-ref", "--verify", "--quiet", ref]);
