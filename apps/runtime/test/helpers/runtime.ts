@@ -50,6 +50,7 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
     store,
     persistence: workspacePersistence,
     registry: workspaceRegistry,
+    hooks,
     id,
     now: () => now,
   });
@@ -74,6 +75,7 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
     agents,
     evidence,
     workspacePersistence,
+    workspaceRegistry,
     workspaces,
     hooks,
     wakes: () => wakes,

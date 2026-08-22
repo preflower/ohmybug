@@ -148,7 +148,18 @@ export class RuntimeCommands {
   }
 
   approveDelivery(issueId: string): Issue {
-    const approved = this.change(issueId, "DELIVERY_APPROVED", null, (issue, now) =>
+    this.assertAccepting();
+    const current = this.getIssue(issueId);
+    if (current.status === "APPROVED") {
+      this.dependencies.store.transaction((transaction) => {
+        transaction.updateIssue(current, current.revision, "FINALIZE");
+        transaction.appendEvent(this.event(issueId, "DELIVERY_FINALIZATION_RETRIED"));
+      });
+      this.dependencies.wake();
+      return current;
+    }
+
+    const approved = this.change(issueId, "DELIVERY_APPROVED", "FINALIZE", (issue, now) =>
       transitionIssue(issue, "APPROVE_DELIVERY", now));
     const project = this.dependencies.store.getProject(approved.projectId);
     if (!project) throw new Error("PROJECT_NOT_FOUND");

@@ -155,11 +155,54 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     return { projectPath: join(worktreePath, projectRelativePath), resourceId };
   }
 
-  async publish(): Promise<undefined> {
-    return undefined;
+  async publish(input: {
+    issue: Issue;
+    resourceId: string;
+  }): Promise<BranchInfo> {
+    const state = this.getSavedState(input.issue, input.resourceId);
+    if (state.branchInfo) return state.branchInfo;
+    if (input.issue.status !== "APPROVED") {
+      throw new Error("GIT_WORKSPACE_NOT_APPROVED");
+    }
+
+    const changes = await runGit(state.worktreePath, ["status", "--porcelain"]);
+    if (changes) {
+      await runGit(state.worktreePath, ["add", "-A"]);
+      await runGit(state.worktreePath, [
+        "commit",
+        "-m",
+        `${input.issue.identifier}: ${input.issue.title}`,
+      ]);
+    }
+    const commit = await runGit(state.worktreePath, ["rev-parse", "HEAD"]);
+    if (state.delivery === "remote") {
+      await runGit(state.worktreePath, [
+        "push",
+        state.remote!,
+        `refs/heads/${state.branch}:refs/heads/${state.branch}`,
+      ]);
+    }
+
+    const branchInfo: BranchInfo = {
+      name: state.branch,
+      commit,
+      ...(state.delivery === "remote" ? { remote: state.remote } : {}),
+    };
+    this.options.state.set(MODULE_ID, input.resourceId, {
+      ...state,
+      branchInfo,
+    });
+    return branchInfo;
   }
 
-  async release(): Promise<void> {}
+  async release(input: { issue: Issue; resourceId: string }): Promise<void> {
+    const state = this.getSavedState(input.issue, input.resourceId);
+    if (!(await pathExists(state.worktreePath))) {
+      await runGit(state.repositoryPath, ["worktree", "prune"]);
+      return;
+    }
+    await runGit(state.repositoryPath, ["worktree", "remove", state.worktreePath]);
+  }
 
   private async restoreWorktree(state: GitWorkspaceState): Promise<void> {
     if (await pathExists(state.worktreePath)) return;
@@ -171,6 +214,13 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       state.worktreePath,
       state.branch,
     ]);
+  }
+
+  private getSavedState(issue: Issue, resourceId: string): GitWorkspaceState {
+    const state = this.options.state.get<GitWorkspaceState>(MODULE_ID, resourceId);
+    if (!state) throw new Error("GIT_WORKSPACE_STATE_NOT_FOUND");
+    assertSavedState(state, issue, resourceId);
+    return state;
   }
 }
 

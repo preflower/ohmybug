@@ -17,6 +17,7 @@ describe("Runtime typed lifecycle hooks", () => {
       "repair.before",
       "repair.after",
       "issue.userApproved",
+      "issue.completed",
     ] as const) {
       hooks.on("observer", name, () => observed.push(name));
     }
@@ -43,6 +44,7 @@ describe("Runtime typed lifecycle hooks", () => {
     });
     await worker.drain();
     commands.approveDelivery(created.issue.id);
+    await worker.drain();
 
     expect(observed).toEqual([
       "issue.beforeCreate",
@@ -52,6 +54,7 @@ describe("Runtime typed lifecycle hooks", () => {
       "repair.before",
       "repair.after",
       "issue.userApproved",
+      "issue.completed",
     ]);
   });
 

@@ -94,7 +94,9 @@ describe("Runtime human commands", () => {
     const approved = commands.approveDelivery(issue.id);
 
     expect(approved).toMatchObject({ status: "APPROVED", resolution: "FIXED" });
-    expect(store.listPendingOperations()).toEqual([]);
+    expect(store.listPendingOperations()).toEqual([
+      { issue: approved, operation: "FINALIZE" },
+    ]);
     expect(store.readEvents(issue.id).map((event) => event.type)).toEqual(["DELIVERY_APPROVED"]);
   });
 

@@ -284,6 +284,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     store,
     persistence: workspacePersistence,
     registry: workspaceRegistry,
+    hooks,
     id,
     now,
   });

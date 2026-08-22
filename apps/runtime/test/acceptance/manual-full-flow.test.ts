@@ -80,8 +80,9 @@ describe("SQLite-backed Runtime acceptance", () => {
     ))).toBe(true);
 
     runtime.approveDelivery(assessed.id);
+    await runtime.drain();
     expect(runtime.getIssue(assessed.id)).toMatchObject({
-      status: "APPROVED",
+      status: "COMPLETED",
       resolution: "FIXED",
       agentSession: { agent: "fake", sessionId: "session-1" },
     });
@@ -97,6 +98,7 @@ describe("SQLite-backed Runtime acceptance", () => {
       "DELIVERY_READY",
       "EVIDENCE_ACCEPTED",
       "DELIVERY_APPROVED",
+      "ISSUE_COMPLETED",
     ]);
     await runtime.stop();
   });

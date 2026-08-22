@@ -30,7 +30,7 @@ export interface RuntimeWorkerDependencies {
   store: RuntimeStore;
   agents: AgentRegistry;
   evidence: EvidenceStore & EvidenceInspector;
-  workspaces: Pick<WorkspaceCoordinator, "prepare">;
+  workspaces: Pick<WorkspaceCoordinator, "prepare" | "finalize">;
   hooks?: RuntimeLifecycleHooks;
   id: () => string;
   now: () => string;
@@ -58,6 +58,7 @@ export class RuntimeWorker {
     if (pending.operation === "PREPARE") return this.dependencies.workspaces.prepare(pending.issue);
     if (pending.operation === "ASSESS") return this.assess(pending.issue);
     if (pending.operation === "REPAIR") return this.repair(pending.issue);
+    if (pending.operation === "FINALIZE") return this.dependencies.workspaces.finalize(pending.issue);
     throw new Error("UNSUPPORTED_PENDING_OPERATION");
   }
 
