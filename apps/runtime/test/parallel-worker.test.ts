@@ -37,6 +37,22 @@ class BlockingAssessmentAgent extends FakeAgent {
   }
 }
 
+class ReentrantSessionAgent extends FakeAgent {
+  private kicked = false;
+
+  constructor(private readonly kickWorker: () => void) {
+    super();
+  }
+
+  override async createSession(): Promise<AgentSessionRef> {
+    if (!this.kicked) {
+      this.kicked = true;
+      this.kickWorker();
+    }
+    return super.createSession();
+  }
+}
+
 function queueAssessment(
   store: Harness["store"],
   id: string,
@@ -73,6 +89,48 @@ function workerFor(
 }
 
 describe("Runtime parallel Issue scheduler", () => {
+  it("does not lose work queued while an empty pump is settling", async () => {
+    const harness = createHarness();
+    const worker = workerFor(harness);
+
+    worker.kick();
+    queueAssessment(harness.store, "issue-1", "OMB-01");
+    worker.kick();
+    await worker.drain();
+
+    expect(harness.store.getIssue("issue-1")?.status).toBe("ASSESSMENT_REVIEW");
+  });
+
+  it("reserves an Issue before adapters can kick the worker re-entrantly", async () => {
+    const agent = new ReentrantSessionAgent(() => worker.kick());
+    const harness = createHarness(agent);
+    const worker = workerFor(harness);
+    queueAssessment(harness.store, "issue-1", "OMB-01");
+
+    await worker.drain();
+
+    expect(agent.createdSessions).toHaveLength(1);
+    expect(agent.assessSessions).toHaveLength(1);
+  });
+
+  it("observes unexpected failures from fire-and-forget kicks", async () => {
+    const harness = createHarness();
+    const worker = workerFor(harness);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => unhandled.push(error);
+    process.on("unhandledRejection", onUnhandled);
+    queueAssessment(harness.store, "bad-issue", "OMB-01", null);
+
+    try {
+      worker.kick();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("starts a newly queued Issue while another Issue is active and a slot is free", async () => {
     const agent = new BlockingAssessmentAgent();
     const harness = createHarness(agent);

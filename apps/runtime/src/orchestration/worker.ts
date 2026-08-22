@@ -66,6 +66,7 @@ const MAX_AUTOMATIC_EVIDENCE_RETRIES = 2;
 export class RuntimeWorker {
   private running?: Promise<void>;
   private accepting = true;
+  private wakeRequested = false;
   private wakeScheduler?: () => void;
   private readonly maxConcurrentIssues: number;
 
@@ -83,13 +84,17 @@ export class RuntimeWorker {
 
   kick(): void {
     if (!this.accepting) return;
+    this.wakeRequested = true;
     if (this.running) {
       this.wakeScheduler?.();
       return;
     }
-    this.running = this.runUntilIdle().finally(() => {
-      this.running = undefined;
-    });
+    const pump = Promise.resolve().then(() => this.runUntilIdle());
+    this.running = pump;
+    void pump.then(
+      () => this.finishPump(pump),
+      () => this.finishPump(pump),
+    );
   }
 
   beginShutdown(): void {
@@ -98,7 +103,15 @@ export class RuntimeWorker {
 
   async drain(): Promise<void> {
     if (this.accepting) this.kick();
-    await this.running;
+    let firstFailure: { error: unknown } | undefined;
+    while (this.running) {
+      try {
+        await this.running;
+      } catch (error) {
+        firstFailure ??= { error };
+      }
+    }
+    if (firstFailure) throw firstFailure.error;
   }
 
   async drainOne(): Promise<void> {
@@ -132,18 +145,18 @@ export class RuntimeWorker {
 
     while (true) {
       if (this.accepting) {
+        this.wakeRequested = false;
         for (const pending of this.dependencies.store.listPendingOperations()) {
           if (active.size >= this.maxConcurrentIssues) break;
           const issueId = pending.issue.id;
           if (active.has(issueId) || failedInPump.has(issueId)) continue;
 
-          const operation = this.runPendingOperation(pending).then<
-            OperationSettlement,
-            OperationSettlement
-          >(
-            () => ({ kind: "settled", issueId, ok: true }),
-            (error: unknown) => ({ kind: "settled", issueId, ok: false, error }),
-          );
+          const operation = Promise.resolve()
+            .then(() => this.runPendingOperation(pending))
+            .then<OperationSettlement, OperationSettlement>(
+              () => ({ kind: "settled", issueId, ok: true }),
+              (error: unknown) => ({ kind: "settled", issueId, ok: false, error }),
+            );
           active.set(issueId, operation);
         }
       }
@@ -160,6 +173,12 @@ export class RuntimeWorker {
     }
 
     if (firstFailure) throw firstFailure.error;
+  }
+
+  private finishPump(pump: Promise<void>): void {
+    if (this.running !== pump) return;
+    this.running = undefined;
+    if (this.accepting && this.wakeRequested) this.kick();
   }
 
   private async waitForProgress(
