@@ -79,7 +79,7 @@ describe("approval panel", () => {
     expect(onRequestChanges).toHaveBeenCalledWith("补充窄窗口截图");
   });
 
-  it("states that Delivery approval closes the Issue as fixed", () => {
+  it("states that Delivery approval completes the Issue as fixed", () => {
     render(
       <ApprovalPanel
         stage="DELIVERY"
@@ -90,11 +90,11 @@ describe("approval panel", () => {
       />
     );
 
-    expect(screen.getByText(/把 Issue 关闭为 FIXED/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "批准验收并关闭 Issue" })).toBeEnabled();
+    expect(screen.getByText(/把 Issue 完成为 FIXED/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "批准验收并完成 Issue" })).toBeEnabled();
   });
 
-  it("states that Feature Delivery approval closes the Issue as implemented", () => {
+  it("states that Feature Delivery approval completes the Issue as implemented", () => {
     render(
       <ApprovalPanel
         stage="DELIVERY"
@@ -105,7 +105,7 @@ describe("approval panel", () => {
       />
     );
 
-    expect(screen.getByText(/把 Issue 关闭为 IMPLEMENTED/)).toBeVisible();
+    expect(screen.getByText(/把 Issue 完成为 IMPLEMENTED/)).toBeVisible();
   });
 
   it("requires an explicit confirmation before closing a NOT_A_BUG Assessment", () => {
@@ -200,7 +200,7 @@ describe("approval panel", () => {
       />
     );
 
-    const approve = screen.getByRole("button", { name: "批准验收并关闭 Issue" });
+    const approve = screen.getByRole("button", { name: "批准验收并完成 Issue" });
     fireEvent.click(approve);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("验收服务不可用");
