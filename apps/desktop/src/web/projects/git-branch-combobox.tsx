@@ -1,6 +1,6 @@
 import { Combobox } from "@base-ui/react/combobox";
 import { Check, ChevronDown, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { WorkspaceBranchDiscoveryDto } from "../api/types.js";
 import { Button } from "../components/ui/button.js";
@@ -24,11 +24,15 @@ export function GitBranchCombobox({
   onChange,
   onRefresh,
 }: GitBranchComboboxProps) {
-  const [discovery, setDiscovery] = useState(initialDiscovery);
+  const [refreshed, setRefreshed] = useState<{
+    source: WorkspaceBranchDiscoveryDto;
+    value: WorkspaceBranchDiscoveryDto;
+  }>();
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-
-  useEffect(() => setDiscovery(initialDiscovery), [initialDiscovery]);
+  const discovery = refreshed?.source === initialDiscovery
+    ? refreshed.value
+    : initialDiscovery;
 
   const groups = useMemo<BranchGroup[]>(() => [
     { value: "local", label: "本地分支", items: discovery.localBranches },
@@ -39,12 +43,15 @@ export function GitBranchCombobox({
     if (loading) return;
     setLoading(true);
     try {
-      setDiscovery(await onRefresh());
+      setRefreshed({ source: initialDiscovery, value: await onRefresh() });
     } catch (error) {
-      setDiscovery((current) => ({
-        ...current,
-        refreshError: error instanceof Error ? error.message : "远程分支加载失败",
-      }));
+      setRefreshed({
+        source: initialDiscovery,
+        value: {
+          ...discovery,
+          refreshError: error instanceof Error ? error.message : "远程分支加载失败",
+        },
+      });
     } finally {
       setLoading(false);
     }
