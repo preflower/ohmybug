@@ -5,7 +5,10 @@ import type { AgentRegistry } from "./agents/registry.js";
 import type { IntegrationManager } from "./integrations/manager.js";
 import type { ModuleHost } from "./modules/module-host.js";
 import { RuntimeCommands } from "./orchestration/commands.js";
-import { reconcileInterruptedIssues } from "./orchestration/recovery.js";
+import {
+  reconcileInterruptedIssues,
+  reconcileWorkspaceIssues,
+} from "./orchestration/recovery.js";
 import { RuntimeWorker, type RuntimeWorkerDependencies } from "./orchestration/worker.js";
 
 export interface OhMyBugRuntimeDependencies extends RuntimeWorkerDependencies {
@@ -32,6 +35,7 @@ export class OhMyBugRuntime {
     if (this.started) return;
     this.started = true;
     await this.dependencies.modules?.start();
+    await reconcileWorkspaceIssues(this.dependencies);
     reconcileInterruptedIssues(this.dependencies);
     await this.dependencies.integrations?.start(this.dependencies.store.listProjects());
     this.state = "ready";

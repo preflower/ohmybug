@@ -14,3 +14,5 @@ export function workspaceModule(
 ): void {
   context.effect(() => config.registry.register(config.factory));
 }
+
+workspaceModule.reusable = true;

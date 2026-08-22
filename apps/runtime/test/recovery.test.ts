@@ -5,6 +5,130 @@ import { FakeAgent } from "./helpers/fakes.js";
 import { assessment, createHarness, eventIds, now, project } from "./helpers/runtime.js";
 
 describe("Runtime recovery", () => {
+  it("migrates a legacy pending Issue to a Local binding without losing its operation", async () => {
+    const { store, workspaces, workspacePersistence } = createHarness();
+    const legacy = {
+      id: "legacy-assess",
+      projectId: project.id,
+      identifier: "OMB-LEGACY",
+      title: "Legacy",
+      titleSource: "user" as const,
+      status: "RECEIVED" as const,
+      inputs: [],
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => transaction.insertIssue(legacy, "ASSESS"));
+
+    await workspaces.recover();
+
+    expect(store.getIssue(legacy.id)).toMatchObject({ projectPath: project.path });
+    expect(store.listPendingOperations()).toEqual([
+      { issue: expect.objectContaining({ id: legacy.id }), operation: "ASSESS" },
+    ]);
+    expect(workspacePersistence.getBinding(legacy.id)).toMatchObject({
+      providerId: "local",
+      resourceId: `local:${legacy.id}`,
+      status: "READY",
+    });
+  });
+
+  it("queues only finalization for an approved Issue recovered after restart", async () => {
+    const { store, workspaces, workspacePersistence } = createHarness();
+    const approved = {
+      id: "approved-restart",
+      projectId: project.id,
+      projectPath: project.path,
+      identifier: "OMB-APPROVED",
+      title: "Approved",
+      titleSource: "user" as const,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+      inputs: [],
+      assessment,
+      repair: { iteration: 1 },
+      revision: 7,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => transaction.insertIssue(approved, "FINALIZE"));
+    store.transaction((transaction) => transaction.updateIssue(approved, approved.revision, null));
+
+    await workspaces.recover();
+
+    expect(store.listPendingOperations()).toEqual([
+      { issue: expect.objectContaining({ id: approved.id }), operation: "FINALIZE" },
+    ]);
+    expect(workspacePersistence.getBinding(approved.id)?.providerId).toBe("local");
+  });
+
+  it("restores a missing path from its persisted READY binding", async () => {
+    const { store, workspaces, workspacePersistence } = createHarness();
+    const received = {
+      id: "ready-without-path",
+      projectId: project.id,
+      identifier: "OMB-READY",
+      title: "Ready binding",
+      titleSource: "user" as const,
+      status: "RECEIVED" as const,
+      inputs: [],
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => transaction.insertIssue(received, "ASSESS"));
+    workspacePersistence.recoverBinding({
+      issueId: received.id,
+      providerId: "local",
+      resourceId: `local:${received.id}`,
+      status: "READY",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await workspaces.recover();
+
+    expect(store.getIssue(received.id)).toMatchObject({ projectPath: project.path });
+    expect(store.listPendingOperations()[0]?.operation).toBe("ASSESS");
+  });
+
+  it("does not fall back to Local when a persisted provider is unavailable", async () => {
+    const { store, workspaces, workspacePersistence } = createHarness();
+    const received = {
+      id: "missing-provider",
+      projectId: project.id,
+      identifier: "OMB-MISSING",
+      title: "Missing provider",
+      titleSource: "user" as const,
+      status: "RECEIVED" as const,
+      inputs: [],
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => transaction.insertIssue(received, "PREPARE"));
+    workspacePersistence.beginAcquire({
+      issueId: received.id,
+      providerId: "missing",
+      resourceId: `missing:${received.id}`,
+      status: "PREPARING",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await workspaces.recover();
+
+    expect(store.listPendingOperations()).toEqual([]);
+    expect(workspacePersistence.getBinding(received.id)?.providerId).toBe("missing");
+    expect(store.readEvents(received.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "WORKSPACE_RECOVERY_FAILED",
+        data: expect.objectContaining({ error: "WORKSPACE_PROVIDER_NOT_AVAILABLE:missing" }),
+      }),
+    ]));
+  });
+
   it.each([
     ["ASSESSING", "ASSESSMENT_FAILED", "ASSESSMENT"],
     ["REPAIRING", "REPAIR_FAILED", "REPAIR"],
@@ -66,7 +190,7 @@ describe("Runtime recovery", () => {
   });
 
   it.each(["ASSESSMENT_REVIEW", "ACCEPTANCE_REVIEW", "COMPLETED", "CLOSED"] as const)(
-    "leaves durable %s work unchanged",
+    "preserves durable %s state while migrating only active legacy workspaces",
     async (status) => {
       const agent = new FakeAgent();
       const { commands, store, agents, evidence, workspaces } = createHarness(agent);
@@ -101,8 +225,17 @@ describe("Runtime recovery", () => {
 
       await runtime.start();
 
-      expect(store.getIssue(issue.id)).toEqual(issue);
-      expect(store.readEvents(issue.id)).toEqual([]);
+      if (status === "ASSESSMENT_REVIEW" || status === "ACCEPTANCE_REVIEW") {
+        expect(store.getIssue(issue.id)).toMatchObject({
+          status,
+          projectPath: project.path,
+        });
+        expect(store.readEvents(issue.id).map((event) => event.type))
+          .toEqual(["WORKSPACE_RECOVERED"]);
+      } else {
+        expect(store.getIssue(issue.id)).toEqual(issue);
+        expect(store.readEvents(issue.id)).toEqual([]);
+      }
     },
   );
 

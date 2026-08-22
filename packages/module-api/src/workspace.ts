@@ -67,6 +67,7 @@ export interface WorkspacePersistence {
     value: WorkspaceProjectConfiguration,
   ): void;
   getBinding(issueId: string): WorkspaceBinding | undefined;
+  recoverBinding(binding: WorkspaceBinding): void;
   beginAcquire(binding: WorkspaceBinding): void;
   completeAcquire(input: {
     binding: WorkspaceBinding;

@@ -82,6 +82,19 @@ describe("SQLite Workspace persistence", () => {
     runtime.close();
   });
 
+  it("recovers only READY bindings", () => {
+    const { runtime, workspaces } = createWorkspaceStores();
+    runtime.registerProject(project);
+    runtime.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
+
+    expect(() => workspaces.recoverBinding(binding("PREPARING")))
+      .toThrow("WORKSPACE_BINDING_NOT_READY");
+    workspaces.recoverBinding(binding("READY"));
+
+    expect(workspaces.getBinding(issue.id)).toEqual(binding("READY"));
+    runtime.close();
+  });
+
   it("assigns projectPath and queues Assessment atomically with a READY binding", () => {
     const { runtime, workspaces } = createWorkspaceStores();
     runtime.registerProject(project);

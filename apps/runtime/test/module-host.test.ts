@@ -32,6 +32,18 @@ function fakeWorkspaceFactory(id: string): WorkspaceProviderFactory {
 }
 
 describe("internal module host", () => {
+  it("mounts multiple reusable Workspace provider instances", async () => {
+    const registry = new WorkspaceRegistry();
+    const host = new ModuleHost();
+    host.mount(workspaceModule, { factory: fakeWorkspaceFactory("local"), registry });
+    host.mount(workspaceModule, { factory: fakeWorkspaceFactory("git"), registry });
+
+    await host.start();
+
+    expect(registry.manifests().map((manifest) => manifest.id)).toEqual(["local", "git"]);
+    await host.stop();
+  });
+
   it("unregisters a provider when its Cordis ForkScope is disposed", async () => {
     const registry = new WorkspaceRegistry();
     const host = new ModuleHost();

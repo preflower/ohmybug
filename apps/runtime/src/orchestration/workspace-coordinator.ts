@@ -1,4 +1,10 @@
-import { transitionIssue, type Issue, type RuntimeStore } from "@oh-my-bug/core";
+import {
+  transitionIssue,
+  type Issue,
+  type PendingOperation,
+  type RuntimeProject,
+  type RuntimeStore,
+} from "@oh-my-bug/core";
 import type {
   LifecycleEventMap,
   WorkspaceBinding,
@@ -30,10 +36,16 @@ export class WorkspaceCoordinator {
     if (!project) throw new Error("PROJECT_NOT_FOUND");
 
     const existing = this.dependencies.persistence.getBinding(issue.id);
+    const projectConfiguration = this.dependencies.persistence
+      .getProjectConfiguration(project.id);
     const configuration = existing
-      ? { provider: existing.providerId, config: {} }
-      : this.dependencies.persistence.getProjectConfiguration(project.id)
-        ?? { provider: "local", config: {} };
+      ? {
+          provider: existing.providerId,
+          config: projectConfiguration?.provider === existing.providerId
+            ? projectConfiguration.config
+            : {},
+        }
+      : projectConfiguration ?? { provider: "local", config: {} };
     const resourceId = `${configuration.provider}:${issue.id}`;
     const startedAt = this.dependencies.now();
     const preparing: WorkspaceBinding = {
@@ -99,6 +111,45 @@ export class WorkspaceCoordinator {
           }),
         );
       });
+    }
+  }
+
+  async recover(): Promise<void> {
+    const pendingByIssue = new Map(
+      this.dependencies.store.listPendingOperations()
+        .map(({ issue, operation }) => [issue.id, operation] as const),
+    );
+    for (const snapshot of this.dependencies.store.listIssues()) {
+      if (isTerminal(snapshot)) continue;
+      const issue = this.dependencies.store.getIssue(snapshot.id);
+      if (!issue || issue.revision !== snapshot.revision) continue;
+      const project = this.dependencies.store.getProject(issue.projectId);
+      if (!project) continue;
+      const pending = pendingByIssue.get(issue.id);
+      const binding = this.dependencies.persistence.getBinding(issue.id);
+
+      if (!binding) {
+        if (issue.status === "RECEIVED" && !issue.projectPath && pending !== "ASSESS") {
+          if (pending !== "PREPARE") this.queueRecovery(issue, "PREPARE");
+          continue;
+        }
+        await this.recoverLegacyLocal(issue, project, pending);
+        continue;
+      }
+      if (!this.dependencies.registry.has(binding.providerId)) {
+        this.failRecovery(
+          issue,
+          binding.providerId,
+          new Error(`WORKSPACE_PROVIDER_NOT_AVAILABLE:${binding.providerId}`),
+        );
+        continue;
+      }
+      if (!issue.projectPath || binding.status !== "READY") {
+        await this.restoreBinding(issue, project, binding, pending);
+        continue;
+      }
+      const operation = recoveryOperation(issue, pending);
+      if (operation !== pending) this.queueRecovery(issue, operation);
     }
   }
 
@@ -172,6 +223,118 @@ export class WorkspaceCoordinator {
     };
   }
 
+  private async recoverLegacyLocal(
+    issue: Issue,
+    project: RuntimeProject,
+    pending?: PendingOperation,
+  ): Promise<void> {
+    if (!this.dependencies.registry.has("local")) {
+      this.failRecovery(issue, "local", new Error("WORKSPACE_PROVIDER_NOT_AVAILABLE:local"));
+      return;
+    }
+    const recoveredAt = this.dependencies.now();
+    const next = issue.projectPath === project.path
+      ? issue
+      : {
+          ...issue,
+          projectPath: project.path,
+          revision: issue.revision + 1,
+          updatedAt: recoveredAt,
+        };
+    this.persistRecovery(
+      issue,
+      next,
+      {
+        issueId: issue.id,
+        providerId: "local",
+        resourceId: `local:${issue.id}`,
+        status: "READY",
+        createdAt: recoveredAt,
+        updatedAt: recoveredAt,
+      },
+      recoveryOperation(next, pending),
+    );
+  }
+
+  private async restoreBinding(
+    issue: Issue,
+    project: RuntimeProject,
+    binding: WorkspaceBinding,
+    pending?: PendingOperation,
+  ): Promise<void> {
+    try {
+      const projectConfiguration = this.dependencies.persistence
+        .getProjectConfiguration(project.id);
+      const provider = this.dependencies.registry.create(
+        binding.providerId,
+        projectConfiguration?.provider === binding.providerId
+          ? projectConfiguration.config
+          : {},
+      );
+      const acquired = await provider.acquire({ issue, project });
+      if (acquired.resourceId !== binding.resourceId) {
+        throw new Error("WORKSPACE_RESOURCE_ID_MISMATCH");
+      }
+      const recoveredAt = this.dependencies.now();
+      const next = issue.projectPath === acquired.projectPath
+        ? issue
+        : {
+            ...issue,
+            projectPath: acquired.projectPath,
+            revision: issue.revision + 1,
+            updatedAt: recoveredAt,
+          };
+      this.persistRecovery(
+        issue,
+        next,
+        { ...binding, status: "READY", updatedAt: recoveredAt },
+        recoveryOperation(next, pending),
+      );
+    } catch (error) {
+      this.failRecovery(issue, binding.providerId, error);
+    }
+  }
+
+  private persistRecovery(
+    previous: Issue,
+    next: Issue,
+    binding: WorkspaceBinding,
+    pending: PendingOperation | null,
+  ): void {
+    this.dependencies.persistence.transaction(() => {
+      this.dependencies.persistence.recoverBinding(binding);
+      this.dependencies.store.transaction((transaction) => {
+        transaction.updateIssue(next, previous.revision, pending);
+        transaction.appendEvent(this.event(previous.id, "WORKSPACE_RECOVERED", {
+          providerId: binding.providerId,
+          resourceId: binding.resourceId,
+        }));
+      });
+    });
+  }
+
+  private queueRecovery(issue: Issue, operation: PendingOperation | null): void {
+    this.dependencies.store.transaction((transaction) => {
+      transaction.updateIssue(issue, issue.revision, operation);
+      transaction.appendEvent(this.event(issue.id, "WORKSPACE_RECOVERY_QUEUED", {
+        operation,
+      }));
+    });
+  }
+
+  private failRecovery(issue: Issue, providerId: string, error: unknown): void {
+    const message = workspaceFailureMessage(error, "WORKSPACE_RECOVERY_FAILED");
+    this.dependencies.store.transaction((transaction) => {
+      const current = this.dependencies.store.getIssue(issue.id);
+      if (!current || current.revision !== issue.revision) return;
+      transaction.updateIssue(current, current.revision, null);
+      transaction.appendEvent(this.event(issue.id, "WORKSPACE_RECOVERY_FAILED", {
+        providerId,
+        error: message,
+      }));
+    });
+  }
+
   private emitLifecycle<K extends keyof LifecycleEventMap>(
     name: K,
     payload: LifecycleEventMap[K],
@@ -200,6 +363,20 @@ export class WorkspaceCoordinator {
       }
     });
   }
+}
+
+function recoveryOperation(
+  issue: Issue,
+  pending?: PendingOperation,
+): PendingOperation | null {
+  if (issue.status === "APPROVED") return "FINALIZE";
+  if (pending === "ASSESS" || pending === "REPAIR") return pending;
+  if (issue.status === "RECEIVED") return "ASSESS";
+  return null;
+}
+
+function isTerminal(issue: Issue): boolean {
+  return ["COMPLETED", "CLOSED", "CANCELED"].includes(issue.status);
 }
 
 function workspaceFailureMessage(error: unknown, fallback = "WORKSPACE_PREPARATION_FAILED"): string {

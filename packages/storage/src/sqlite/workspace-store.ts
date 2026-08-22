@@ -143,6 +143,11 @@ export class SqliteWorkspaceStore implements WorkspacePersistence, ModuleStateSt
     return parseBinding(row);
   }
 
+  recoverBinding(binding: WorkspaceBinding): void {
+    if (binding.status !== "READY") throw new Error("WORKSPACE_BINDING_NOT_READY");
+    writeBinding(this.database, binding);
+  }
+
   beginAcquire(binding: WorkspaceBinding): void {
     if (binding.status !== "PREPARING") throw new Error("WORKSPACE_BINDING_NOT_PREPARING");
     writeBinding(this.database, binding);

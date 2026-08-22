@@ -30,7 +30,7 @@ export interface RuntimeWorkerDependencies {
   store: RuntimeStore;
   agents: AgentRegistry;
   evidence: EvidenceStore & EvidenceInspector;
-  workspaces: Pick<WorkspaceCoordinator, "prepare" | "finalize">;
+  workspaces: Pick<WorkspaceCoordinator, "prepare" | "finalize" | "recover">;
   hooks?: RuntimeLifecycleHooks;
   id: () => string;
   now: () => string;

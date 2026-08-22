@@ -6,10 +6,18 @@ import {
   type RuntimeStore,
 } from "@oh-my-bug/core";
 
+import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
+
 export interface RecoveryDependencies {
   store: RuntimeStore;
   id(): string;
   now(): string;
+}
+
+export async function reconcileWorkspaceIssues(
+  dependencies: { workspaces: Pick<WorkspaceCoordinator, "recover"> },
+): Promise<void> {
+  await dependencies.workspaces.recover();
 }
 
 export function reconcileInterruptedIssues(dependencies: RecoveryDependencies): void {
