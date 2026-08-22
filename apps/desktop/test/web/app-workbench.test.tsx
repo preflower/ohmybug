@@ -203,4 +203,41 @@ describe("control center workbench", () => {
     expect(within(railWithoutBranch).queryByText("分支")).not.toBeInTheDocument();
     expect(within(railWithoutBranch).queryByText("Worktree")).not.toBeInTheDocument();
   });
+
+  it("hides cached workspace metadata while the same Issue revision refreshes", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue")
+      .mockResolvedValueOnce(issue)
+      .mockResolvedValue({ ...issue });
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    let resolveRefresh: (value: null) => void = () => undefined;
+    const pendingRefresh = new Promise<null>((resolve) => { resolveRefresh = resolve; });
+    const workspace = vi.spyOn(api, "issueWorkspace")
+      .mockResolvedValueOnce({
+        providerId: "git",
+        status: "READY",
+        branch: "ohmybug/chk-1",
+      })
+      .mockReturnValueOnce(pendingRefresh);
+    const cancel = vi.spyOn(api, "cancel").mockResolvedValue({ ...issue });
+
+    render(<App />);
+
+    const rail = await screen.findByTestId("issue-metadata-rail");
+    expect(await within(rail).findByText("ohmybug/chk-1")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "关闭 Issue" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认关闭" }));
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith(issue.id));
+    await waitFor(() => expect(workspace).toHaveBeenCalledTimes(2));
+
+    expect(within(rail).queryByText("ohmybug/chk-1")).not.toBeInTheDocument();
+    expect(within(rail).queryByText("Worktree")).not.toBeInTheDocument();
+
+    resolveRefresh(null);
+    await waitFor(() => expect(within(rail).queryByText("分支")).not.toBeInTheDocument());
+  });
 });

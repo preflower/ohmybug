@@ -322,25 +322,22 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
   const action = (operation: Promise<IssueDto>) => operation.then(onUpdated);
   const [branches, setBranches] = useState<Record<string, BranchInfoDto>>({});
   const [workspaceResult, setWorkspaceResult] = useState<{
-    issueId: string;
-    revision: number;
+    issue: IssueDto;
     info: IssueWorkspaceInfoDto;
   }>();
   useEffect(() => {
     let active = true;
     if (!selected) return () => { active = false; };
-    const issueId = selected.id;
-    const revision = selected.revision;
+    const issue = selected;
     void api.issueWorkspace(selected.id).then((info) => {
-      if (active) setWorkspaceResult({ issueId, revision, info });
+      if (active) setWorkspaceResult({ issue, info });
     }).catch(() => {
-      if (active) setWorkspaceResult({ issueId, revision, info: null });
+      if (active) setWorkspaceResult({ issue, info: null });
     });
     return () => { active = false; };
   }, [selected]);
   const workspaceInfo = selected
-    && workspaceResult?.issueId === selected.id
-    && workspaceResult.revision === selected.revision
+    && workspaceResult?.issue === selected
     ? workspaceResult.info
     : null;
   const approveDelivery = (issue: IssueDto) => api.approveDelivery(issue.id).then((result) => {
