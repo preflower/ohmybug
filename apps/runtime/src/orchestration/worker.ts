@@ -14,6 +14,7 @@ import {
   type AgentAdapter,
   type AgentSessionRef,
   type Issue,
+  type PendingOperation,
   type RepairResult,
   type RuntimeStore,
 } from "@oh-my-bug/core";
@@ -58,6 +59,7 @@ export class RuntimeWorker {
     if (pending.operation === "PREPARE") return this.dependencies.workspaces.prepare(pending.issue);
     if (pending.operation === "ASSESS") return this.assess(pending.issue);
     if (pending.operation === "REPAIR") return this.repair(pending.issue);
+    if (pending.operation === "EVIDENCE") return this.inspectEvidence(pending.issue);
     if (pending.operation === "FINALIZE") return this.dependencies.workspaces.finalize(pending.issue);
     throw new Error("UNSUPPORTED_PENDING_OPERATION");
   }
@@ -225,22 +227,8 @@ export class RuntimeWorker {
         }
         const delivery = deliverySchema.parse({ summary: result.summary, evidence });
         const delivered = recordDelivery(claimed, delivery, this.dependencies.now());
-        if (!this.complete(claimed, delivered, "DELIVERY_READY")) return;
-        this.emitLifecycle("repair.after", { issue: delivered, project });
-
-        const inspections = await Promise.all(delivery.evidence.map((item) =>
-          this.dependencies.evidence.inspect(
-            delivered.id,
-            delivered.repair!.iteration,
-            item.evidenceId,
-          )));
-        const gate = reviewVisualEvidence(delivery, delivered.repair!.iteration, inspections);
-        const current = this.dependencies.store.getIssue(delivered.id);
-        if (!current || current.revision !== delivered.revision) return;
-        if (gate.reviewable) {
-          this.complete(current, recordEvidenceAcceptance(current, this.dependencies.now()), "EVIDENCE_ACCEPTED");
-        } else {
-          this.requeueEvidence(current, gate.reasons.map((reason) => reason.message).join("\n"));
+        if (this.complete(claimed, delivered, "DELIVERY_READY", "EVIDENCE")) {
+          this.emitLifecycle("repair.after", { issue: delivered, project });
         }
       } catch (error) {
         const current = this.dependencies.store.getIssue(claimed.id);
@@ -252,6 +240,44 @@ export class RuntimeWorker {
       }
     } finally {
       await intake.cleanup();
+    }
+  }
+
+  private async inspectEvidence(pending: Issue): Promise<void> {
+    const claimed = this.dependencies.store.transaction((tx) => {
+      const current = this.dependencies.store.getIssue(pending.id);
+      if (!current || current.status !== "EVIDENCE_CHECK" || !current.repair?.delivery) {
+        return undefined;
+      }
+      tx.updateIssue(current, current.revision, null);
+      tx.appendEvent(this.event(current.id, "EVIDENCE_CHECK_STARTED"));
+      return current;
+    });
+    if (!claimed?.repair?.delivery) return;
+
+    try {
+      const delivery = claimed.repair.delivery;
+      const inspections = await Promise.all(delivery.evidence.map((item) =>
+        this.dependencies.evidence.inspect(
+          claimed.id,
+          claimed.repair!.iteration,
+          item.evidenceId,
+        )));
+      const gate = reviewVisualEvidence(delivery, claimed.repair.iteration, inspections);
+      if (gate.reviewable) {
+        this.complete(
+          claimed,
+          recordEvidenceAcceptance(claimed, this.dependencies.now()),
+          "EVIDENCE_ACCEPTED",
+        );
+      } else {
+        this.requeueEvidence(
+          claimed,
+          gate.reasons.map((reason) => reason.message).join("\n"),
+        );
+      }
+    } catch (error) {
+      this.requeueEvidence(claimed, publicEvidenceFailure(error));
     }
   }
 
@@ -332,7 +358,7 @@ export class RuntimeWorker {
     previous: Issue,
     next: Issue,
     type: string,
-    pending: "REPAIR" | null = null,
+    pending: PendingOperation | null = null,
   ): boolean {
     return this.dependencies.store.transaction((tx) => {
       const current = this.dependencies.store.getIssue(previous.id);

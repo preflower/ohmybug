@@ -3,7 +3,12 @@ import { z } from "zod";
 import type { ProjectCommands, ProjectContext } from "../agent/adapter.js";
 import type { Issue } from "../issue/types.js";
 
-export type PendingOperation = "PREPARE" | "ASSESS" | "REPAIR" | "FINALIZE";
+export type PendingOperation =
+  | "PREPARE"
+  | "ASSESS"
+  | "REPAIR"
+  | "EVIDENCE"
+  | "FINALIZE";
 export type IssueEventActor = "SYSTEM" | "USER" | "AGENT";
 
 export type ConfigValue = string | number | boolean | string[];

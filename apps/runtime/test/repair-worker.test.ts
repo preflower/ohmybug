@@ -31,14 +31,27 @@ describe("Runtime repair worker", () => {
     const issue = repairingIssue("repair-1");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
 
-    await new RuntimeWorker({
+    const worker = new RuntimeWorker({
       store,
       agents,
       evidence,
       workspaces,
       id: eventIds("repair-event"),
       now: () => now,
-    }).drain();
+    });
+
+    await worker.drainOne();
+
+    expect(store.getIssue(issue.id)).toMatchObject({
+      status: "EVIDENCE_CHECK",
+      repair: { delivery },
+    });
+    expect(store.listPendingOperations()).toEqual([{
+      issue: expect.objectContaining({ id: issue.id }),
+      operation: "EVIDENCE",
+    }]);
+
+    await worker.drainOne();
 
     expect(store.getIssue(issue.id)).toMatchObject({
       status: "ACCEPTANCE_REVIEW",
@@ -67,8 +80,16 @@ describe("Runtime repair worker", () => {
     const issue = repairingIssue("repair-invalid-evidence");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
 
-    await new RuntimeWorker({ store, agents, evidence, workspaces, id: eventIds("invalid"), now: () => now })
-      .drainOne();
+    const worker = new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("invalid"),
+      now: () => now,
+    });
+    await worker.drainOne();
+    await worker.drainOne();
 
     expect(store.getIssue(issue.id)).toMatchObject({
       status: "REPAIRING",

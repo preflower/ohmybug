@@ -27,4 +27,37 @@ describe("SQLite recovery state", () => {
     expect(cleared.listPendingOperations()).toEqual([]);
     cleared.close();
   });
+
+  it("retains pending evidence inspection across reopen", () => {
+    const path = databasePath();
+    const store = createStore(path);
+    store.registerProject(project);
+    const evidenceChecking = {
+      ...issue,
+      status: "EVIDENCE_CHECK" as const,
+      agentSession: { agent: "fake", sessionId: "session-1" },
+      repair: {
+        iteration: 1,
+        delivery: {
+          summary: "Implemented",
+          evidence: [{
+            type: "screenshot" as const,
+            label: "Proof",
+            evidenceId: `sha256-${"a".repeat(64)}`,
+          }],
+        },
+      },
+      revision: 3,
+    };
+    store.transaction((transaction) =>
+      transaction.insertIssue(evidenceChecking, "EVIDENCE"));
+    store.close();
+
+    const reopened = createStore(path);
+    expect(reopened.listPendingOperations()).toEqual([{
+      issue: evidenceChecking,
+      operation: "EVIDENCE",
+    }]);
+    reopened.close();
+  });
 });
