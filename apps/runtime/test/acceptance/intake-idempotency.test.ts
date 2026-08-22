@@ -122,6 +122,8 @@ describe("SQLite-backed intake acceptance", () => {
     await runtime.stop();
 
     const reopened = createRuntime(options);
+    await reopened.start();
+    await reopened.drain();
     expect(reopened.getIssue(first.issue.id)).toMatchObject({
       status: "CANCELED",
       resolution: "CANCELED",

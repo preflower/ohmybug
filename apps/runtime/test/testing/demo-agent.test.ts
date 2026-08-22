@@ -98,7 +98,10 @@ describe("demo Agent adapter", () => {
     await Promise.resolve();
     await adapter.cancel(session, "USER_CANCELED");
 
-    await expect(assessing).rejects.toThrow("RUN_CANCELED");
+    await expect(assessing).rejects.toMatchObject({
+      code: "AGENT_TURN_INTERRUPTED",
+      reason: "USER_CANCELED",
+    });
   });
 
   it("never writes outside the Runtime-provided evidence directory", async () => {
