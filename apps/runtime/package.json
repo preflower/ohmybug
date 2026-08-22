@@ -1,0 +1,21 @@
+{
+  "name": "@oh-my-bug/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol/index.ts"
+  },
+  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": {
+    "@oh-my-bug/agent-codex": "workspace:*",
+    "@oh-my-bug/core": "workspace:*",
+    "@oh-my-bug/integration-dingtalk": "workspace:*",
+    "@oh-my-bug/integration-manual": "workspace:*",
+    "@oh-my-bug/integration-sentry": "workspace:*",
+    "@oh-my-bug/storage": "workspace:*",
+    "sharp": "^0.35.3",
+    "zod": "^4.1.11"
+  }
+}

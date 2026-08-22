@@ -1,0 +1,12 @@
+{
+  "name": "@oh-my-bug/integration-dingtalk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": {
+    "@oh-my-bug/core": "workspace:*",
+    "dingtalk-stream": "2.1.6-beta.1"
+  }
+}

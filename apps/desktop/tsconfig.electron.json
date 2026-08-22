@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "../..",
+    "outDir": "../../.vite/build",
+    "declaration": false,
+    "sourceMap": false,
+    "incremental": false
+  },
+  "include": [
+    "src/electron/**/*.ts",
+    "../runtime/src/**/*.ts",
+    "../../packages/*/src/**/*.ts"
+  ],
+  "exclude": ["test", "dist", "../../.vite", "../../out"]
+}

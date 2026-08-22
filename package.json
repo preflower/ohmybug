@@ -1,0 +1,61 @@
+{
+  "name": "oh-my-bug",
+  "productName": "Oh My Bug",
+  "version": "0.1.0",
+  "description": "Local AI automation for assessing, implementing, and validating bug fixes and feature changes.",
+  "private": true,
+  "type": "module",
+  "config": {
+    "forge": "apps/desktop/forge.config.ts"
+  },
+  "main": ".vite/build/apps/desktop/src/electron/main.js",
+  "scripts": {
+    "dev": "node apps/desktop/scripts/dev.cjs",
+    "dev:web": "pnpm --filter @oh-my-bug/desktop dev:web",
+    "build": "pnpm build:desktop",
+    "build:web": "pnpm --filter @oh-my-bug/desktop build:web",
+    "build:electron": "node --import tsx apps/desktop/scripts/copy-runtime-assets.ts --clean && tsc -p apps/desktop/tsconfig.electron.json && node --import tsx apps/desktop/scripts/build-preload.ts && node --import tsx apps/desktop/scripts/copy-runtime-assets.ts",
+    "build:desktop": "pnpm typecheck && pnpm build:electron && pnpm build:web",
+    "package": "pnpm build:desktop && electron-forge package",
+    "make": "pnpm build:desktop && electron-forge make",
+    "typecheck": "pnpm typecheck:workspaces && pnpm typecheck:repository",
+    "typecheck:workspaces": "pnpm --filter @oh-my-bug/core --filter @oh-my-bug/agent-codex --filter @oh-my-bug/integration-manual --filter @oh-my-bug/integration-sentry --filter @oh-my-bug/integration-dingtalk --filter @oh-my-bug/storage --filter @oh-my-bug/runtime --filter @oh-my-bug/desktop typecheck",
+    "typecheck:repository": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint .",
+    "test": "pnpm test:workspaces && pnpm test:repository",
+    "test:workspaces": "pnpm --filter @oh-my-bug/core --filter @oh-my-bug/agent-codex --filter @oh-my-bug/integration-manual --filter @oh-my-bug/integration-sentry --filter @oh-my-bug/integration-dingtalk --filter @oh-my-bug/storage --filter @oh-my-bug/runtime --filter @oh-my-bug/desktop test",
+    "test:repository": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:electron": "playwright test -c apps/desktop/playwright.config.ts",
+    "doctor": "node --import tsx scripts/doctor.ts",
+    "doctor:package": "node --import tsx apps/desktop/scripts/verify-packaged-runtime.ts"
+  },
+  "dependencies": {
+    "@oh-my-bug/runtime": "workspace:*",
+    "@openai/codex-sdk": "^0.148.0",
+    "better-sqlite3": "^13.0.3",
+    "cross-keychain": "^1.1.0",
+    "dingtalk-stream": "2.1.6-beta.1",
+    "mediainfo.js": "0.3.7",
+    "playwright": "^1.62.1",
+    "sharp": "^0.35.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/core": "7.11.2",
+    "@electron-forge/maker-dmg": "7.11.2",
+    "@electron-forge/maker-zip": "7.11.2",
+    "@electron-forge/plugin-vite": "7.11.2",
+    "@electron-forge/shared-types": "7.11.2",
+    "@playwright/test": "^1.62.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.2.0",
+    "electron": "43.4.1",
+    "esbuild": "0.28.2",
+    "oxlint": "1.76.0",
+    "tsx": "^4.23.12",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

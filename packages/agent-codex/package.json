@@ -1,0 +1,12 @@
+{
+  "name": "@oh-my-bug/agent-codex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": {
+    "@oh-my-bug/core": "workspace:*",
+    "@openai/codex-sdk": "^0.148.0"
+  }
+}

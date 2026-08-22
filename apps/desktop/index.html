@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0c0f" />
+    <link rel="icon" type="image/png" href="/app-icon.png" />
+    <title>Oh My Bug ?!</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (() => {
+        let preference = "system";
+        let prefersLight = false;
+        try {
+          const stored = localStorage.getItem("oh-my-bug-theme");
+          if (stored === "system" || stored === "light" || stored === "dark") preference = stored;
+          prefersLight = window.matchMedia?.("(prefers-color-scheme: light)").matches ?? false;
+        } catch {
+          preference = "system";
+          prefersLight = false;
+        }
+        const resolved = preference === "system" ? (prefersLight ? "light" : "dark") : preference;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+      })();
+    </script>
+    <script type="module" src="/src/web/main.tsx"></script>
+  </body>
+</html>

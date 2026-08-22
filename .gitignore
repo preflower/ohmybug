@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.vite/
+out/
+.oh-my-bug/
+coverage/
+playwright-report/
+test-results/
+.artifacts/
+output/
+.env
+.env.*
+!.env.example
+
+# Local acceptance evidence; never stage or commit.
+# Keep this as the final matching ignore rule.
+.acceptance/

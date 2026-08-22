@@ -1,0 +1,22 @@
+{
+  "name": "@oh-my-bug/storage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "ohMyBug": {
+    "runtimeAssets": [
+      "src/evidence/media-probe-child.mjs",
+      "src/evidence/wasm-memory-cap.mjs"
+    ]
+  },
+  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": {
+    "@oh-my-bug/core": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "cross-keychain": "^1.1.0",
+    "mediainfo.js": "0.3.7",
+    "playwright": "^1.62.1",
+    "sharp": "^0.35.3"
+  }
+}

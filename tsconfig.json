@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["test/architecture", "test/e2e", "test/helpers", "test/scripts", "scripts", "vitest.config.ts", "playwright.config.ts"]
+}
