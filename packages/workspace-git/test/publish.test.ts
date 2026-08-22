@@ -16,7 +16,7 @@ describe("GitWorkspace publish", () => {
     const provider = gitWorkspaceFactory({
       state: fixture.state,
       worktreeRoot: fixture.worktreeRoot,
-    }).create({ baseBranch: "main", delivery: "local" });
+    }).create({ baseBranch: "main", pushToRemote: false });
     const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
     const before = await git(acquired.projectPath, "rev-parse", "HEAD");
     await writeFile(join(acquired.projectPath, "fixed.txt"), "fixed\n");
@@ -40,10 +40,12 @@ describe("GitWorkspace publish", () => {
   it("retries a failed remote push without creating a duplicate commit", async () => {
     const fixture = await createGitFixture();
     cleanups.push(fixture.cleanup);
+    const bare = join(fixture.root, "delivery.git");
+    await git(fixture.repository, "remote", "add", "delivery", bare);
     const provider = gitWorkspaceFactory({
       state: fixture.state,
       worktreeRoot: fixture.worktreeRoot,
-    }).create({ baseBranch: "main", delivery: "remote", remote: "delivery" });
+    }).create({ baseBranch: "main", pushToRemote: true, remote: "delivery" });
     const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
     const approved = {
       ...fixture.issue,
@@ -56,10 +58,8 @@ describe("GitWorkspace publish", () => {
     await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
       .rejects.toThrow("GIT_COMMAND_FAILED:push");
     const committed = await git(acquired.projectPath, "rev-parse", "HEAD");
-    const bare = join(fixture.root, "delivery.git");
     await mkdir(bare);
     await git(bare, "init", "--bare");
-    await git(fixture.repository, "remote", "add", "delivery", bare);
 
     const published = await provider.publish({ issue: approved, resourceId: "git:issue-1" });
 
@@ -79,7 +79,7 @@ describe("GitWorkspace publish", () => {
     const provider = gitWorkspaceFactory({
       state: fixture.state,
       worktreeRoot: fixture.worktreeRoot,
-    }).create({ baseBranch: "main", delivery: "local" });
+    }).create({ baseBranch: "main", pushToRemote: false });
     const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
     const approved = {
       ...fixture.issue,

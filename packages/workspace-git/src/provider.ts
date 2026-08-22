@@ -15,7 +15,16 @@ import { gitRefExists, runGit, tryRunGit } from "./git-client.js";
 
 const MODULE_ID = "workspace-git";
 
-const gitWorkspaceConfigSchema = z.object({
+const currentGitWorkspaceConfigSchema = z.object({
+  baseBranch: z.string().trim().min(1),
+  pushToRemote: z.boolean(),
+  remote: z.string().trim().min(1).optional(),
+}).strict().refine(
+  (value) => !value.pushToRemote || Boolean(value.remote),
+  { message: "GIT_REMOTE_REQUIRED" },
+);
+
+const legacyGitWorkspaceConfigSchema = z.object({
   baseBranch: z.string().trim().min(1),
   delivery: z.enum(["local", "remote"]),
   remote: z.string().trim().min(1).optional(),
@@ -24,7 +33,11 @@ const gitWorkspaceConfigSchema = z.object({
   { message: "GIT_REMOTE_REQUIRED" },
 );
 
-type GitWorkspaceConfig = z.infer<typeof gitWorkspaceConfigSchema>;
+interface GitWorkspaceConfig {
+  baseBranch: string;
+  pushToRemote: boolean;
+  remote?: string;
+}
 
 export interface GitWorkspaceState {
   issueId: string;
@@ -34,8 +47,11 @@ export interface GitWorkspaceState {
   branch: string;
   baseBranch: string;
   baseCommit: string;
-  delivery: "local" | "remote";
+  pushToRemote?: boolean;
+  /** Persisted before remote publication became a Boolean capability. */
+  delivery?: "local" | "remote";
   remote?: string;
+  remoteUrl?: string;
   branchInfo?: BranchInfo;
 }
 
@@ -61,18 +77,11 @@ export function gitWorkspaceFactory(
           defaultValue: "main",
         },
         {
-          key: "delivery",
-          type: "string",
-          label: "交付方式",
+          key: "pushToRemote",
+          type: "boolean",
+          label: "完成后推送到远程",
           required: true,
-          defaultValue: "local",
-        },
-        {
-          key: "remote",
-          type: "string",
-          label: "远程仓库",
-          required: false,
-          defaultValue: "origin",
+          defaultValue: false,
         },
       ],
     },
@@ -195,6 +204,9 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       await runGit(repositoryPath, ["worktree", "add", "-b", branch, worktreePath, baseCommit]);
     }
 
+    const remoteUrl = configuration.pushToRemote
+      ? await runGit(repositoryPath, ["remote", "get-url", configuration.remote!])
+      : undefined;
     const state: GitWorkspaceState = {
       issueId: input.issue.id,
       repositoryPath,
@@ -203,8 +215,9 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       branch,
       baseBranch: configuration.baseBranch,
       baseCommit,
-      delivery: configuration.delivery,
+      pushToRemote: configuration.pushToRemote,
       ...(configuration.remote ? { remote: configuration.remote } : {}),
+      ...(remoteUrl ? { remoteUrl } : {}),
     };
     this.options.state.set(MODULE_ID, resourceId, state);
     return { projectPath: join(worktreePath, projectRelativePath), resourceId };
@@ -230,7 +243,8 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       ]);
     }
     const commit = await runGit(state.worktreePath, ["rev-parse", "HEAD"]);
-    if (state.delivery === "remote") {
+    const pushToRemote = shouldPushToRemote(state);
+    if (pushToRemote) {
       await runGit(state.worktreePath, [
         "push",
         state.remote!,
@@ -241,7 +255,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     const branchInfo: BranchInfo = {
       name: state.branch,
       commit,
-      ...(state.delivery === "remote" ? { remote: state.remote } : {}),
+      ...(pushToRemote ? { remote: state.remote } : {}),
     };
     this.options.state.set(MODULE_ID, input.resourceId, {
       ...state,
@@ -280,12 +294,29 @@ class GitWorkspaceProvider implements WorkspaceProvider {
 }
 
 function parseConfiguration(config: Record<string, ConfigValue>): GitWorkspaceConfig {
-  const parsed = gitWorkspaceConfigSchema.safeParse(config);
-  if (parsed.success) return parsed.data;
-  if (parsed.error.issues.some((issue) => issue.message === "GIT_REMOTE_REQUIRED")) {
+  const current = currentGitWorkspaceConfigSchema.safeParse(config);
+  if (current.success) return current.data;
+  const legacy = legacyGitWorkspaceConfigSchema.safeParse(config);
+  if (legacy.success) {
+    return {
+      baseBranch: legacy.data.baseBranch,
+      pushToRemote: legacy.data.delivery === "remote",
+      ...(legacy.data.remote ? { remote: legacy.data.remote } : {}),
+    };
+  }
+  if (
+    current.error.issues.some((issue) => issue.message === "GIT_REMOTE_REQUIRED") ||
+    legacy.error.issues.some((issue) => issue.message === "GIT_REMOTE_REQUIRED")
+  ) {
     throw new Error("GIT_REMOTE_REQUIRED");
   }
-  throw new Error("GIT_WORKSPACE_CONFIG_INVALID", { cause: parsed.error });
+  throw new Error("GIT_WORKSPACE_CONFIG_INVALID", {
+    cause: new AggregateError([current.error, legacy.error]),
+  });
+}
+
+function shouldPushToRemote(state: GitWorkspaceState): boolean {
+  return state.pushToRemote ?? state.delivery === "remote";
 }
 
 function assertSavedState(

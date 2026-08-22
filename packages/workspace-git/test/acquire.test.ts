@@ -10,15 +10,35 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())));
 
 describe("GitWorkspace acquire", () => {
-  it("requires a remote name only for remote delivery", () => {
+  it("models remote publication as a Boolean capability", () => {
     const factory = gitWorkspaceFactory({
       state: { get: () => undefined, set: () => {}, delete: () => {} },
       worktreeRoot: "/tmp/worktrees",
     });
 
-    expect(() => factory.validate({ baseBranch: "main", delivery: "remote" }))
+    expect(factory.manifest.configFields).toContainEqual(expect.objectContaining({
+      key: "pushToRemote",
+      type: "boolean",
+      label: "完成后推送到远程",
+      defaultValue: false,
+    }));
+    expect(factory.manifest.configFields)
+      .not.toContainEqual(expect.objectContaining({ key: "delivery" }));
+    expect(factory.manifest.configFields)
+      .not.toContainEqual(expect.objectContaining({ key: "remote" }));
+  });
+
+  it("requires an inspected remote only when remote push is enabled", () => {
+    const factory = gitWorkspaceFactory({
+      state: { get: () => undefined, set: () => {}, delete: () => {} },
+      worktreeRoot: "/tmp/worktrees",
+    });
+
+    expect(() => factory.validate({ baseBranch: "main", pushToRemote: true }))
       .toThrow("GIT_REMOTE_REQUIRED");
-    expect(() => factory.validate({ baseBranch: "main", delivery: "local" }))
+    expect(() => factory.validate({ baseBranch: "main", pushToRemote: false }))
+      .not.toThrow();
+    expect(() => factory.validate({ baseBranch: "main", delivery: "remote", remote: "delivery" }))
       .not.toThrow();
   });
 
@@ -28,7 +48,7 @@ describe("GitWorkspace acquire", () => {
     const provider = gitWorkspaceFactory({
       state: fixture.state,
       worktreeRoot: fixture.worktreeRoot,
-    }).create({ baseBranch: "main", delivery: "local" });
+    }).create({ baseBranch: "main", pushToRemote: false });
 
     const first = await provider.acquire({ issue: fixture.issue, project: fixture.project });
     const second = await provider.acquire({ issue: fixture.issue, project: fixture.project });
@@ -45,7 +65,7 @@ describe("GitWorkspace acquire", () => {
     const provider = gitWorkspaceFactory({
       state: fixture.state,
       worktreeRoot: fixture.worktreeRoot,
-    }).create({ baseBranch: "main", delivery: "local" });
+    }).create({ baseBranch: "main", pushToRemote: false });
 
     const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
 
@@ -65,7 +85,7 @@ describe("GitWorkspace acquire", () => {
       state: fixture.state,
       worktreeRoot: fixture.worktreeRoot,
     });
-    const first = await factory.create({ baseBranch: "main", delivery: "local" })
+    const first = await factory.create({ baseBranch: "main", pushToRemote: false })
       .acquire({ issue: fixture.issue, project: fixture.project });
     await git(fixture.repository, "worktree", "remove", first.projectPath);
     await rm(first.projectPath, { recursive: true, force: true });
