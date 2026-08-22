@@ -30,11 +30,17 @@ export interface AgentContinuation {
   previousAttemptId?: string;
 }
 
+export type ProjectEvidenceCapture =
+  | { mode: "browser"; label: string; timeoutMs?: number }
+  | { mode: "electron"; label: string; electronEntry: string; timeoutMs?: number }
+  | { mode: "command"; label: string; command: string; timeoutMs?: number };
+
 export interface ProjectCommands {
   install?: string;
   test?: string;
   start?: string;
   acceptanceUrl?: string;
+  evidenceCapture?: ProjectEvidenceCapture;
 }
 
 export interface ProjectContext {

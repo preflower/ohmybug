@@ -68,4 +68,25 @@ describe("Runtime protocol operation registry", () => {
     });
     expect(runtimeOperations.getIssueWorkspace.output.parse(null)).toBeNull();
   });
+
+  it("validates evidence capture project configuration", () => {
+    const input = {
+      path: "/repo/payments",
+      key: "PAY",
+      commands: {
+        start: "pnpm dev --host 127.0.0.1",
+        acceptanceUrl: "http://localhost:4173/payment",
+        evidenceCapture: { mode: "browser", label: "Payment page", timeoutMs: 15_000 },
+      },
+    } as const;
+
+    expect(runtimeOperations.createProject.input.parse(input)).toEqual(input);
+    expect(() => runtimeOperations.createProject.input.parse({
+      ...input,
+      commands: {
+        ...input.commands,
+        acceptanceUrl: "https://example.com/payment",
+      },
+    })).toThrow(/ACCEPTANCE_URL_MUST_BE_LOCALHOST/);
+  });
 });

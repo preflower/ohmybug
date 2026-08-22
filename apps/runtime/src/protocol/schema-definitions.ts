@@ -2,6 +2,7 @@ import {
   integrationPluginManifestSchema,
   configFieldSchema,
   issueSchema,
+  projectCommandsSchema as coreProjectCommandsSchema,
 } from "@oh-my-bug/core";
 import { z } from "zod";
 
@@ -15,12 +16,7 @@ export const configValueSchema = z.union([
   z.array(z.string()),
 ]);
 export const configSchema = z.record(z.string(), configValueSchema);
-export const projectCommandsSchema = z.object({
-  install: identifierSchema.optional(),
-  test: identifierSchema.optional(),
-  start: identifierSchema.optional(),
-  acceptanceUrl: identifierSchema.optional(),
-}).strict();
+export const projectCommandsSchema = coreProjectCommandsSchema;
 export const projectAgentSchema = z.object({ plugin: identifierSchema }).strict();
 export const projectIntegrationInputSchema = z.object({
   enabled: z.boolean(),

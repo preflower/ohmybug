@@ -1,5 +1,6 @@
 export * from "./agents/registry.js";
 export * from "./composition.js";
+export * from "./evidence/capture-provider.js";
 export * from "./integrations/manager.js";
 export * from "./integrations/registry.js";
 export * from "./orchestration/commands.js";
