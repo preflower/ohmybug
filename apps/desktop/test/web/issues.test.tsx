@@ -205,7 +205,11 @@ describe("Issue detail", () => {
       onRetry={onRetry}
     />);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("证据采集失败；实现改动和工作目录已保留");
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveClass("error-banner");
+    expect(alert).toHaveTextContent("证据采集失败；实现改动和工作目录已保留。");
+    expect(alert.querySelector("svg")).not.toBeNull();
+    expect(alert).not.toHaveAttribute("data-slot", "alert");
     expect(screen.getByText("证据采集失败")).toBeVisible();
     expect(screen.queryByRole("button", { name: "重新实现" })).not.toBeInTheDocument();
     await act(async () => {
