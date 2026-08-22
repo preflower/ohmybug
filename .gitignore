@@ -8,6 +8,7 @@ playwright-report/
 test-results/
 .artifacts/
 output/
+.worktrees/
 .env
 .env.*
 !.env.example
