@@ -46,6 +46,16 @@ export function createBrowserDevelopmentTransport(
       configFields: [],
     }],
     projects: async () => (await snapshot()).projects,
+    inspectProject: async (path) => {
+      const project = (await snapshot()).projects.find((candidate) => candidate.path === path);
+      if (!project) throw new Error("PROJECT_NOT_FOUND");
+      return {
+        path: project.path,
+        name: project.name ?? project.key,
+        key: project.key,
+        workspaces: {},
+      };
+    },
     project: async (id) => {
       const project = (await snapshot()).projects.find((candidate) => candidate.id === id);
       if (!project) throw new Error("PROJECT_NOT_FOUND");

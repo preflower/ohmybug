@@ -26,6 +26,7 @@ export interface DesktopApi {
   listIntegrationPlugins(): Promise<RuntimeOperationOutput<"listIntegrationPlugins">>;
   listWorkspaceProviders(): Promise<RuntimeOperationOutput<"listWorkspaceProviders">>;
   listProjects(): Promise<RuntimeOperationOutput<"listProjects">>;
+  inspectProject(path: string): Promise<RuntimeOperationOutput<"inspectProject">>;
   getProject(id: string): Promise<RuntimeOperationOutput<"getProject">>;
   createProject(project: CreateProjectInput): Promise<RuntimeOperationOutput<"createProject">>;
   updateProject(id: string, input: UpdateProjectInput): Promise<RuntimeOperationOutput<"updateProject">>;
@@ -89,6 +90,7 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     listIntegrationPlugins: () => request("listIntegrationPlugins", {}),
     listWorkspaceProviders: () => request("listWorkspaceProviders", {}),
     listProjects: () => request("listProjects", {}),
+    inspectProject: (path) => request("inspectProject", { path }),
     getProject: (id) => request("getProject", { id }),
     createProject: (project) => request("createProject", project),
     updateProject: (id, input) => request("updateProject", { id, input }),

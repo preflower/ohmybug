@@ -24,6 +24,7 @@ export interface ProductTransport {
   integrationPlugins(): Promise<IntegrationPluginManifest[]>;
   workspaceProviders(): Promise<WorkspaceProviderManifest[]>;
   projects(): Promise<ProjectDto[]>;
+  inspectProject(path: string): Promise<ProjectInspection>;
   project(id: string): Promise<ProjectDto>;
   createProject(project: ProjectFormValue): Promise<ProjectDto>;
   updateProject(id: string, project: ProjectFormValue): Promise<ProjectDto>;

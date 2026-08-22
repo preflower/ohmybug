@@ -75,7 +75,8 @@ describe("application shell", () => {
       inspection: {
         path: "/work/checkout",
         name: "checkout",
-        key: "CHECKOUT"
+        key: "CHECKOUT",
+        workspaces: {}
       }
     });
     render(<App />);

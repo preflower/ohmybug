@@ -30,7 +30,7 @@ const manifests: IntegrationPluginManifest[] = [{
   ],
 }];
 
-const inspection = { path: "/work/checkout", name: "checkout", key: "CHECKOUT" };
+const inspection = { path: "/work/checkout", name: "checkout", key: "CHECKOUT", workspaces: {} };
 const workspaceProviders: WorkspaceProviderManifest[] = [
   { id: "local", name: "本机目录", configFields: [] },
   {

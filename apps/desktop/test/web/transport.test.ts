@@ -21,6 +21,12 @@ describe("renderer product transports", () => {
         id: "local", name: "本机目录", configFields: [],
       }]),
       listProjects: vi.fn(async () => [project]),
+      inspectProject: vi.fn(async () => ({
+        path: project.path,
+        name: project.name,
+        key: project.key,
+        workspaces: { local: { available: true } },
+      })),
       approveDelivery: vi.fn(async () => ({
         issue: { id: "issue-1", status: "COMPLETED" },
         branch: { name: "ohmybug/chk-1", commit: "abc123" },
@@ -38,6 +44,11 @@ describe("renderer product transports", () => {
       { id: "local", name: "本机目录", configFields: [] },
     ]);
     await expect(transport.projects()).resolves.toEqual([project]);
+    await expect(transport.inspectProject(project.path)).resolves.toMatchObject({
+      path: project.path,
+      workspaces: { local: { available: true } },
+    });
+    expect(bridge.inspectProject).toHaveBeenCalledWith(project.path);
     await expect(transport.approveDelivery("issue-1")).resolves.toEqual({
       issue: { id: "issue-1", status: "COMPLETED" },
       branch: { name: "ohmybug/chk-1", commit: "abc123" },

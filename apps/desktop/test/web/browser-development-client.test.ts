@@ -105,6 +105,7 @@ describe("browser development Runtime client", () => {
           integrationPlugins(): Promise<unknown>;
           projects(): Promise<unknown>;
           project(id: string): Promise<unknown>;
+          inspectProject(path: string): Promise<unknown>;
           issues(): Promise<unknown>;
           issue(id: string): Promise<unknown>;
           integrationHealth(): Promise<unknown>;
@@ -136,6 +137,12 @@ describe("browser development Runtime client", () => {
       health: {},
     });
     expect(await transport?.project("project-1")).toEqual(project);
+    expect(await transport?.inspectProject(project.path)).toEqual({
+      path: project.path,
+      name: project.name,
+      key: project.key,
+      workspaces: {},
+    });
     expect(await transport?.issue("issue-1")).toEqual(issue);
     let delivered: { events: unknown[]; cursor: number } | undefined;
     transport?.subscribeIssueEvents("issue-1", 0, (events, cursor) => {
