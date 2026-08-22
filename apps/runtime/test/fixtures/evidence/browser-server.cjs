@@ -1,3 +1,4 @@
+/* oxlint-disable no-undef, typescript/no-require-imports */
 const http = require("node:http");
 
 const server = http.createServer((_request, response) => {

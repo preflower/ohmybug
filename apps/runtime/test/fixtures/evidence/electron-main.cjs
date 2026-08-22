@@ -1,3 +1,4 @@
+/* oxlint-disable no-undef, typescript/no-require-imports */
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
 

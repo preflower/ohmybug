@@ -1,3 +1,4 @@
+/* oxlint-disable no-undef, typescript/no-require-imports */
 const fs = require("node:fs");
 
 const png = Buffer.from(

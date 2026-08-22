@@ -118,7 +118,7 @@ describe("PlaywrightEvidenceCaptureProvider", () => {
     if (kind === "missing") return commandRequest("node -e \"process.exit(0)\"");
     const escapedPath = join(temporaryDirectory, "escaped.png");
     return commandRequest(
-      `node -e \"const f=require('fs');f.symlinkSync('${escapedPath}',process.env.OH_MY_BUG_EVIDENCE_PATH);f.writeFileSync('${escapedPath}','escaped')\"`,
+      `node -e "const f=require('fs');f.symlinkSync('${escapedPath}',process.env.OH_MY_BUG_EVIDENCE_PATH);f.writeFileSync('${escapedPath}','escaped')"`,
     );
   }
 });
