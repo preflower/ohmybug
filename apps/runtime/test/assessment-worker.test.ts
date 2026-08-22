@@ -1,3 +1,4 @@
+import { AgentTurnInterruptedError } from "@oh-my-bug/core";
 import { describe, expect, it } from "vitest";
 
 import { RuntimeWorker } from "../src/orchestration/worker.js";
@@ -234,5 +235,45 @@ describe("Runtime assessment worker", () => {
     });
     expect(agent.assessSessions).toEqual([]);
     expect(store.getAgentSession("session-race")).toBeUndefined();
+  });
+
+  it("requeues Runtime-interrupted Assessment without recording a failure", async () => {
+    const agent = new FakeAgent();
+    agent.assessError = new AgentTurnInterruptedError("RUNTIME_STOPPING");
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
+    const created = await commands.submitManual(project.id, {
+      commandId: "interrupted-assessment",
+      content: "Interrupted",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+    const worker = new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("interrupted-assessment"),
+      now: () => "2026-08-20T15:01:00.000Z",
+    });
+
+    await worker.drainOne();
+    await worker.drainOne();
+
+    const interrupted = store.getIssue(created.issue.id);
+    expect(interrupted).toMatchObject({
+      status: "ASSESSING",
+      agentSession: { sessionId: "session-1" },
+    });
+    expect(interrupted).not.toHaveProperty("lastFailure");
+    expect(store.listPendingOperations()[0]?.operation).toBe("ASSESS");
+    expect(store.readEvents(created.issue.id)).toContainEqual(expect.objectContaining({
+      type: "RUNTIME_INTERRUPTED",
+      data: expect.objectContaining({
+        stage: "ASSESSMENT",
+        reason: "RUNTIME_STOPPING",
+        sessionId: "session-1",
+        attemptId: expect.any(String),
+        revision: interrupted!.revision,
+      }),
+    }));
   });
 });

@@ -1,4 +1,4 @@
-import type { RepairResult } from "@oh-my-bug/core";
+import { AgentTurnInterruptedError, type RepairResult } from "@oh-my-bug/core";
 import { describe, expect, it } from "vitest";
 
 import { RuntimeWorker } from "../src/orchestration/worker.js";
@@ -249,5 +249,42 @@ describe("Runtime repair worker", () => {
     expect(store.getIssue(issue.id)?.repair).not.toHaveProperty("delivery");
     expect(store.readEvents(issue.id).map((event) => event.type)).not.toContain("DELIVERY_READY");
     expect(evidence.cleaned).toBe(1);
+  });
+
+  it("requeues Runtime-interrupted Repair without incrementing its iteration", async () => {
+    const agent = new FakeAgent();
+    agent.repairError = new AgentTurnInterruptedError("RUNTIME_STOPPING");
+    const { store, agents, evidence, workspaces } = createHarness(agent);
+    const issue = repairingIssue("repair-interrupted");
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-interrupted"),
+      now: () => now,
+    }).drainOne();
+
+    const interrupted = store.getIssue(issue.id);
+    expect(interrupted).toMatchObject({
+      status: "REPAIRING",
+      repair: { iteration: 1 },
+      revision: issue.revision + 1,
+    });
+    expect(interrupted).not.toHaveProperty("lastFailure");
+    expect(store.listPendingOperations()[0]?.operation).toBe("REPAIR");
+    expect(store.readEvents(issue.id)).toContainEqual(expect.objectContaining({
+      type: "RUNTIME_INTERRUPTED",
+      data: expect.objectContaining({
+        stage: "REPAIR",
+        reason: "RUNTIME_STOPPING",
+        iteration: 1,
+        sessionId: "session-1",
+        attemptId: expect.any(String),
+        revision: issue.revision + 1,
+      }),
+    }));
   });
 });

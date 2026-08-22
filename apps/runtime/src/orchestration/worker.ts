@@ -1,5 +1,6 @@
 import {
   deliverySchema,
+  isAgentTurnInterruptedError,
   recordAgentSession,
   recordAssessment,
   recordAssessmentFailure,
@@ -92,6 +93,7 @@ export class RuntimeWorker {
       this.failPendingAssessment(pending, error);
       return;
     }
+    const attemptId = this.dependencies.id();
     const claimed = this.dependencies.store.transaction((tx) => {
       const current = this.dependencies.store.getIssue(pending.id);
       if (!current || (current.status !== "RECEIVED" && current.status !== "ASSESSING")) return undefined;
@@ -109,7 +111,7 @@ export class RuntimeWorker {
       }
       if (next.status === "RECEIVED") next = transitionIssue(next, "START_ASSESSMENT", this.dependencies.now());
       tx.updateIssue(next, current.revision, null);
-      tx.appendEvent(this.event(next.id, "ASSESSMENT_STARTED"));
+      tx.appendEvent(this.event(next.id, "ASSESSMENT_STARTED", "SYSTEM", { attemptId }));
       return next;
     });
     if (!claimed) return;
@@ -129,6 +131,7 @@ export class RuntimeWorker {
         });
       }
     } catch (error) {
+      if (this.requeueInterrupted(claimed, error, "ASSESS", attemptId)) return;
       const failed = recordAssessmentFailure(
         claimed,
         agentFailureCode(error),
@@ -157,11 +160,12 @@ export class RuntimeWorker {
       );
       return;
     }
+    const attemptId = this.dependencies.id();
     const claimed = this.dependencies.store.transaction((tx) => {
       const current = this.dependencies.store.getIssue(pending.id);
       if (!current || current.status !== "REPAIRING") throw new Error("REPAIR_NOT_PENDING");
       tx.updateIssue(current, current.revision, null);
-      tx.appendEvent(this.event(current.id, "REPAIR_STARTED"));
+      tx.appendEvent(this.event(current.id, "REPAIR_STARTED", "SYSTEM", { attemptId }));
       return current;
     });
     const projectPath = requireProjectPath(claimed);
@@ -196,6 +200,7 @@ export class RuntimeWorker {
           feedback: claimed.repair?.feedback,
         });
       } catch (error) {
+        if (this.requeueInterrupted(claimed, error, "REPAIR", attemptId)) return;
         const outputFailure = repairOutputFailure(error);
         if (outputFailure) {
           this.requeueRepair(claimed, outputFailure.feedback, outputFailure.code);
@@ -303,6 +308,43 @@ export class RuntimeWorker {
       lastFailure: undefined,
     };
     this.complete(current, next, "EVIDENCE_REJECTED", "REPAIR");
+  }
+
+  private requeueInterrupted(
+    claimed: Issue,
+    error: unknown,
+    operation: "ASSESS" | "REPAIR",
+    attemptId: string,
+  ): boolean {
+    if (
+      !isAgentTurnInterruptedError(error) ||
+      error.reason !== "RUNTIME_STOPPING"
+    ) return false;
+
+    return this.dependencies.store.transaction((tx) => {
+      const current = this.dependencies.store.getIssue(claimed.id);
+      if (!current || current.revision !== claimed.revision) return true;
+      const resumable = {
+        ...current,
+        revision: current.revision + 1,
+        updatedAt: this.dependencies.now(),
+      };
+      tx.updateIssue(resumable, current.revision, operation);
+      tx.appendEvent(this.event(resumable.id, "RUNTIME_INTERRUPTED", "SYSTEM", {
+        stage: operation === "ASSESS" ? "ASSESSMENT" : "REPAIR",
+        reason: error.reason,
+        operation,
+        attemptId,
+        revision: resumable.revision,
+        ...(resumable.agentSession
+          ? { sessionId: resumable.agentSession.sessionId }
+          : {}),
+        ...(operation === "REPAIR" && resumable.repair
+          ? { iteration: resumable.repair.iteration }
+          : {}),
+      }));
+      return true;
+    });
   }
 
   private failPendingAssessment(pending: Issue, error: unknown): void {
