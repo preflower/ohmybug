@@ -159,7 +159,7 @@ describe("Runtime repair worker", () => {
     expect(evidence.cleaned).toBe(1);
   });
 
-  it("automatically requeues invalid Agent evidence metadata with actionable feedback", async () => {
+  it("does not rerun implementation for invalid Repair output metadata", async () => {
     const agent = new FakeAgent();
     agent.repairError = new Error("EVIDENCE_LABEL_REQUIRED");
     const { store, agents, evidence, workspaces } = createHarness(agent);
@@ -170,20 +170,16 @@ describe("Runtime repair worker", () => {
       .drainOne();
 
     expect(store.getIssue(issue.id)).toMatchObject({
-      status: "REPAIRING",
-      repair: {
-        iteration: 2,
-        automaticEvidenceRetries: 1,
-        feedback: expect.stringContaining("non-empty label"),
-      },
+      status: "REPAIR_FAILED",
+      repair: { iteration: 1 },
+      lastFailure: { stage: "REPAIR", code: "EVIDENCE_LABEL_REQUIRED" },
     });
-    expect(store.getIssue(issue.id)).not.toHaveProperty("lastFailure");
-    expect(store.listPendingOperations()[0]?.operation).toBe("REPAIR");
-    expect(store.readEvents(issue.id).map((event) => event.type)).toContain("EVIDENCE_REJECTED");
+    expect(store.listPendingOperations()).toEqual([]);
+    expect(agent.repairSessions).toEqual(["session-1"]);
     expect(evidence.cleaned).toBe(1);
   });
 
-  it("stops after two automatic evidence retries and preserves the concrete failure code", async () => {
+  it("preserves a concrete output failure code from legacy retry state", async () => {
     const agent = new FakeAgent();
     agent.repairError = new Error("EVIDENCE_LABEL_REQUIRED");
     const { store, agents, evidence, workspaces } = createHarness(agent);

@@ -227,16 +227,9 @@ export class RuntimeWorker {
         });
       } catch (error) {
         if (this.requeueInterrupted(claimed, error, "REPAIR", attemptId)) return;
-        const outputFailure = repairOutputFailure(error);
-        if (outputFailure) {
-          this.requeueRepair(claimed, outputFailure.feedback, outputFailure.code);
-          const retrying = this.dependencies.store.getIssue(claimed.id);
-          if (retrying) this.emitLifecycle("repair.after", { issue: retrying, project });
-          return;
-        }
         const failed = recordRepairFailure(
           claimed,
-          agentFailureCode(error),
+          repairFailureCode(error),
           this.dependencies.now(),
         );
         if (this.complete(claimed, failed, "REPAIR_FAILED")) {
@@ -445,30 +438,6 @@ export class RuntimeWorker {
     }
   }
 
-  private requeueRepair(current: Issue, feedback: string, failureCode: string): void {
-    const automaticRetries = current.repair?.automaticEvidenceRetries ?? 0;
-    if (automaticRetries >= MAX_AUTOMATIC_EVIDENCE_RETRIES) {
-      this.complete(
-        current,
-        recordRepairFailure(current, failureCode, this.dependencies.now()),
-        "REPAIR_FAILED",
-      );
-      return;
-    }
-    const failed = recordRepairFailure(current, failureCode, this.dependencies.now());
-    const retrying = transitionIssue(failed, "RETRY_REPAIR", this.dependencies.now());
-    const next = {
-      ...retrying,
-      repair: {
-        ...(retrying.repair ?? { iteration: 1 }),
-        automaticEvidenceRetries: automaticRetries + 1,
-        feedback,
-      },
-      lastFailure: undefined,
-    };
-    this.complete(current, next, "EVIDENCE_REJECTED", "REPAIR");
-  }
-
   private continuation(
     issue: Issue,
     operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
@@ -661,45 +630,23 @@ function agentFailureCode(error: unknown): string {
   return "AGENT_FAILURE";
 }
 
-function repairOutputFailure(error: unknown): { code: string; feedback: string } | undefined {
-  if (!(error instanceof Error)) return undefined;
-  const code = error.message;
-  if (code === "EVIDENCE_LABEL_REQUIRED") {
-    return {
-      code,
-      feedback: "Every screenshot or recording requires a concise, non-empty label. Capture valid visual evidence and label what it proves.",
-    };
-  }
-  if (["EVIDENCE_PATH_REQUIRED", "EVIDENCE_PATH_ESCAPE"].includes(code)) {
-    return {
-      code,
-      feedback: "Capture visual evidence inside the provided evidence directory and return its safe, non-empty relative path.",
-    };
-  }
-  if (code === "VISUAL_EVIDENCE_REQUIRED") {
-    return {
-      code,
-      feedback: "At least one real screenshot or recording is required. Capture it in the provided evidence directory and return its label and relative path.",
-    };
-  }
-  if (["EVIDENCE_TYPE_REQUIRED", "EVIDENCE_TYPE_INVALID"].includes(code)) {
-    return {
-      code,
-      feedback: "Every visual evidence item must use type screenshot or recording and include a valid label and relative path.",
-    };
-  }
-  if ([
-    "DELIVERY_SUMMARY_REQUIRED",
-    "CODEX_OUTPUT_INVALID",
-    "CODEX_OUTPUT_UNKNOWN_FIELD",
-    "INVALID_CODEX_OUTPUT",
-  ].includes(code)) {
-    return {
-      code,
-      feedback: "Return a valid structured Repair result with a non-empty summary and real visual evidence containing type, label, and relativePath.",
-    };
-  }
-  return undefined;
+const REPAIR_OUTPUT_FAILURE_CODES = new Set([
+  "EVIDENCE_LABEL_REQUIRED",
+  "EVIDENCE_PATH_REQUIRED",
+  "EVIDENCE_PATH_ESCAPE",
+  "VISUAL_EVIDENCE_REQUIRED",
+  "EVIDENCE_TYPE_REQUIRED",
+  "EVIDENCE_TYPE_INVALID",
+  "DELIVERY_SUMMARY_REQUIRED",
+  "CODEX_OUTPUT_INVALID",
+  "CODEX_OUTPUT_UNKNOWN_FIELD",
+  "INVALID_CODEX_OUTPUT",
+]);
+
+function repairFailureCode(error: unknown): string {
+  return error instanceof Error && REPAIR_OUTPUT_FAILURE_CODES.has(error.message)
+    ? error.message
+    : agentFailureCode(error);
 }
 
 function publicEvidenceFailure(error: unknown): string {
