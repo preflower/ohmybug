@@ -3,6 +3,7 @@ import type { AssessInput, RepairInput } from "@oh-my-bug/core";
 export function assessmentPrompt(input: AssessInput): string {
   return [
     "Assess whether this Issue requests a software bug fix or a feature change. Do not modify files or Git state.",
+    ...continuationPrompt(input.continuation),
     "Use BUG when existing intended behavior is broken, FEATURE for a new capability or enhancement, NOT_A_BUG when no code change is warranted, and UNCERTAIN when evidence is insufficient.",
     "BUG requires rootCause and solution. FEATURE requires solution; rootCause may be omitted.",
     "Return only the requested structured Assessment. Every verdict will be reviewed by a human.",
@@ -15,6 +16,7 @@ export function assessmentPrompt(input: AssessInput): string {
 export function repairPrompt(input: RepairInput): string {
   return [
     "Implement the approved BUG or FEATURE change in the supplied project directory. Run your own engineering loop until ready.",
+    ...continuationPrompt(input.continuation),
     "Oh My Bug does not manage Git operations.",
     `Write screenshots or recordings under: ${input.evidenceDirectory}`,
     "Visual evidence must directly capture a real acceptance run that proves the change, such as the running application, an actual API request and response, or an executed benchmark. Never submit generated, reconstructed, mocked, or illustrative visuals.",
@@ -26,4 +28,14 @@ export function repairPrompt(input: RepairInput): string {
     ...(input.previousDelivery ? [`Previous Delivery: ${JSON.stringify(input.previousDelivery)}`] : []),
     ...(input.feedback ? [`Human/evidence feedback: ${input.feedback}`] : []),
   ].join("\n\n");
+}
+
+function continuationPrompt(
+  continuation: AssessInput["continuation"] | RepairInput["continuation"],
+): string[] {
+  return continuation?.reason === "RUNTIME_INTERRUPTED"
+    ? [
+        "The previous turn was interrupted by a Runtime restart. Continue the existing work in the supplied workspace. Inspect current files and prior verification before making changes. Do not redo completed implementation work. Complete only the remaining stage requirements.",
+      ]
+    : [];
 }

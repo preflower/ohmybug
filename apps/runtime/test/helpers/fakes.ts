@@ -38,6 +38,7 @@ export class FakeAgent implements AgentAdapter {
   private nextSession = 1;
   createdSessions: AgentSessionRef[] = [];
   assessSessions: string[] = [];
+  assessInputs: Parameters<AgentAdapter["assess"]>[1][] = [];
   repairSessions: string[] = [];
   repairInputs: Parameters<AgentAdapter["repair"]>[1][] = [];
   canceledSessions: string[] = [];
@@ -56,8 +57,12 @@ export class FakeAgent implements AgentAdapter {
     return session;
   }
 
-  async assess(session: AgentSessionRef): Promise<Assessment> {
+  async assess(
+    session: AgentSessionRef,
+    input: Parameters<AgentAdapter["assess"]>[1],
+  ): Promise<Assessment> {
     this.assessSessions.push(session.sessionId);
+    this.assessInputs.push(input);
     if (this.assessError) throw this.assessError;
     return this.nextAssessment;
   }

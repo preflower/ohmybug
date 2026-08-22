@@ -287,4 +287,39 @@ describe("Runtime repair worker", () => {
       }),
     }));
   });
+
+  it("passes the durable interruption marker into resumed Repair", async () => {
+    const agent = new FakeAgent();
+    const { store, agents, evidence, workspaces } = createHarness(agent);
+    const issue = repairingIssue("repair-continuation");
+    store.transaction((transaction) => {
+      transaction.insertIssue(issue, "REPAIR");
+      transaction.appendEvent({
+        id: "interrupted-event",
+        issueId: issue.id,
+        type: "RUNTIME_INTERRUPTED",
+        actor: "SYSTEM",
+        data: {
+          operation: "REPAIR",
+          revision: issue.revision,
+          attemptId: "attempt-before-restart",
+        },
+        occurredAt: now,
+      });
+    });
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-continuation"),
+      now: () => now,
+    }).drainOne();
+
+    expect(agent.repairInputs[0]?.continuation).toEqual({
+      reason: "RUNTIME_INTERRUPTED",
+      previousAttemptId: "attempt-before-restart",
+    });
+  });
 });

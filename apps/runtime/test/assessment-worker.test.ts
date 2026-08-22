@@ -276,4 +276,43 @@ describe("Runtime assessment worker", () => {
       }),
     }));
   });
+
+  it("passes the durable interruption marker into resumed Assessment", async () => {
+    const agent = new FakeAgent();
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
+    const created = await commands.submitManual(project.id, {
+      commandId: "continued-assessment",
+      content: "Continue",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+    const worker = new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("continued-assessment"),
+      now: () => "2026-08-20T15:01:00.000Z",
+    });
+    await worker.drainOne();
+    const prepared = store.getIssue(created.issue.id)!;
+    store.transaction((transaction) => transaction.appendEvent({
+      id: "interrupted-event",
+      issueId: prepared.id,
+      type: "RUNTIME_INTERRUPTED",
+      actor: "SYSTEM",
+      data: {
+        operation: "ASSESS",
+        revision: prepared.revision,
+        attemptId: "attempt-before-restart",
+      },
+      occurredAt: prepared.updatedAt,
+    }));
+
+    await worker.drainOne();
+
+    expect(agent.assessInputs[0]?.continuation).toEqual({
+      reason: "RUNTIME_INTERRUPTED",
+      previousAttemptId: "attempt-before-restart",
+    });
+  });
 });

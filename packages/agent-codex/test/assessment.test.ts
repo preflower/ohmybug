@@ -95,11 +95,22 @@ describe("Codex assessment", () => {
     const session = await adapter.createSession({ issue: current, project });
     await bindSession(sessions, "logical-feature");
 
-    await expect(adapter.assess(session, { issue: current, project })).resolves.toMatchObject({
+    await expect(adapter.assess(session, {
+      issue: current,
+      project,
+      continuation: {
+        reason: "RUNTIME_INTERRUPTED",
+        previousAttemptId: "attempt-before-restart",
+      },
+    })).resolves.toMatchObject({
       verdict: "FEATURE",
       solution: "Add an export action and CSV serializer.",
     });
     expect(client.prompts[0]).toContain("FEATURE for a new capability or enhancement");
+    expect(client.prompts[0]).toContain(
+      "The previous turn was interrupted by a Runtime restart.",
+    );
+    expect(client.prompts[0]).toContain("Do not redo completed implementation work.");
   });
 
   it("clears active-session state when thread creation fails", async () => {

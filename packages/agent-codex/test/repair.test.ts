@@ -67,6 +67,10 @@ describe("Codex repair", () => {
         assessment,
         evidenceDirectory: "/private/intake/issue-1/2",
         feedback: "Show the fixed result",
+        continuation: {
+          reason: "RUNTIME_INTERRUPTED",
+          previousAttemptId: "attempt-before-restart",
+        },
       },
     );
 
@@ -85,6 +89,10 @@ describe("Codex repair", () => {
     expect(client.prompts[0]).toContain("/private/intake/issue-1/2");
     expect(client.prompts[0]).toContain("Oh My Bug does not manage Git");
     expect(client.prompts[0]).toContain("Show the fixed result");
+    expect(client.prompts[0]).toContain(
+      "The previous turn was interrupted by a Runtime restart.",
+    );
+    expect(client.prompts[0]).toContain("Do not redo completed implementation work.");
     expect(client.prompts[0]).toContain("directly capture a real acceptance run");
     expect(client.prompts[0]).toContain(
       "the running application, an actual API request and response, or an executed benchmark",

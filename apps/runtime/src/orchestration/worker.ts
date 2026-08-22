@@ -13,6 +13,7 @@ import {
   type EvidenceInspector,
   type EvidenceStore,
   type AgentAdapter,
+  type AgentContinuation,
   type AgentSessionRef,
   type Issue,
   type PendingOperation,
@@ -86,6 +87,7 @@ export class RuntimeWorker {
     requireProjectPath(pending);
     const project = this.dependencies.store.getProject(pending.projectId);
     if (!project) throw new Error("PROJECT_NOT_FOUND");
+    const continuation = this.continuation(pending, "ASSESS");
     let agent: AgentAdapter;
     try {
       agent = pending.agentSession
@@ -130,6 +132,7 @@ export class RuntimeWorker {
         issue: claimed,
         project,
         feedback: claimed.assessmentFeedback,
+        continuation,
       });
       const assessed = recordAssessment(claimed, result, this.dependencies.now());
       if (this.complete(claimed, assessed, "ASSESSMENT_READY")) {
@@ -158,6 +161,7 @@ export class RuntimeWorker {
     if (!pending.agentSession || !pending.assessment || !pending.repair) {
       throw new Error("REPAIR_CONTEXT_REQUIRED");
     }
+    const continuation = this.continuation(pending, "REPAIR");
     let agent: AgentAdapter;
     try {
       agent = this.dependencies.agents.forSession(pending.agentSession);
@@ -207,6 +211,7 @@ export class RuntimeWorker {
           evidenceDirectory: intake.directory,
           previousDelivery: claimed.repair?.delivery,
           feedback: claimed.repair?.feedback,
+          continuation,
         });
       } catch (error) {
         if (this.requeueInterrupted(claimed, error, "REPAIR", attemptId)) return;
@@ -317,6 +322,23 @@ export class RuntimeWorker {
       lastFailure: undefined,
     };
     this.complete(current, next, "EVIDENCE_REJECTED", "REPAIR");
+  }
+
+  private continuation(
+    issue: Issue,
+    operation: "ASSESS" | "REPAIR",
+  ): AgentContinuation | undefined {
+    const interrupted = this.dependencies.store.readEvents(issue.id).findLast((event) =>
+      event.type === "RUNTIME_INTERRUPTED" &&
+      event.data.operation === operation &&
+      event.data.revision === issue.revision);
+    if (!interrupted) return undefined;
+    return {
+      reason: "RUNTIME_INTERRUPTED",
+      ...(typeof interrupted.data.attemptId === "string"
+        ? { previousAttemptId: interrupted.data.attemptId }
+        : {}),
+    };
   }
 
   private requeueInterrupted(
