@@ -16,4 +16,33 @@ describe("internal module contracts", () => {
 
     expect({ branch, project, factory: factory.id, event }).toBeTruthy();
   });
+
+  it("allows a Workspace provider to describe read-only project capabilities", async () => {
+    const factory: WorkspaceProviderFactory = {
+      id: "fixture",
+      manifest: { id: "fixture", name: "Fixture", configFields: [] },
+      validate() {},
+      create: () => ({
+        id: "fixture",
+        acquire: async () => ({ projectPath: "/repo", resourceId: "fixture:1" }),
+        publish: async () => undefined,
+        release: async () => undefined,
+      }),
+      inspectProject: async () => ({
+        available: true,
+        configPatch: { remote: "origin" },
+        fields: { pushToRemote: { enabled: true } },
+        properties: [{
+          key: "remoteUrl",
+          label: "远程仓库",
+          value: "git@example.com:team/repo.git",
+        }],
+      }),
+    };
+
+    await expect(factory.inspectProject?.("/repo")).resolves.toMatchObject({
+      available: true,
+      configPatch: { remote: "origin" },
+    });
+  });
 });

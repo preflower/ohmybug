@@ -23,6 +23,26 @@ export interface WorkspaceProviderManifest {
   configFields: ConfigField[];
 }
 
+export interface WorkspaceInspectionFieldState {
+  enabled: boolean;
+  reason?: string;
+}
+
+export interface WorkspaceInspectionProperty {
+  key: string;
+  label: string;
+  value: string;
+  description?: string;
+}
+
+export interface WorkspaceProviderInspection {
+  available: boolean;
+  reason?: string;
+  configPatch?: Record<string, ConfigValue>;
+  fields?: Record<string, WorkspaceInspectionFieldState>;
+  properties?: WorkspaceInspectionProperty[];
+}
+
 export interface WorkspaceBinding {
   issueId: string;
   providerId: string;
@@ -51,6 +71,7 @@ export interface WorkspaceProviderFactory {
   readonly manifest: WorkspaceProviderManifest;
   validate(config: Record<string, ConfigValue>): void;
   create(config: Record<string, ConfigValue>): WorkspaceProvider;
+  inspectProject?(projectPath: string): Promise<WorkspaceProviderInspection>;
 }
 
 export interface ModuleStateStore {
