@@ -35,12 +35,26 @@ export interface WorkspaceInspectionProperty {
   description?: string;
 }
 
+export interface WorkspaceRemoteDescription {
+  name: string;
+  url: string;
+}
+
+export interface WorkspaceBranchDiscovery {
+  localBranches: string[];
+  remoteBranches: string[];
+  remote?: WorkspaceRemoteDescription;
+  remoteUnavailableReason?: string;
+  refreshError?: string;
+}
+
 export interface WorkspaceProviderInspection {
   available: boolean;
   reason?: string;
   configPatch?: Record<string, ConfigValue>;
   fields?: Record<string, WorkspaceInspectionFieldState>;
   properties?: WorkspaceInspectionProperty[];
+  branches?: WorkspaceBranchDiscovery;
 }
 
 export interface WorkspaceBinding {
@@ -78,6 +92,14 @@ export interface WorkspaceProviderFactory {
   readonly id: string;
   readonly manifest: WorkspaceProviderManifest;
   validate(config: Record<string, ConfigValue>): void;
+  validateProjectConfiguration?(
+    projectPath: string,
+    config: Record<string, ConfigValue>,
+  ): Promise<void>;
+  inspectProjectBranches?(
+    projectPath: string,
+    input: { refreshRemote: boolean },
+  ): Promise<WorkspaceBranchDiscovery>;
   create(config: Record<string, ConfigValue>): WorkspaceProvider;
   inspectProject?(projectPath: string): Promise<WorkspaceProviderInspection>;
 }

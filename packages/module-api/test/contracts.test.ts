@@ -45,4 +45,33 @@ describe("internal module contracts", () => {
       configPatch: { remote: "origin" },
     });
   });
+
+  it("allows providers to discover and validate project branch refs", async () => {
+    const factory: WorkspaceProviderFactory = {
+      id: "fixture",
+      manifest: { id: "fixture", name: "Fixture", configFields: [] },
+      validate() {},
+      create: () => ({
+        id: "fixture",
+        acquire: async () => ({ projectPath: "/repo", resourceId: "fixture:1" }),
+        publish: async () => undefined,
+        release: async () => undefined,
+      }),
+      inspectProjectBranches: async (_path, input) => ({
+        localBranches: ["main"],
+        remoteBranches: input.refreshRemote ? ["origin/main"] : [],
+        remote: { name: "origin", url: "git@example.com:team/repo.git" },
+      }),
+      validateProjectConfiguration: async () => undefined,
+    };
+
+    await expect(factory.inspectProjectBranches?.("/repo", { refreshRemote: true }))
+      .resolves.toEqual({
+        localBranches: ["main"],
+        remoteBranches: ["origin/main"],
+        remote: { name: "origin", url: "git@example.com:team/repo.git" },
+      });
+    await expect(factory.validateProjectConfiguration?.("/repo", {}))
+      .resolves.toBeUndefined();
+  });
 });
