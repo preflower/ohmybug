@@ -4,7 +4,8 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "../../src/web/api/types.js";
+import type { IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../../src/web/api/types.js";
+import { GitBranchCombobox } from "../../src/web/projects/git-branch-combobox.js";
 import { ProjectForm } from "../../src/web/projects/project-form.js";
 
 class ResizeObserverMock {
@@ -83,6 +84,67 @@ function selectTab(name: string) {
 }
 
 describe("Project configuration", () => {
+  it("shows local branches first, then appends searchable remote branches", async () => {
+    let resolveRefresh!: (value: WorkspaceBranchDiscoveryDto) => void;
+    const refresh = vi.fn(() => new Promise<WorkspaceBranchDiscoveryDto>((resolve) => {
+      resolveRefresh = resolve;
+    }));
+    render(<GitBranchCombobox
+      discovery={{ localBranches: ["main", "release"], remoteBranches: [] }}
+      onChange={vi.fn()}
+      onRefresh={refresh}
+      value="main"
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开基线分支" }));
+    await waitFor(() => {
+      expect(screen.getByRole("group", { name: "本地分支" })).toHaveTextContent("main");
+      expect(screen.getByText("正在加载远程分支…")).toBeVisible();
+    });
+    await act(async () => {
+      resolveRefresh({
+        localBranches: ["main", "release"],
+        remoteBranches: ["origin/main", "origin/release"],
+        remote: { name: "origin", url: "git@example.com:team/repo.git" },
+      });
+    });
+    expect(await screen.findByRole("group", { name: "远程分支" }))
+      .toHaveTextContent("origin/release");
+    fireEvent.change(screen.getByRole("combobox", { name: "基线分支" }), {
+      target: { value: "release" },
+    });
+    expect(screen.queryByText("main")).not.toBeInTheDocument();
+    expect(screen.getByText("release")).toBeVisible();
+    expect(screen.getByText("origin/release")).toBeVisible();
+  });
+
+  it("keeps local branches available and retries a failed remote refresh", async () => {
+    const refresh = vi.fn()
+      .mockResolvedValueOnce({
+        localBranches: ["main"],
+        remoteBranches: [],
+        refreshError: "GIT_COMMAND_FAILED:fetch",
+      })
+      .mockResolvedValueOnce({
+        localBranches: ["main"],
+        remoteBranches: ["origin/main"],
+      });
+    render(<GitBranchCombobox
+      discovery={{ localBranches: ["main"], remoteBranches: [] }}
+      onChange={vi.fn()}
+      onRefresh={refresh}
+      value="main"
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开基线分支" }));
+    expect(await screen.findByText("GIT_COMMAND_FAILED:fetch")).toBeVisible();
+    expect(screen.getByRole("group", { name: "本地分支" })).toHaveTextContent("main");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(await screen.findByRole("group", { name: "远程分支" }))
+      .toHaveTextContent("origin/main");
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ["浏览器", { mode: "browser", label: "支付页", timeoutMs: 15_000 }],
     ["Electron", { mode: "electron", label: "桌面支付页", electronEntry: "dist/main.js", timeoutMs: 15_000 }],
