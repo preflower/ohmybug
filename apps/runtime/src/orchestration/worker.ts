@@ -137,7 +137,10 @@ export class RuntimeWorker {
           const issueId = pending.issue.id;
           if (active.has(issueId) || failedInPump.has(issueId)) continue;
 
-          const operation = this.runPendingOperation(pending).then<OperationSettlement>(
+          const operation = this.runPendingOperation(pending).then<
+            OperationSettlement,
+            OperationSettlement
+          >(
             () => ({ kind: "settled", issueId, ok: true }),
             (error: unknown) => ({ kind: "settled", issueId, ok: false, error }),
           );

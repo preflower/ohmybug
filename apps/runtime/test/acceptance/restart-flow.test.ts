@@ -214,12 +214,19 @@ describe("SQLite-backed review and recovery acceptance", () => {
     const runtime = createRuntime(options);
     await runtime.start();
     await runtime.drain();
-    expect(runtime.getIssue(pending.issue.id).status).toBe("ASSESSMENT_REVIEW");
-    expect(runtime.getIssue(abandoned.id)).toMatchObject({
+    const recoveredPending = runtime.getIssue(pending.issue.id);
+    const recoveredAbandoned = runtime.getIssue(abandoned.id);
+    expect(recoveredPending).toMatchObject({
       status: "ASSESSMENT_REVIEW",
-      agentSession: { sessionId: "session-2" },
+      agentSession: { sessionId: expect.stringMatching(/^session-/) },
     });
-    expect(runtime.getIssue(abandoned.id)).not.toHaveProperty("lastFailure");
+    expect(recoveredAbandoned).toMatchObject({
+      status: "ASSESSMENT_REVIEW",
+      agentSession: { sessionId: expect.stringMatching(/^session-/) },
+    });
+    expect(recoveredAbandoned.agentSession?.sessionId)
+      .not.toBe(recoveredPending.agentSession?.sessionId);
+    expect(recoveredAbandoned).not.toHaveProperty("lastFailure");
     expect(runtime.readIssueEvents(abandoned.id)
       .filter((event) => event.type === "RUNTIME_INTERRUPTED")).toHaveLength(1);
     await runtime.stop();
