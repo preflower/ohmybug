@@ -98,7 +98,7 @@ describe("control center workbench", () => {
     expect(screen.getByText("手动创建，或为项目连接 Sentry 与 DingTalk。")).toBeVisible();
   });
 
-  it("toggles the Issue details rail with Ctrl/Cmd+Shift+B outside editable controls", async () => {
+  it("toggles the Issue details rail with Ctrl/Cmd+B and exposes a label-only Tooltip", async () => {
     vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "issues").mockResolvedValue([issue]);
@@ -110,30 +110,47 @@ describe("control center workbench", () => {
 
     expect(await screen.findByTestId("issue-metadata-rail")).toBeVisible();
     const hideAction = screen.getByRole("button", { name: "隐藏详情栏" });
-    expect(hideAction).toHaveAttribute(
-      "aria-keyshortcuts",
-      "Control+Shift+B Meta+Shift+B",
-    );
+    expect(hideAction).toHaveAttribute("aria-keyshortcuts", "Control+B Meta+B");
     fireEvent.focus(hideAction);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("隐藏详情栏Ctrl+Shift+B");
-
-    const input = document.createElement("input");
-    document.body.append(input);
-    fireEvent.keyDown(input, { key: "b", ctrlKey: true, shiftKey: true });
-    expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
-    input.remove();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("隐藏详情栏");
+    expect(screen.getByRole("tooltip").querySelector('[data-slot="kbd-group"]')).toBeNull();
 
     fireEvent.keyDown(window, { key: "b", ctrlKey: true });
-    expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
-    fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true });
     expect(screen.queryByTestId("issue-metadata-rail")).not.toBeInTheDocument();
 
     const showAction = screen.getByRole("button", { name: "显示详情栏" });
-    expect(showAction).toHaveAttribute(
-      "aria-keyshortcuts",
-      "Control+Shift+B Meta+Shift+B",
-    );
-    fireEvent.keyDown(window, { key: "B", metaKey: true, shiftKey: true });
+    expect(showAction).toHaveAttribute("aria-keyshortcuts", "Control+B Meta+B");
+    fireEvent.keyDown(window, { key: "B", metaKey: true });
+    expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
+  });
+
+  it("does not toggle the details rail for old, repeated, Alt-modified, or editable shortcuts", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+    expect(await screen.findByTestId("issue-metadata-rail")).toBeVisible();
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, altKey: true });
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, repeat: true });
+    expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
+
+    const input = document.createElement("input");
+    document.body.append(input);
+    fireEvent.keyDown(input, { key: "b", ctrlKey: true });
+    input.remove();
+
+    const editable = document.createElement("div");
+    Object.defineProperty(editable, "isContentEditable", { value: true });
+    document.body.append(editable);
+    fireEvent.keyDown(editable, { key: "b", metaKey: true });
+    editable.remove();
+
     expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
   });
 
@@ -239,10 +256,9 @@ describe("control center workbench", () => {
     fireEvent.click(within(issuesHeader as HTMLElement).getByRole("button", { name: "显示详情栏" }));
     expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
 
-    expect(screen.getByRole("button", { name: "新建 Issue" })).toHaveAttribute("data-slot", "button");
-    expect(screen.getByText("Ctrl", { selector: '[data-slot="kbd"]' })).toBeVisible();
-    expect(screen.getByText("+", { selector: '[data-slot="kbd-separator"]' })).toBeVisible();
-    expect(screen.getByText("N", { selector: '[data-slot="kbd"]' })).toBeVisible();
+    const createIssueAction = screen.getByRole("button", { name: "新建 Issue" });
+    expect(createIssueAction).toHaveAttribute("data-slot", "button");
+    expect(createIssueAction.querySelector('[data-slot="kbd-group"]')).toBeNull();
     expect(screen.queryByRole("button", { name: "筛选" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Checkout" })).toHaveAttribute("data-slot", "button");
     const issueRow = screen.getByRole("button", { name: /Checkout returns 500/ });

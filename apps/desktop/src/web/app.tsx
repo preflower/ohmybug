@@ -18,7 +18,6 @@ import type { DirectorySelection, ProductTransport } from "./api/transport.js";
 import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, IssueWorkspaceInfoDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
-import { KbdShortcut } from "./components/ui/kbd.js";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip.js";
 import { NewIssueDialog } from "./dialogs/new-issue-dialog.js";
 import { IssueDetail } from "./issues/issue-detail.js";
@@ -28,6 +27,7 @@ import { newestIssuesFirst } from "./issues/issue-order.js";
 import { useIssueEvents } from "./issues/use-issue-events.js";
 import {
   SHORTCUTS,
+  ariaKeyShortcuts,
   isEditableShortcutTarget,
   matchesShortcut,
 } from "./keyboard/shortcuts.js";
@@ -373,19 +373,11 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
   const [metadataOpen, setMetadataOpen] = useState(true);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      const editable = target instanceof HTMLInputElement
-        || target instanceof HTMLTextAreaElement
-        || target instanceof HTMLSelectElement
-        || (target instanceof HTMLElement && target.isContentEditable);
       if (
         !selected
-        || editable
+        || isEditableShortcutTarget(event.target)
         || event.repeat
-        || event.altKey
-        || !event.shiftKey
-        || (!event.metaKey && !event.ctrlKey)
-        || event.key.toLowerCase() !== "b"
+        || !matchesShortcut(event, SHORTCUTS.toggleIssueDetails)
       ) return;
       event.preventDefault();
       setMetadataOpen((current) => !current);
@@ -453,10 +445,26 @@ function IssueMetadataRail({ active, events, issue, project, workspace, onClose 
 function MetadataRailToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const label = open ? "隐藏详情栏" : "显示详情栏";
   const Icon = open ? PanelRightClose : PanelRightOpen;
-  return <Tooltip>
-    <TooltipTrigger render={<Button aria-keyshortcuts="Control+Shift+B Meta+Shift+B" aria-label={label} className={open ? "metadata-rail-toggle" : undefined} size="icon-sm" type="button" variant="ghost" onClick={onToggle}><Icon aria-hidden="true" size={15} /></Button>} />
-    <TooltipContent className="flex items-center gap-2" side="bottom"><span>{label}</span><KbdShortcut shortcut={SHORTCUTS.toggleIssueDetails} /></TooltipContent>
-  </Tooltip>;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            aria-keyshortcuts={ariaKeyShortcuts(SHORTCUTS.toggleIssueDetails)}
+            aria-label={label}
+            className={open ? "metadata-rail-toggle" : undefined}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+            onClick={onToggle}
+          >
+            <Icon aria-hidden="true" size={15} />
+          </Button>
+        }
+      />
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function Welcome() {

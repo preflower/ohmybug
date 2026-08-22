@@ -34,7 +34,6 @@ export const SHORTCUTS = {
     label: "展开或收起详情栏",
     key: "B",
     primary: true,
-    shift: true,
     scope: "选中 Issue 时",
   },
   dismissTransient: {

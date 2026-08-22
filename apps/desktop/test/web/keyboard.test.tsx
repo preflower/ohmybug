@@ -74,11 +74,11 @@ describe("keyboard and theme interactions", () => {
     expect(within(items[0]!).getByText("打开命令菜单")).toBeVisible();
     expect(within(items[0]!).getByLabelText("⌘ + K")).toBeVisible();
     expect(within(items[3]!).getByText("选中 Issue 时")).toBeVisible();
-    expect(within(items[3]!).getByLabelText("⌘ + Shift + B")).toBeVisible();
+    expect(within(items[3]!).getByLabelText("⌘ + B")).toBeVisible();
     expect(within(items[4]!).getByLabelText("Esc")).toBeVisible();
     expect(within(overview).getAllByText("+", {
       selector: '[data-slot="kbd-separator"]',
-    })).toHaveLength(5);
+    })).toHaveLength(4);
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     const commandMenu = screen.getByRole("dialog", { name: "命令菜单" });
