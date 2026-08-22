@@ -217,12 +217,19 @@ importers:
       '@oh-my-bug/workspace-local':
         specifier: workspace:*
         version: link:../../packages/workspace-local
+      playwright:
+        specifier: ^1.62.1
+        version: 1.62.1
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@26.2.0)
       zod:
         specifier: ^4.1.11
         version: 4.4.3
+    devDependencies:
+      electron:
+        specifier: 43.4.1
+        version: 43.4.1(supports-color@8.1.1)
 
   packages/agent-codex:
     dependencies:

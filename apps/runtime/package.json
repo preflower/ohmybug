@@ -19,7 +19,11 @@
     "@oh-my-bug/storage": "workspace:*",
     "@oh-my-bug/workspace-git": "workspace:*",
     "@oh-my-bug/workspace-local": "workspace:*",
+    "playwright": "^1.62.1",
     "sharp": "^0.35.3",
     "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "electron": "43.4.1"
   }
 }
