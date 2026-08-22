@@ -28,8 +28,9 @@ function KbdGroup({ className, ...props }: React.ComponentProps<"kbd">) {
 function KbdShortcut({
   className,
   keyName,
+  shift = false,
   ...props
-}: React.ComponentProps<"kbd"> & { keyName: string }) {
+}: React.ComponentProps<"kbd"> & { keyName: string; shift?: boolean }) {
   const modifier = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
     ? "⌘"
     : "Ctrl";
@@ -38,6 +39,7 @@ function KbdShortcut({
     <KbdGroup aria-hidden="true" className={className} {...props}>
       <Kbd>{modifier}</Kbd>
       <span data-slot="kbd-separator">+</span>
+      {shift ? <><Kbd>Shift</Kbd><span data-slot="kbd-separator">+</span></> : null}
       <Kbd>{keyName}</Kbd>
     </KbdGroup>
   );

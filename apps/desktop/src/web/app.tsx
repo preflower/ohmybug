@@ -19,7 +19,7 @@ import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, IssueWorkspace
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
 import { KbdShortcut } from "./components/ui/kbd.js";
-import { TooltipProvider } from "./components/ui/tooltip.js";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip.js";
 import { NewIssueDialog } from "./dialogs/new-issue-dialog.js";
 import { IssueDetail } from "./issues/issue-detail.js";
 import { IssueStatusBadge } from "./issues/issue-status.js";
@@ -349,12 +349,34 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
   const events = useIssueEvents(selectedId, onRefresh);
   const active = selected ? ["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE", "EVIDENCE_CHECK"].includes(selected.status) : false;
   const [metadataOpen, setMetadataOpen] = useState(true);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const editable = target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLElement && target.isContentEditable);
+      if (
+        !selected
+        || editable
+        || event.repeat
+        || event.altKey
+        || !event.shiftKey
+        || (!event.metaKey && !event.ctrlKey)
+        || event.key.toLowerCase() !== "b"
+      ) return;
+      event.preventDefault();
+      setMetadataOpen((current) => !current);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected]);
   const selectedProject = selected ? projects.find((project) => project.id === selected.projectId) : undefined;
   return <>
     <header className="view-header">
       <h1>Issues</h1>
       <div className="filters">
-        {selected && !metadataOpen ? <Button aria-label="显示详情栏" size="icon-sm" type="button" variant="ghost" onClick={() => setMetadataOpen(true)}><PanelRightOpen aria-hidden="true" size={15} /></Button> : null}
+        {selected && !metadataOpen ? <MetadataRailToggle open={false} onToggle={() => setMetadataOpen(true)} /> : null}
       </div>
     </header>
     <section className={`workspace ${selected ? "has-selection" : ""} ${metadataOpen && selected ? "metadata-open" : "metadata-closed"}`} aria-label="Issue 工作区">
@@ -391,7 +413,7 @@ function IssueMetadataRail({ active, events, issue, project, workspace, onClose 
   return <aside className="issue-metadata-rail" data-testid="issue-metadata-rail" aria-label="Issue 详情栏">
     <header className="metadata-rail-header">
       <span>详情</span>
-      <Button aria-label="隐藏详情栏" className="metadata-rail-toggle" size="icon-sm" type="button" variant="ghost" onClick={onClose}><PanelRightClose aria-hidden="true" size={15} /></Button>
+      <MetadataRailToggle open onToggle={onClose} />
     </header>
     <dl className="issue-metadata-list">
       <div><dt>项目</dt><dd><span className="project-dot" />{project?.name ?? project?.key ?? issue.projectId}</dd></div>
@@ -404,6 +426,15 @@ function IssueMetadataRail({ active, events, issue, project, workspace, onClose 
     </dl>
     <AgentActivity active={active} events={events} />
   </aside>;
+}
+
+function MetadataRailToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const label = open ? "隐藏详情栏" : "显示详情栏";
+  const Icon = open ? PanelRightClose : PanelRightOpen;
+  return <Tooltip>
+    <TooltipTrigger render={<Button aria-keyshortcuts="Control+Shift+B Meta+Shift+B" aria-label={label} className={open ? "metadata-rail-toggle" : undefined} size="icon-sm" type="button" variant="ghost" onClick={onToggle}><Icon aria-hidden="true" size={15} /></Button>} />
+    <TooltipContent className="flex items-center gap-2" side="bottom"><span>{label}</span><KbdShortcut keyName="B" shift /></TooltipContent>
+  </Tooltip>;
 }
 
 function Welcome() {
