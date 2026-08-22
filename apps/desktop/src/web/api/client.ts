@@ -19,6 +19,7 @@ const unavailableTransport: ProductTransport = {
   workspaceProviders: unavailable,
   projects: unavailable,
   inspectProject: unavailable,
+  projectBranches: unavailable,
   project: unavailable,
   createProject: unavailable,
   updateProject: unavailable,

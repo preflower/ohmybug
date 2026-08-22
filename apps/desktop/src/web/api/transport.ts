@@ -16,6 +16,7 @@ import type {
   IssueWorkspaceInfoDto,
   ProjectDto,
   ProjectInspection,
+  WorkspaceBranchDiscoveryDto,
 } from "./types.js";
 
 export interface EvidenceSource { url: string; revoke?: () => void }
@@ -26,6 +27,11 @@ export interface ProductTransport {
   workspaceProviders(): Promise<WorkspaceProviderManifest[]>;
   projects(): Promise<ProjectDto[]>;
   inspectProject(path: string): Promise<ProjectInspection>;
+  projectBranches(
+    path: string,
+    providerId: string,
+    refreshRemote: boolean,
+  ): Promise<WorkspaceBranchDiscoveryDto>;
   project(id: string): Promise<ProjectDto>;
   createProject(project: ProjectFormValue): Promise<ProjectDto>;
   updateProject(id: string, project: ProjectFormValue): Promise<ProjectDto>;

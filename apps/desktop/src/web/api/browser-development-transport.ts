@@ -62,6 +62,17 @@ export function createBrowserDevelopmentTransport(
         workspaces: {},
       };
     },
+    projectBranches: async (path, providerId) => {
+      const value = await snapshot();
+      const project = value.projects.find((candidate) => candidate.path === path);
+      if (!project) throw new Error("PROJECT_NOT_FOUND");
+      const discovery = value.projectInspections?.[project.id]
+        ?.workspaces[providerId]?.branches;
+      if (!discovery) {
+        throw new Error(`WORKSPACE_BRANCH_DISCOVERY_NOT_AVAILABLE:${providerId}`);
+      }
+      return discovery;
+    },
     project: async (id) => {
       const project = (await snapshot()).projects.find((candidate) => candidate.id === id);
       if (!project) throw new Error("PROJECT_NOT_FOUND");

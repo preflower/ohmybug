@@ -80,6 +80,11 @@ describe("browser development Runtime client", () => {
             git: {
               available: true,
               properties: [{ key: "remoteUrl", label: "远程仓库", value: "git@example.com:openai/oh-my-bug.git" }],
+              branches: {
+                localBranches: ["main"],
+                remoteBranches: ["origin/main"],
+                remote: { name: "origin", url: "git@example.com:openai/oh-my-bug.git" },
+              },
             },
           },
         },
@@ -128,6 +133,7 @@ describe("browser development Runtime client", () => {
           projects(): Promise<unknown>;
           project(id: string): Promise<unknown>;
           inspectProject(path: string): Promise<unknown>;
+          projectBranches(path: string, providerId: string, refreshRemote: boolean): Promise<unknown>;
           issues(): Promise<unknown>;
           issue(id: string): Promise<unknown>;
           issueWorkspace(id: string): Promise<unknown>;
@@ -163,6 +169,9 @@ describe("browser development Runtime client", () => {
     });
     expect(await transport?.project("project-1")).toEqual(project);
     expect(await transport?.inspectProject(project.path)).toEqual(snapshot.projectInspections["project-1"]);
+    expect(await transport?.projectBranches(project.path, "git", true)).toEqual(
+      snapshot.projectInspections["project-1"].workspaces.git.branches,
+    );
     expect(await transport?.issue("issue-1")).toEqual(issue);
     expect(await transport?.issueWorkspace("issue-1")).toEqual(
       snapshot.issueWorkspaces["issue-1"],

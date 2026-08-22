@@ -13,6 +13,8 @@ export function createDesktopTransport(bridge: Readonly<DesktopApi>): ProductTra
     workspaceProviders: () => bridge.listWorkspaceProviders(),
     projects: () => bridge.listProjects(),
     inspectProject: (path) => bridge.inspectProject(path),
+    projectBranches: (path, providerId, refreshRemote) =>
+      bridge.inspectProjectBranches(path, providerId, refreshRemote),
     project: (id) => bridge.getProject(id),
     createProject: (project) => bridge.createProject(createProjectPayload(project)),
     updateProject: (id, project) => bridge.updateProject(id, updateProjectPayload(project)),

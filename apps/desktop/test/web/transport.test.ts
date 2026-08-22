@@ -27,6 +27,10 @@ describe("renderer product transports", () => {
         key: project.key,
         workspaces: { local: { available: true } },
       })),
+      inspectProjectBranches: vi.fn(async () => ({
+        localBranches: ["main"],
+        remoteBranches: ["origin/main"],
+      })),
       approveDelivery: vi.fn(async () => ({
         issue: { id: "issue-1", status: "COMPLETED" },
         branch: { name: "ohmybug/chk-1", commit: "abc123" },
@@ -54,6 +58,11 @@ describe("renderer product transports", () => {
       workspaces: { local: { available: true } },
     });
     expect(bridge.inspectProject).toHaveBeenCalledWith(project.path);
+    await expect(transport.projectBranches(project.path, "git", true)).resolves.toEqual({
+      localBranches: ["main"],
+      remoteBranches: ["origin/main"],
+    });
+    expect(bridge.inspectProjectBranches).toHaveBeenCalledWith(project.path, "git", true);
     await expect(transport.approveDelivery("issue-1")).resolves.toEqual({
       issue: { id: "issue-1", status: "COMPLETED" },
       branch: { name: "ohmybug/chk-1", commit: "abc123" },

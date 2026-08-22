@@ -27,6 +27,11 @@ export interface DesktopApi {
   listWorkspaceProviders(): Promise<RuntimeOperationOutput<"listWorkspaceProviders">>;
   listProjects(): Promise<RuntimeOperationOutput<"listProjects">>;
   inspectProject(path: string): Promise<RuntimeOperationOutput<"inspectProject">>;
+  inspectProjectBranches(
+    path: string,
+    providerId: string,
+    refreshRemote: boolean,
+  ): Promise<RuntimeOperationOutput<"inspectProjectBranches">>;
   getProject(id: string): Promise<RuntimeOperationOutput<"getProject">>;
   createProject(project: CreateProjectInput): Promise<RuntimeOperationOutput<"createProject">>;
   updateProject(id: string, input: UpdateProjectInput): Promise<RuntimeOperationOutput<"updateProject">>;
@@ -92,6 +97,8 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     listWorkspaceProviders: () => request("listWorkspaceProviders", {}),
     listProjects: () => request("listProjects", {}),
     inspectProject: (path) => request("inspectProject", { path }),
+    inspectProjectBranches: (path, providerId, refreshRemote) =>
+      request("inspectProjectBranches", { path, providerId, refreshRemote }),
     getProject: (id) => request("getProject", { id }),
     createProject: (project) => request("createProject", project),
     updateProject: (id, input) => request("updateProject", { id, input }),
