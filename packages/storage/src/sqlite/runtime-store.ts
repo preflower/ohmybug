@@ -200,12 +200,18 @@ export class SqliteRuntimeStore implements RuntimeStore, RuntimeTransaction {
     retireStoredAgentSession(this.database, logicalSessionId, updatedAt);
   }
 
-  findIssueByInput(integration: string, inputKey: string): Issue | undefined {
+  findIssueByInput(
+    projectId: string,
+    integration: string,
+    inputKey: string,
+  ): Issue | undefined {
     return parseIssue(this.database.prepare(
       `SELECT issues.data_json FROM integration_inputs
        JOIN issues ON issues.id = integration_inputs.issue_id
-       WHERE integration_inputs.integration = ? AND integration_inputs.input_key = ?`,
-    ).get(integration, inputKey) as JsonRow | undefined);
+       WHERE integration_inputs.project_id = ?
+         AND integration_inputs.integration = ?
+         AND integration_inputs.input_key = ?`,
+    ).get(projectId, integration, inputKey) as JsonRow | undefined);
   }
 
   findActiveIssueByGroup(

@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS integration_inputs (
   group_key TEXT,
   received_at TEXT NOT NULL,
   data_json TEXT NOT NULL,
-  UNIQUE(integration, input_key)
+  UNIQUE(project_id, integration, input_key)
 );
 
 CREATE TABLE IF NOT EXISTS issue_events (

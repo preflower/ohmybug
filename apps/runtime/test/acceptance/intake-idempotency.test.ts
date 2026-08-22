@@ -36,6 +36,39 @@ function input(id: string, inputKey: string, groupKey?: string): IntegrationInpu
 }
 
 describe("SQLite-backed intake acceptance", () => {
+  it("accepts the same Manual command independently in different projects", async () => {
+    let sequence = 0;
+    const runtime = createRuntime({
+      databasePath: temporaryDatabase("omb-runtime-project-idempotency-"),
+      agent: new FakeAgent(),
+      id: () => `project-idempotency-${++sequence}`,
+      now: () => "2026-08-20T16:00:00.000Z",
+    });
+    const otherProject = {
+      ...project,
+      id: "project-2",
+      key: "OTHER",
+      path: "/tmp/project-2",
+    };
+    runtime.registerProject(project);
+    runtime.registerProject(otherProject);
+
+    const first = await runtime.submitManual(project.id, {
+      commandId: "same-command",
+      content: "Payment route fails",
+    });
+    const second = await runtime.submitManual(otherProject.id, {
+      commandId: "same-command",
+      content: "Payment route fails",
+    });
+
+    expect(first.kind).toBe("CREATED");
+    expect(second.kind).toBe("CREATED");
+    expect(runtime.listIssues(project.id)).toHaveLength(1);
+    expect(runtime.listIssues(otherProject.id)).toHaveLength(1);
+    await runtime.stop();
+  });
+
   it("keeps exact Manual idempotency after reopening SQLite", async () => {
     let sequence = 0;
     const databasePath = temporaryDatabase("omb-runtime-idempotency-");

@@ -32,6 +32,7 @@ export function acceptIntegrationInput(
 ): IntakeResult {
   const input = integrationInputSchema.parse(command.input);
   const exactIssue = command.transaction.findIssueByInput(
+    command.projectId,
     input.integration,
     input.inputKey,
   );

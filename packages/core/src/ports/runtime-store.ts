@@ -28,7 +28,11 @@ export interface RuntimeTransaction {
   getAgentSession(logicalSessionId: string): AgentSessionRecord | undefined;
   insertAgentSession(record: AgentSessionRecord): void;
   retireAgentSession(logicalSessionId: string, updatedAt: string): void;
-  findIssueByInput(integration: string, inputKey: string): Issue | undefined;
+  findIssueByInput(
+    projectId: string,
+    integration: string,
+    inputKey: string,
+  ): Issue | undefined;
   findActiveIssueByGroup(
     projectId: string,
     integration: string,

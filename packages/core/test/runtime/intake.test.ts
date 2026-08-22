@@ -42,6 +42,7 @@ class MemoryTransaction implements RuntimeTransaction {
   sessions = new Map<string, AgentSessionRecord>();
   exactIssue?: Issue;
   activeGroupIssue?: Issue;
+  exactLookup?: [projectId: string, integration: string, inputKey: string];
   inserted?: { issue: Issue; pendingOperation: PendingOperation };
   appended?: Issue;
   events: NewIssueEvent[] = [];
@@ -57,7 +58,14 @@ class MemoryTransaction implements RuntimeTransaction {
     if (!current) throw new Error("AGENT_SESSION_NOT_FOUND");
     this.sessions.set(logicalSessionId, { ...current, lifecycle: "RETIRED", updatedAt });
   }
-  findIssueByInput(): Issue | undefined { return this.exactIssue; }
+  findIssueByInput(
+    projectId: string,
+    integration: string,
+    inputKey: string,
+  ): Issue | undefined {
+    this.exactLookup = [projectId, integration, inputKey];
+    return this.exactIssue;
+  }
   findActiveIssueByGroup(): Issue | undefined { return this.activeGroupIssue; }
   allocateIssueIdentity() { return { id: "issue-2", identifier: "OMB-2" }; }
   insertIssue(issue: Issue, pendingOperation: PendingOperation): void {
@@ -94,6 +102,7 @@ describe("atomic Integration intake", () => {
       id: () => "event-1",
       now,
     })).toEqual({ kind: "IGNORED_DUPLICATE", issueId: "issue-1" });
+    expect(transaction.exactLookup).toEqual(["project-1", "sentry", "event-1"]);
     expect(transaction.inserted).toBeUndefined();
     expect(transaction.appended).toBeUndefined();
     expect(transaction.events).toEqual([]);

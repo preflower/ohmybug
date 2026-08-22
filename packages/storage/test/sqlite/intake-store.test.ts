@@ -12,9 +12,33 @@ describe("SQLite intake persistence", () => {
 
     const reopened = createStore(path);
     expect(reopened.transaction((transaction) =>
-      transaction.findIssueByInput("sentry", "event-1"),
+      transaction.findIssueByInput(project.id, "sentry", "event-1"),
     )).toEqual(issue);
     reopened.close();
+  });
+
+  it("scopes exact input identity to its project", () => {
+    const store = createStore();
+    const otherProject = { ...project, id: "project-2", key: "OTHER" };
+    const otherIssue = {
+      ...issue,
+      id: "issue-2",
+      projectId: otherProject.id,
+      identifier: "OTHER-1",
+      inputs: [{ ...input, id: "input-2" }],
+    };
+    store.registerProject(project);
+    store.registerProject(otherProject);
+    store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
+    store.transaction((transaction) => transaction.insertIssue(otherIssue, "ASSESS"));
+
+    expect(store.transaction((transaction) =>
+      transaction.findIssueByInput(project.id, "sentry", "event-1"),
+    )).toEqual(issue);
+    expect(store.transaction((transaction) =>
+      transaction.findIssueByInput(otherProject.id, "sentry", "event-1"),
+    )).toEqual(otherIssue);
+    store.close();
   });
 
   it("finds active groups and ignores terminal Issues", () => {
