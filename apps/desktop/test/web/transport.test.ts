@@ -30,6 +30,7 @@ describe("renderer product transports", () => {
       inspectProjectBranches: vi.fn(async () => ({
         localBranches: ["main"],
         remoteBranches: ["origin/main"],
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
       })),
       approveDelivery: vi.fn(async () => ({
         issue: { id: "issue-1", status: "COMPLETED" },
@@ -61,6 +62,7 @@ describe("renderer product transports", () => {
     await expect(transport.projectBranches(project.path, "git", true)).resolves.toEqual({
       localBranches: ["main"],
       remoteBranches: ["origin/main"],
+      publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
     });
     expect(bridge.inspectProjectBranches).toHaveBeenCalledWith(project.path, "git", true);
     await expect(transport.approveDelivery("issue-1")).resolves.toEqual({

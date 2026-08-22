@@ -55,8 +55,9 @@ export const workspaceRemoteDescriptionSchema = z.object({
 export const workspaceBranchDiscoverySchema = z.object({
   localBranches: z.array(z.string().min(1)),
   remoteBranches: z.array(z.string().min(1)),
-  remote: workspaceRemoteDescriptionSchema.optional(),
-  remoteUnavailableReason: z.string().min(1).optional(),
+  fetchRemote: workspaceRemoteDescriptionSchema.optional(),
+  publicationRemotes: z.array(workspaceRemoteDescriptionSchema),
+  fetchUnavailableReason: z.string().min(1).optional(),
   refreshError: z.string().min(1).optional(),
 }).strict();
 const workspaceProviderInspectionSchema = z.object({

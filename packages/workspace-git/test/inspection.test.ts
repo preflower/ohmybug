@@ -31,13 +31,15 @@ describe("Git Workspace project inspection", () => {
     await expect(factory.inspectProjectBranches?.(value.repository, { refreshRemote: false }))
       .resolves.toMatchObject({
         localBranches: ["main"],
-        remote: { name: "origin", url: bare },
+        fetchRemote: { name: "origin", url: bare },
+        publicationRemotes: [{ name: "origin", url: bare }],
       });
     await expect(factory.inspectProjectBranches?.(value.repository, { refreshRemote: true }))
       .resolves.toMatchObject({
         localBranches: ["main"],
         remoteBranches: ["origin/main", "origin/release"],
-        remote: { name: "origin", url: bare },
+        fetchRemote: { name: "origin", url: bare },
+        publicationRemotes: [{ name: "origin", url: bare }],
       });
   });
 
@@ -56,10 +58,19 @@ describe("Git Workspace project inspection", () => {
 
   it("validates local and remote-tracking base refs before save", async () => {
     const value = await fixture();
+    const bare = join(value.root, "origin.git");
+    await git(value.root, "init", "--bare", bare);
+    await git(value.repository, "remote", "add", "origin", bare);
+    await git(value.repository, "push", "origin", "main:release");
+    await git(value.repository, "fetch", "origin");
     const factory = gitWorkspaceFactory({ state: value.state, worktreeRoot: value.worktreeRoot });
 
     await expect(factory.validateProjectConfiguration?.(value.repository, {
       baseBranch: "main",
+      pushToRemote: false,
+    })).resolves.toBeUndefined();
+    await expect(factory.validateProjectConfiguration?.(value.repository, {
+      baseBranch: "origin/release",
       pushToRemote: false,
     })).resolves.toBeUndefined();
     await expect(factory.validateProjectConfiguration?.(value.repository, {
@@ -80,6 +91,13 @@ describe("Git Workspace project inspection", () => {
       available: true,
       configPatch: { remote: "upstream" },
       fields: { pushToRemote: { enabled: true } },
+      branches: {
+        fetchRemote: { name: "upstream", url: "git@example.com:team/repo.git" },
+        publicationRemotes: [
+          { name: "origin", url: "/srv/git/origin.git" },
+          { name: "upstream", url: "git@example.com:team/repo.git" },
+        ],
+      },
       properties: [{
         key: "remoteUrl",
         label: "远程仓库",
@@ -130,7 +148,8 @@ describe("Git Workspace project inspection", () => {
       branches: {
         localBranches: ["main"],
         remoteBranches: [],
-        remoteUnavailableReason: "当前 Git 仓库未配置远程仓库",
+        publicationRemotes: [],
+        fetchUnavailableReason: "当前 Git 仓库未配置远程仓库",
       },
     });
   });

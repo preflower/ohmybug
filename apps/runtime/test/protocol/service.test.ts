@@ -145,6 +145,7 @@ describe("RuntimeService", () => {
       inspectProjectBranches: async () => ({
         localBranches: ["main"],
         remoteBranches: ["origin/main"],
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
       }),
       create: () => ({
         id: "branches",
@@ -162,6 +163,7 @@ describe("RuntimeService", () => {
     })).resolves.toEqual({
       localBranches: ["main"],
       remoteBranches: ["origin/main"],
+      publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
     });
     await expect(service.createProject({
       path: projectDirectory,

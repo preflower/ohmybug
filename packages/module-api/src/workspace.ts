@@ -43,8 +43,11 @@ export interface WorkspaceRemoteDescription {
 export interface WorkspaceBranchDiscovery {
   localBranches: string[];
   remoteBranches: string[];
-  remote?: WorkspaceRemoteDescription;
-  remoteUnavailableReason?: string;
+  /** Remote used to refresh remote-tracking base branches. */
+  fetchRemote?: WorkspaceRemoteDescription;
+  /** Remotes that may be used to publish completed Issue branches. */
+  publicationRemotes: WorkspaceRemoteDescription[];
+  fetchUnavailableReason?: string;
   refreshError?: string;
 }
 

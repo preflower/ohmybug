@@ -83,7 +83,8 @@ describe("browser development Runtime client", () => {
               branches: {
                 localBranches: ["main"],
                 remoteBranches: ["origin/main"],
-                remote: { name: "origin", url: "git@example.com:openai/oh-my-bug.git" },
+                fetchRemote: { name: "origin", url: "git@example.com:openai/oh-my-bug.git" },
+                publicationRemotes: [{ name: "origin", url: "git@example.com:openai/oh-my-bug.git" }],
               },
             },
           },

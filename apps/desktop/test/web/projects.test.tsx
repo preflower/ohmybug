@@ -57,7 +57,8 @@ const inspection: ProjectInspection = {
       branches: {
         localBranches: ["main"],
         remoteBranches: [],
-        remoteUnavailableReason: "当前 Git 仓库未配置远程仓库",
+        publicationRemotes: [],
+        fetchUnavailableReason: "当前 Git 仓库未配置远程仓库",
       },
     },
   },
@@ -95,7 +96,12 @@ describe("Project configuration", () => {
       resolveRefresh = resolve;
     }));
     render(<GitBranchCombobox
-      discovery={{ localBranches: ["main", "release"], remoteBranches: [] }}
+      discovery={{
+        localBranches: ["main", "release"],
+        remoteBranches: [],
+        fetchRemote: { name: "origin", url: "git@example.com:team/repo.git" },
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
+      }}
       onChange={vi.fn()}
       onRefresh={refresh}
       value="main"
@@ -110,7 +116,8 @@ describe("Project configuration", () => {
       resolveRefresh({
         localBranches: ["main", "release"],
         remoteBranches: ["origin/main", "origin/release"],
-        remote: { name: "origin", url: "git@example.com:team/repo.git" },
+        fetchRemote: { name: "origin", url: "git@example.com:team/repo.git" },
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
       });
     });
     expect(await screen.findByRole("group", { name: "远程分支" }))
@@ -128,14 +135,21 @@ describe("Project configuration", () => {
       .mockResolvedValueOnce({
         localBranches: ["main"],
         remoteBranches: [],
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
         refreshError: "GIT_COMMAND_FAILED:fetch",
       })
       .mockResolvedValueOnce({
         localBranches: ["main"],
         remoteBranches: ["origin/main"],
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
       });
     render(<GitBranchCombobox
-      discovery={{ localBranches: ["main"], remoteBranches: [] }}
+      discovery={{
+        localBranches: ["main"],
+        remoteBranches: [],
+        fetchRemote: { name: "origin", url: "git@example.com:team/repo.git" },
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
+      }}
       onChange={vi.fn()}
       onRefresh={refresh}
       value="main"
@@ -148,6 +162,21 @@ describe("Project configuration", () => {
     expect(await screen.findByRole("group", { name: "远程分支" }))
       .toHaveTextContent("origin/main");
     expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens local-only branch choices without attempting a remote refresh", async () => {
+    const refresh = vi.fn();
+    render(<GitBranchCombobox
+      discovery={{ localBranches: ["main"], remoteBranches: [], publicationRemotes: [] }}
+      onChange={vi.fn()}
+      onRefresh={refresh}
+      value="main"
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "打开基线分支" }));
+    expect(await screen.findByRole("group", { name: "本地分支" })).toHaveTextContent("main");
+    expect(screen.queryByText("正在加载远程分支…")).not.toBeInTheDocument();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -268,7 +297,8 @@ describe("Project configuration", () => {
             branches: {
               localBranches: ["main"],
               remoteBranches: ["origin/main"],
-              remote: { name: "origin", url: "git@example.com:team/checkout.git" },
+              fetchRemote: { name: "origin", url: "git@example.com:team/checkout.git" },
+              publicationRemotes: [{ name: "origin", url: "git@example.com:team/checkout.git" }],
             },
           },
         },
@@ -288,6 +318,59 @@ describe("Project configuration", () => {
     expect(screen.queryByDisplayValue("origin")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "基线分支" })).toHaveValue("main");
     fireEvent.click(screen.getByRole("switch", { name: "完成后推送到远程" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      workspace: {
+        provider: "git",
+        config: { baseBranch: "main", pushToRemote: true, remote: "origin" },
+      },
+    })));
+  });
+
+  it("keeps a configured publication remote separate from the tracked Fetch remote", async () => {
+    const onSave = vi.fn(async () => undefined);
+    const gitProject: ProjectDto = {
+      ...configuredProject,
+      workspace: {
+        provider: "git",
+        config: {
+          baseBranch: "main",
+          pushToRemote: true,
+          remote: "origin",
+        },
+      },
+    };
+    render(<ProjectForm
+      initial={gitProject}
+      inspection={{
+        ...inspection,
+        workspaces: {
+          ...inspection.workspaces,
+          git: {
+            available: true,
+            configPatch: { remote: "upstream" },
+            fields: { pushToRemote: { enabled: true } },
+            properties: [],
+            branches: {
+              localBranches: ["main"],
+              remoteBranches: ["upstream/main"],
+              fetchRemote: { name: "upstream", url: "git@example.com:team/project.git" },
+              publicationRemotes: [
+                { name: "origin", url: "git@example.com:me/project.git" },
+                { name: "upstream", url: "git@example.com:team/project.git" },
+              ],
+            },
+          },
+        },
+      }}
+      manifests={manifests}
+      workspaceProviders={workspaceProviders}
+      onSave={onSave}
+    />);
+
+    expect(screen.getByText("git@example.com:me/project.git")).toBeVisible();
+    expect(screen.queryByText("git@example.com:team/project.git")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({

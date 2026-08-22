@@ -46,7 +46,8 @@ describe("Runtime protocol operation registry", () => {
     const output = {
       localBranches: ["main"],
       remoteBranches: ["origin/main"],
-      remote: { name: "origin", url: "git@example.com:team/repo.git" },
+      fetchRemote: { name: "origin", url: "git@example.com:team/repo.git" },
+      publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
     };
 
     expect(runtimeOperations.inspectProjectBranches.input.parse(input)).toEqual(input);

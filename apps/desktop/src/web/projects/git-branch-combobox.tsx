@@ -40,7 +40,7 @@ export function GitBranchCombobox({
   ].filter((group) => group.items.length > 0) as BranchGroup[], [discovery]);
 
   const refreshBranches = async () => {
-    if (loading) return;
+    if (loading || !initialDiscovery.fetchRemote) return;
     setLoading(true);
     try {
       setRefreshed({ source: initialDiscovery, value: await onRefresh() });
@@ -61,7 +61,7 @@ export function GitBranchCombobox({
     items={groups}
     onOpenChange={(nextOpen) => {
       setOpen(nextOpen);
-      if (nextOpen && !open) void refreshBranches();
+      if (nextOpen && !open && initialDiscovery.fetchRemote) void refreshBranches();
     }}
     onValueChange={(nextValue) => {
       if (typeof nextValue === "string") onChange(nextValue);
@@ -71,8 +71,10 @@ export function GitBranchCombobox({
   >
     <Combobox.InputGroup className="flex h-8 w-full items-center rounded-md border border-input bg-background outline-none transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
       <Combobox.Input
+        aria-describedby={discovery.refreshError ? "git-branch-refresh-error" : undefined}
         aria-label="基线分支"
-        className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm outline-none"
+        className="h-full min-w-0 flex-1 truncate bg-transparent px-2.5 font-mono text-sm outline-none"
+        title={value}
       />
       <Combobox.Trigger
         aria-label="打开基线分支"
@@ -107,7 +109,7 @@ export function GitBranchCombobox({
             {loading ? <div className="px-2 py-2 text-xs text-muted-foreground" role="status">
               正在加载远程分支…
             </div> : null}
-            {!loading && discovery.refreshError ? <div className="flex items-center justify-between gap-3 px-2 py-2 text-xs text-destructive">
+            {!loading && discovery.refreshError ? <div aria-live="polite" className="flex items-center justify-between gap-3 px-2 py-2 text-xs text-destructive" id="git-branch-refresh-error" role="status">
               <span>{discovery.refreshError}</span>
               <Button size="sm" type="button" variant="ghost" onClick={() => { void refreshBranches(); }}>
                 <RefreshCw aria-hidden="true" size={13} />重试

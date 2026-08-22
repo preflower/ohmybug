@@ -3,12 +3,34 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export async function runGit(cwd: string, args: readonly string[]): Promise<string> {
+export interface RunGitOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  nonInteractive?: boolean;
+}
+
+export async function runGit(
+  cwd: string,
+  args: readonly string[],
+  options: RunGitOptions = {},
+): Promise<string> {
   try {
     const result = await execFileAsync("git", [...args], {
       cwd,
       encoding: "utf8",
       maxBuffer: 10 * 1024 * 1024,
+      ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(options.nonInteractive
+        ? {
+            env: {
+              ...process.env,
+              GCM_INTERACTIVE: "Never",
+              GIT_TERMINAL_PROMPT: "0",
+              SSH_ASKPASS_REQUIRE: "never",
+            },
+          }
+        : {}),
     });
     return result.stdout.trim();
   } catch (error) {

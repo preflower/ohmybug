@@ -63,9 +63,12 @@ export interface GitWorkspaceFactoryOptions {
 
 interface GitProjectContext {
   repositoryPath: string;
-  remote?: { name: string; url: string };
-  remoteUnavailableReason?: string;
+  fetchRemote?: { name: string; url: string };
+  publicationRemotes: Array<{ name: string; url: string }>;
+  fetchUnavailableReason?: string;
 }
+
+const FETCH_TIMEOUT_MS = 15_000;
 
 export function gitWorkspaceFactory(
   options: GitWorkspaceFactoryOptions,
@@ -104,6 +107,9 @@ export function gitWorkspaceFactory(
     async validateProjectConfiguration(projectPath, config) {
       const parsed = parseConfiguration(config);
       const repositoryPath = await runGit(projectPath, ["rev-parse", "--show-toplevel"]);
+      if (parsed.pushToRemote) {
+        await runGit(repositoryPath, ["remote", "get-url", parsed.remote!]);
+      }
       await runGit(repositoryPath, [
         "rev-parse",
         "--verify",
@@ -126,8 +132,8 @@ export async function inspectGitProject(
   }
   const branches = await discoverGitProjectBranches(context, { refreshRemote: false });
 
-  if (!context.remote) {
-    const reason = context.remoteUnavailableReason!;
+  if (!context.fetchRemote) {
+    const reason = context.fetchUnavailableReason!;
     return {
       available: true,
       fields: { pushToRemote: { enabled: false, reason } },
@@ -138,13 +144,13 @@ export async function inspectGitProject(
 
   return {
     available: true,
-    configPatch: { remote: context.remote.name },
+    configPatch: { remote: context.fetchRemote.name },
     fields: { pushToRemote: { enabled: true } },
     properties: [{
       key: "remoteUrl",
       label: "远程仓库",
-      value: context.remote.url,
-      description: `Git remote: ${context.remote.name}`,
+      value: context.fetchRemote.url,
+      description: `Git remote: ${context.fetchRemote.name}`,
     }],
     branches,
   };
@@ -165,23 +171,28 @@ async function discoverGitProjectBranches(
 ): Promise<WorkspaceBranchDiscovery> {
   const localBranches = await listRefs(context.repositoryPath, "refs/heads");
   let refreshError: string | undefined;
-  if (input.refreshRemote && context.remote) {
+  if (input.refreshRemote && context.fetchRemote) {
     try {
-      await runGit(context.repositoryPath, ["fetch", "--prune", context.remote.name]);
+      await runGit(
+        context.repositoryPath,
+        ["fetch", "--prune", context.fetchRemote.name],
+        { nonInteractive: true, timeoutMs: FETCH_TIMEOUT_MS },
+      );
     } catch (error) {
       refreshError = error instanceof Error ? error.message : "GIT_COMMAND_FAILED:fetch";
     }
   }
-  const remoteBranches = context.remote
-    ? (await listRefs(context.repositoryPath, `refs/remotes/${context.remote.name}`))
-        .filter((ref) => ref !== `${context.remote!.name}/HEAD`)
+  const remoteBranches = context.fetchRemote
+    ? (await listRefs(context.repositoryPath, `refs/remotes/${context.fetchRemote.name}`))
+        .filter((ref) => ref !== `${context.fetchRemote!.name}/HEAD`)
     : [];
   return {
     localBranches,
     remoteBranches,
-    ...(context.remote ? { remote: context.remote } : {}),
-    ...(context.remoteUnavailableReason
-      ? { remoteUnavailableReason: context.remoteUnavailableReason }
+    publicationRemotes: context.publicationRemotes,
+    ...(context.fetchRemote ? { fetchRemote: context.fetchRemote } : {}),
+    ...(context.fetchUnavailableReason
+      ? { fetchUnavailableReason: context.fetchUnavailableReason }
       : {}),
     ...(refreshError ? { refreshError } : {}),
   };
@@ -200,6 +211,10 @@ async function readGitProjectContext(
     .split(/\r?\n/)
     .map((value) => value.trim())
     .filter(Boolean);
+  const publicationRemotes = await Promise.all(remotes.map(async (name) => ({
+    name,
+    url: await runGit(repositoryPath, ["remote", "get-url", name]),
+  })));
   const branch = await runGit(repositoryPath, ["branch", "--show-current"]);
   const tracked = branch
     ? await tryRunGit(repositoryPath, ["config", "--get", `branch.${branch}.remote`])
@@ -214,17 +229,16 @@ async function readGitProjectContext(
   if (!name) {
     return {
       repositoryPath,
-      remoteUnavailableReason: remotes.length === 0
+      publicationRemotes,
+      fetchUnavailableReason: remotes.length === 0
         ? "当前 Git 仓库未配置远程仓库"
         : "当前 Git 仓库有多个远程仓库，且未配置默认上游",
     };
   }
   return {
     repositoryPath,
-    remote: {
-      name,
-      url: await runGit(repositoryPath, ["remote", "get-url", name]),
-    },
+    publicationRemotes,
+    fetchRemote: publicationRemotes.find((remote) => remote.name === name)!,
   };
 }
 

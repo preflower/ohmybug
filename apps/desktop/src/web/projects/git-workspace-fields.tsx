@@ -22,9 +22,19 @@ export function GitWorkspaceFields({
   onRefreshBranches,
 }: GitWorkspaceFieldsProps) {
   const baseBranch = String(config.baseBranch ?? "main");
-  const pushEnabled = pushState?.enabled ?? Boolean(discovery.remote);
-  const remote = discovery.remote;
-  const reasonId = pushState?.reason ? "git-push-availability" : undefined;
+  const publicationRemoteName = typeof config.remote === "string"
+    ? config.remote
+    : discovery.fetchRemote?.name;
+  const publicationRemote = discovery.publicationRemotes.find(
+    (remote) => remote.name === publicationRemoteName,
+  );
+  const reason = publicationRemote
+    ? undefined
+    : publicationRemoteName
+      ? `配置的远程仓库 ${publicationRemoteName} 当前不可用`
+      : pushState?.reason;
+  const pushEnabled = Boolean(publicationRemote);
+  const reasonId = reason ? "git-push-availability" : undefined;
 
   return <>
     <label>基线分支
@@ -39,11 +49,11 @@ export function GitWorkspaceFields({
       <div className="git-publication-copy">
         <strong id="git-push-label">完成后推送到远程</strong>
         <small>Issue 完成后，将本地 Issue 分支发布到当前远程仓库。</small>
-        {remote ? <>
-          <code title={remote.url}>{remote.url}</code>
-          <small>Git remote: {remote.name}</small>
+        {publicationRemote ? <>
+          <code title={publicationRemote.url}>{publicationRemote.url}</code>
+          <small>Git remote: {publicationRemote.name}</small>
         </> : null}
-        {pushState?.reason ? <small id={reasonId}>{pushState.reason}</small> : null}
+        {reason ? <small id={reasonId}>{reason}</small> : null}
       </div>
       <Switch
         aria-describedby={reasonId}

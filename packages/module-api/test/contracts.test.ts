@@ -60,7 +60,8 @@ describe("internal module contracts", () => {
       inspectProjectBranches: async (_path, input) => ({
         localBranches: ["main"],
         remoteBranches: input.refreshRemote ? ["origin/main"] : [],
-        remote: { name: "origin", url: "git@example.com:team/repo.git" },
+        fetchRemote: { name: "origin", url: "git@example.com:team/repo.git" },
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
       }),
       validateProjectConfiguration: async () => undefined,
     };
@@ -69,7 +70,8 @@ describe("internal module contracts", () => {
       .resolves.toEqual({
         localBranches: ["main"],
         remoteBranches: ["origin/main"],
-        remote: { name: "origin", url: "git@example.com:team/repo.git" },
+        fetchRemote: { name: "origin", url: "git@example.com:team/repo.git" },
+        publicationRemotes: [{ name: "origin", url: "git@example.com:team/repo.git" }],
       });
     await expect(factory.validateProjectConfiguration?.("/repo", {}))
       .resolves.toBeUndefined();

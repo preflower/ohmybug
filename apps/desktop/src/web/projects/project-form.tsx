@@ -200,14 +200,16 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
             discovery={projectInspection?.workspaces.git?.branches ?? {
               localBranches: [String(project.workspace.config.baseBranch ?? "main")],
               remoteBranches: [],
+              publicationRemotes: [],
             }}
             pushState={projectInspection?.workspaces.git?.fields?.pushToRemote}
             onChange={(key, value) => updateProject((current) => ({ ...current, workspace: { ...current.workspace, config: { ...current.workspace.config, [key]: value } } }))}
             onRefreshBranches={() => onRefreshWorkspaceBranches
               ? onRefreshWorkspaceBranches(project.path, project.workspace.provider)
-              : Promise.resolve(projectInspection?.workspaces.git?.branches ?? {
+                : Promise.resolve(projectInspection?.workspaces.git?.branches ?? {
                   localBranches: [String(project.workspace.config.baseBranch ?? "main")],
                   remoteBranches: [],
+                  publicationRemotes: [],
                 })}
           /> : <ConfigFields fields={allWorkspaceProviders.find((provider) => provider.id === project.workspace.provider)?.configFields ?? []} config={project.workspace.config} idPrefix={`workspace-${project.workspace.provider}`} inspection={projectInspection?.workspaces[project.workspace.provider]} onChange={(key, value) => updateProject((current) => ({ ...current, workspace: { ...current.workspace, config: { ...current.workspace.config, [key]: value } } }))} />}
           {initial?.workspace?.unavailable ? <p className="field-wide">{initial.workspace.unavailable}</p> : null}
@@ -319,11 +321,21 @@ function mergeWorkspaceInspection(
   inspection: ProjectInspection,
 ): ProjectFormValue["workspace"] {
   const providerInspection = inspection.workspaces[workspace.provider];
+  const normalized = normalizeWorkspaceConfig(workspace.provider, workspace.config);
   const config = {
-    ...normalizeWorkspaceConfig(workspace.provider, workspace.config),
     ...(providerInspection?.configPatch ?? {}),
+    ...normalized,
   };
-  if (workspace.provider === "git" && providerInspection?.fields?.pushToRemote?.enabled === false) {
+  const configuredRemoteAvailable = workspace.provider === "git"
+    && typeof config.remote === "string"
+    && providerInspection?.branches?.publicationRemotes.some(
+      (remote) => remote.name === config.remote,
+    );
+  if (
+    workspace.provider === "git"
+    && providerInspection?.fields?.pushToRemote?.enabled === false
+    && !configuredRemoteAvailable
+  ) {
     config.pushToRemote = false;
   }
   return {
