@@ -53,6 +53,7 @@ const issue: IssueDto = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  delete window.ohMyBug;
   history.replaceState({}, "", "/");
 });
 
@@ -134,6 +135,82 @@ describe("control center workbench", () => {
     );
     fireEvent.keyDown(window, { key: "B", metaKey: true, shiftKey: true });
     expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
+  });
+
+  it("uses sidebar project shortcuts to filter the Issue list", async () => {
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    const storefrontIssue: IssueDto = {
+      ...issue,
+      id: "issue-2",
+      projectId: storefront.id,
+      identifier: "STO-1",
+      title: "Storefront search is stale",
+      updatedAt: "2026-08-20T09:01:00.000Z",
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue, storefrontIssue]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) => id === storefrontIssue.id ? storefrontIssue : issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+
+    const storefrontShortcut = await screen.findByRole("button", { name: "Storefront" });
+    fireEvent.click(storefrontShortcut);
+
+    const filteredList = screen.getByRole("region", { name: "Issue 列表" });
+    expect(within(filteredList).getByText("Storefront search is stale")).toBeVisible();
+    expect(within(filteredList).queryByText("Checkout returns 500")).not.toBeInTheDocument();
+    expect(screen.getByText("Storefront", { selector: ".breadcrumb span:last-child" })).toBeVisible();
+    expect(storefrontShortcut).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(screen.getByRole("link", { name: "Issues" }));
+
+    expect(within(filteredList).getByText("Storefront search is stale")).toBeVisible();
+    expect(within(filteredList).getByText("Checkout returns 500")).toBeVisible();
+    expect(screen.getByText("全部", { selector: ".breadcrumb span:last-child" })).toBeVisible();
+  });
+
+  it("keeps the sidebar project filter after Electron applies the hash route", async () => {
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    const storefrontIssue: IssueDto = {
+      ...issue,
+      id: "issue-2",
+      projectId: storefront.id,
+      identifier: "STO-1",
+      title: "Storefront search is stale",
+      updatedAt: "2026-08-20T09:01:00.000Z",
+    };
+    Object.defineProperty(window, "ohMyBug", { configurable: true, value: {} });
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue, storefrontIssue]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) => id === storefrontIssue.id ? storefrontIssue : issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Storefront" }));
+    fireEvent(window, new HashChangeEvent("hashchange"));
+
+    const filteredList = screen.getByRole("region", { name: "Issue 列表" });
+    expect(within(filteredList).getByText("Storefront search is stale")).toBeVisible();
+    expect(within(filteredList).queryByText("Checkout returns 500")).not.toBeInTheDocument();
+    expect(screen.getByText("Storefront", { selector: ".breadcrumb span:last-child" })).toBeVisible();
   });
 
   it("loads Runtime issues, opens manual creation, and navigates to project configuration", async () => {
