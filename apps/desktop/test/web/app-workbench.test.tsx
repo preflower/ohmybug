@@ -97,6 +97,45 @@ describe("control center workbench", () => {
     expect(screen.getByText("手动创建，或为项目连接 Sentry 与 DingTalk。")).toBeVisible();
   });
 
+  it("toggles the Issue details rail with Ctrl/Cmd+Shift+B outside editable controls", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+
+    expect(await screen.findByTestId("issue-metadata-rail")).toBeVisible();
+    const hideAction = screen.getByRole("button", { name: "隐藏详情栏" });
+    expect(hideAction).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Control+Shift+B Meta+Shift+B",
+    );
+    fireEvent.focus(hideAction);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("隐藏详情栏Ctrl+Shift+B");
+
+    const input = document.createElement("input");
+    document.body.append(input);
+    fireEvent.keyDown(input, { key: "b", ctrlKey: true, shiftKey: true });
+    expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
+    input.remove();
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true, shiftKey: true });
+    expect(screen.queryByTestId("issue-metadata-rail")).not.toBeInTheDocument();
+
+    const showAction = screen.getByRole("button", { name: "显示详情栏" });
+    expect(showAction).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Control+Shift+B Meta+Shift+B",
+    );
+    fireEvent.keyDown(window, { key: "B", metaKey: true, shiftKey: true });
+    expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
+  });
+
   it("loads Runtime issues, opens manual creation, and navigates to project configuration", async () => {
     vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
     vi.spyOn(api, "projects").mockResolvedValue([project]);

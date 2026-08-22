@@ -386,6 +386,7 @@ Use dialogs for short, interruptive decisions and compact creation. Use full pag
 Keyboard shortcuts:
 
 - `Cmd/Ctrl + K`: command menu;
+- `Cmd/Ctrl + Shift + B`: toggle the selected Issue's right metadata rail;
 - `C`: create Issue when focus is not in an input;
 - `J` / `K` or arrow keys: move through Issue rows;
 - `Enter`: open selected Issue;
