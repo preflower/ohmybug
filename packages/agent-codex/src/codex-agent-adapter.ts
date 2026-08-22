@@ -1,9 +1,11 @@
 import { isAbsolute } from "node:path";
 
 import {
+  AgentTurnInterruptedError,
   assessmentSchema,
   canonicalHash,
   type AgentAdapter,
+  type AgentInterruptionReason,
   type AgentActivityReporter,
   type AgentActivityUpdate,
   type AgentPlugin,
@@ -135,11 +137,14 @@ export class CodexAgentAdapter implements AgentAdapter {
     };
   }
 
-  async cancel(session: AgentSessionRef): Promise<void> {
+  async cancel(
+    session: AgentSessionRef,
+    reason: AgentInterruptionReason,
+  ): Promise<void> {
     this.assertRef(session);
     const active = this.active.get(session.sessionId);
     if (!active) return;
-    active.abort.abort("cancel");
+    active.abort.abort(new AgentTurnInterruptedError(reason));
     await active.done;
   }
 

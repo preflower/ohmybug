@@ -5,7 +5,9 @@ import { CodexAgentAdapter } from "../src/codex-agent-adapter.js";
 import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
 describe("Codex cancellation", () => {
-  it("aborts the active turn for the logical session", async () => {
+  it.each(["RUNTIME_STOPPING", "USER_CANCELED"] as const)(
+    "aborts the active turn with the %s reason",
+    async (reason) => {
     let turnSignal: AbortSignal | undefined;
     let started!: () => void;
     const running = new Promise<void>((resolve) => { started = resolve; });
@@ -33,10 +35,13 @@ describe("Codex cancellation", () => {
     const assessment = adapter.assess(session, { issue: current, project });
     await running;
 
-    await adapter.cancel(session);
+    await adapter.cancel(session, reason);
 
     expect(turnSignal?.aborted).toBe(true);
-    await expect(assessment).rejects.toThrow("RUN_CANCELED");
+    await expect(assessment).rejects.toMatchObject({
+      code: "AGENT_TURN_INTERRUPTED",
+      reason,
+    });
   });
 
   for (const stage of ["Assessment", "Repair"] as const) {
@@ -77,10 +82,13 @@ describe("Codex cancellation", () => {
         expect(client.signals).toHaveLength(1);
         expect(client.signals[0]?.aborted).toBe(false);
       } finally {
-        await adapter.cancel(session);
+        await adapter.cancel(session, "USER_CANCELED");
         vi.useRealTimers();
       }
-      await expect(settled).resolves.toMatchObject({ message: "RUN_CANCELED" });
+      await expect(settled).resolves.toMatchObject({
+        code: "AGENT_TURN_INTERRUPTED",
+        reason: "USER_CANCELED",
+      });
     });
   }
 });
