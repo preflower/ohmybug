@@ -3,7 +3,9 @@ import { isAbsolute, relative } from "node:path";
 
 import {
   deliverySchema,
+  isAgentCapabilityRequiredError,
   isAgentTurnInterruptedError,
+  recordCapabilityRequest,
   recordAgentSession,
   recordAssessment,
   recordAssessmentFailure,
@@ -38,6 +40,7 @@ import type {
   RuntimeLifecycleHooks,
 } from "../modules/lifecycle-hooks.js";
 import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
+import { publicCapabilityRequest } from "./capability-request.js";
 
 export interface RuntimeWorkerDependencies {
   store: RuntimeStore;
@@ -260,6 +263,13 @@ export class RuntimeWorker {
         });
       }
     } catch (error) {
+      if (this.pauseForCapability(
+        claimed,
+        error,
+        "ASSESS",
+        "ASSESSMENT",
+        attemptId,
+      )) return;
       if (this.requeueInterrupted(claimed, error, "ASSESS", attemptId)) return;
       const failed = recordAssessmentFailure(
         claimed,
@@ -331,6 +341,13 @@ export class RuntimeWorker {
           continuation,
         });
       } catch (error) {
+        if (this.pauseForCapability(
+          claimed,
+          error,
+          "REPAIR",
+          "REPAIR",
+          attemptId,
+        )) return;
         if (this.requeueInterrupted(claimed, error, "REPAIR", attemptId)) return;
         const failed = recordRepairFailure(
           claimed,
@@ -424,6 +441,13 @@ export class RuntimeWorker {
           evidence = result.evidence;
         }
       } catch (error) {
+        if (this.pauseForCapability(
+          claimed,
+          error,
+          "CAPTURE_EVIDENCE",
+          "EVIDENCE",
+          attemptId,
+        )) return;
         if (this.requeueInterrupted(claimed, error, "CAPTURE_EVIDENCE", attemptId)) return;
         this.queueEvidenceCapture(
           claimed,
@@ -547,7 +571,29 @@ export class RuntimeWorker {
     issue: Issue,
     operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
   ): AgentContinuation | undefined {
-    const interrupted = this.dependencies.store.readEvents(issue.id).findLast((event) =>
+    const events = this.dependencies.store.readEvents(issue.id);
+    const granted = events.findLast((event) =>
+      event.type === "CAPABILITY_GRANTED" &&
+      event.data.operation === operation &&
+      event.data.revision === issue.revision);
+    if (
+      granted &&
+      typeof granted.data.requestId === "string" &&
+      Array.isArray(granted.data.capabilities)
+    ) {
+      const capabilities = granted.data.capabilities.filter(
+        (capability): capability is "HOST_EXECUTION" | "NETWORK_ACCESS" =>
+          capability === "HOST_EXECUTION" || capability === "NETWORK_ACCESS",
+      );
+      if (capabilities.length > 0) {
+        return {
+          reason: "CAPABILITY_GRANTED",
+          requestId: granted.data.requestId,
+          capabilities,
+        };
+      }
+    }
+    const interrupted = events.findLast((event) =>
       event.type === "RUNTIME_INTERRUPTED" &&
       event.data.operation === operation &&
       event.data.revision === issue.revision);
@@ -558,6 +604,47 @@ export class RuntimeWorker {
         ? { previousAttemptId: interrupted.data.attemptId }
         : {}),
     };
+  }
+
+  private pauseForCapability(
+    claimed: Issue,
+    error: unknown,
+    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
+    stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE",
+    attemptId: string,
+  ): boolean {
+    if (!isAgentCapabilityRequiredError(error)) return false;
+    const request = publicCapabilityRequest(error.request);
+    const requestId = this.dependencies.id();
+    return this.dependencies.store.transaction((tx) => {
+      const current = this.dependencies.store.getIssue(claimed.id);
+      if (!current || current.revision !== claimed.revision) return true;
+      const paused = recordCapabilityRequest(current, {
+        ...request,
+        id: requestId,
+        operation,
+        stage,
+        requestedAt: this.dependencies.now(),
+      }, this.dependencies.now());
+      tx.updateIssue(paused, current.revision, null);
+      const pending = paused.pendingCapabilityRequest!;
+      tx.appendEvent(this.event(paused.id, "CAPABILITY_REQUESTED", "AGENT", {
+        requestId,
+        operation,
+        stage,
+        capabilities: pending.capabilities,
+        reason: pending.reason,
+        ...(pending.blockedCommand
+          ? { blockedCommand: pending.blockedCommand }
+          : {}),
+        ...(pending.requestedBy
+          ? { requestedBy: pending.requestedBy }
+          : {}),
+        attemptId,
+        revision: paused.revision,
+      }));
+      return true;
+    });
   }
 
   private requeueInterrupted(

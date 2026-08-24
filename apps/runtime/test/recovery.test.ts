@@ -3,9 +3,43 @@ import { describe, expect, it } from "vitest";
 import { OhMyBugRuntime } from "../src/runtime.js";
 import { reconcileInterruptedIssues } from "../src/orchestration/recovery.js";
 import { delivery, FakeAgent } from "./helpers/fakes.js";
-import { assessment, createHarness, eventIds, now, project } from "./helpers/runtime.js";
+import {
+  assessment,
+  createHarness,
+  eventIds,
+  now,
+  project,
+  reviewedIssue,
+} from "./helpers/runtime.js";
 
 describe("Runtime recovery", () => {
+  it("keeps a capability request paused across interrupted-issue recovery", () => {
+    const { store } = createHarness();
+    const paused = reviewedIssue({
+      status: "PERMISSION_REQUIRED",
+      revision: 8,
+      pendingCapabilityRequest: {
+        id: "request-1",
+        operation: "REPAIR",
+        stage: "REPAIR",
+        resumeStatus: "REPAIRING",
+        capabilities: ["HOST_EXECUTION"],
+        reason: "Launch Electron acceptance",
+        requestedAt: now,
+      },
+    });
+    store.transaction((transaction) => {
+      transaction.insertIssue(paused, "REPAIR");
+      transaction.updateIssue(paused, paused.revision, null);
+    });
+
+    reconcileInterruptedIssues({ store, id: eventIds("permission"), now: () => now });
+
+    expect(store.getIssue(paused.id)).toEqual(paused);
+    expect(store.listPendingOperations()).toEqual([]);
+    expect(store.readEvents(paused.id)).toEqual([]);
+  });
+
   it("migrates legacy evidence failures once and preserves their delivery as a draft", () => {
     const { store } = createHarness();
     const legacy = {

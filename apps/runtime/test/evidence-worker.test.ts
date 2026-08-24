@@ -1,4 +1,8 @@
-import { AgentTurnInterruptedError, type Issue } from "@oh-my-bug/core";
+import {
+  AgentCapabilityRequiredError,
+  AgentTurnInterruptedError,
+  type Issue,
+} from "@oh-my-bug/core";
 import { describe, expect, it } from "vitest";
 
 import { EvidenceCaptureError } from "../src/evidence/capture-provider.js";
@@ -34,6 +38,28 @@ function evidenceIssue(id: string): Issue {
 }
 
 describe("Runtime evidence worker", () => {
+  it("pauses Agent Evidence without consuming an evidence retry", async () => {
+    const harness = setup("agent");
+    harness.agent.evidenceError = new AgentCapabilityRequiredError({
+      capabilities: ["HOST_EXECUTION"],
+      reason: "Run project Skill",
+    });
+
+    await harness.worker.drainOne();
+
+    expect(harness.store.getIssue(harness.issue.id)).toMatchObject({
+      status: "PERMISSION_REQUIRED",
+      repair: { iteration: 1, evidenceRetries: 0 },
+      pendingCapabilityRequest: {
+        operation: "CAPTURE_EVIDENCE",
+        stage: "EVIDENCE",
+        resumeStatus: "EVIDENCE_CAPTURE",
+      },
+    });
+    expect(harness.store.getIssue(harness.issue.id)).not.toHaveProperty("lastFailure");
+    expect(harness.store.listPendingOperations()).toEqual([]);
+  });
+
   it("uses the configured host provider without re-entering Repair", async () => {
     const harness = setup("host");
 

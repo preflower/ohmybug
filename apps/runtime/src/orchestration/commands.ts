@@ -2,6 +2,7 @@ import {
   acceptIntegrationInput as acceptCoreInput,
   approveAssessment,
   confirmAssessmentResolution,
+  grantCapabilityRequest,
   replaceAgentSession,
   requestAssessmentChanges,
   requestDeliveryChanges,
@@ -236,6 +237,36 @@ export class RuntimeCommands {
     });
     this.dependencies.wake();
     return rebuilt;
+  }
+
+  grantIssueCapabilities(
+    issueId: string,
+    expectedRevision: number,
+    requestId: string,
+  ): Issue {
+    this.assertAccepting();
+    const now = this.dependencies.now();
+    const result = this.dependencies.store.transaction((tx) => {
+      const current = this.getIssue(issueId);
+      if (current.capabilityGrants?.some((grant) => grant.requestId === requestId)) {
+        return { issue: current, changed: false } as const;
+      }
+      if (current.revision !== expectedRevision) throw new Error("CONCURRENT_UPDATE");
+      const request = current.pendingCapabilityRequest;
+      if (!request) throw new Error("CAPABILITY_REQUEST_NOT_AVAILABLE");
+      const next = grantCapabilityRequest(current, requestId, now);
+      tx.updateIssue(next, current.revision, request.operation);
+      tx.appendEvent(this.event(issueId, "CAPABILITY_GRANTED", {
+        requestId,
+        operation: request.operation,
+        stage: request.stage,
+        capabilities: request.capabilities,
+        revision: next.revision,
+      }));
+      return { issue: next, changed: true } as const;
+    });
+    if (result.changed) this.dependencies.wake();
+    return result.issue;
   }
 
   async cancelIssue(issueId: string): Promise<Issue> {

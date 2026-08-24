@@ -1,9 +1,71 @@
+import type { Issue } from "@oh-my-bug/core";
 import { describe, expect, it } from "vitest";
 
 import { delivery, FakeAgent } from "./helpers/fakes.js";
 import { assessment, createHarness, now, reviewedIssue } from "./helpers/runtime.js";
 
 describe("Runtime human commands", () => {
+  it("grants the active capability request idempotently and requeues its operation", () => {
+    const { commands, store, wakes } = createHarness();
+    const paused = permissionRequiredIssue();
+    insertPaused(store, paused);
+
+    const resumed = commands.grantIssueCapabilities(
+      paused.id,
+      paused.revision,
+      "request-1",
+    );
+
+    expect(resumed).toMatchObject({
+      status: "REPAIRING",
+      capabilityGrants: [{ capability: "HOST_EXECUTION", requestId: "request-1" }],
+    });
+    expect(store.listPendingOperations()).toEqual([{ issue: resumed, operation: "REPAIR" }]);
+    expect(wakes()).toBe(1);
+    expect(commands.grantIssueCapabilities(
+      paused.id,
+      paused.revision,
+      "request-1",
+    )).toEqual(resumed);
+    expect(wakes()).toBe(1);
+  });
+
+  it("rejects stale capability grant input without changing the Issue", () => {
+    const { commands, store } = createHarness();
+    const paused = permissionRequiredIssue();
+    insertPaused(store, paused);
+
+    expect(() => commands.grantIssueCapabilities(
+      paused.id,
+      paused.revision - 1,
+      "request-1",
+    )).toThrow("CONCURRENT_UPDATE");
+    expect(() => commands.grantIssueCapabilities(
+      paused.id,
+      paused.revision,
+      "request-old",
+    )).toThrow("CAPABILITY_REQUEST_STALE");
+    expect(store.getIssue(paused.id)).toEqual(paused);
+  });
+
+  it("cancels a permission-blocked Issue and revokes its grants", async () => {
+    const { commands, store } = createHarness();
+    const paused = permissionRequiredIssue({
+      capabilityGrants: [{
+        capability: "NETWORK_ACCESS",
+        requestId: "request-old",
+        grantedAt: now,
+      }],
+    });
+    insertPaused(store, paused);
+
+    const canceled = await commands.cancelIssue(paused.id);
+
+    expect(canceled).toMatchObject({ status: "CANCELED", resolution: "CANCELED" });
+    expect(canceled.capabilityGrants).toBeUndefined();
+    expect(canceled.pendingCapabilityRequest).toBeUndefined();
+  });
+
   it("approves a current Bug Assessment and schedules Repair", () => {
     const { commands, store, wakes } = createHarness();
     const issue = reviewedIssue();
@@ -323,3 +385,31 @@ describe("Runtime human commands", () => {
     expect(store.listPendingOperations()).toEqual([]);
   });
 });
+
+function permissionRequiredIssue(overrides: Partial<Issue> = {}): Issue {
+  return reviewedIssue({
+    status: "PERMISSION_REQUIRED",
+    revision: 7,
+    repair: { iteration: 1 },
+    pendingCapabilityRequest: {
+      id: "request-1",
+      operation: "REPAIR",
+      stage: "REPAIR",
+      resumeStatus: "REPAIRING",
+      capabilities: ["HOST_EXECUTION"],
+      reason: "Launch Electron acceptance",
+      requestedAt: now,
+    },
+    ...overrides,
+  });
+}
+
+function insertPaused(
+  store: ReturnType<typeof createHarness>["store"],
+  paused: Issue,
+): void {
+  store.transaction((transaction) => {
+    transaction.insertIssue(paused, "REPAIR");
+    transaction.updateIssue(paused, paused.revision, null);
+  });
+}

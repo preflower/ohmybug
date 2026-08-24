@@ -1,4 +1,7 @@
-import { AgentTurnInterruptedError } from "@oh-my-bug/core";
+import {
+  AgentCapabilityRequiredError,
+  AgentTurnInterruptedError,
+} from "@oh-my-bug/core";
 import { describe, expect, it } from "vitest";
 
 import { RuntimeWorker } from "../src/orchestration/worker.js";
@@ -6,6 +9,43 @@ import { FakeAgent } from "./helpers/fakes.js";
 import { createHarness, eventIds, project } from "./helpers/runtime.js";
 
 describe("Runtime assessment worker", () => {
+  it("pauses Assessment for a capability request without recording failure", async () => {
+    const agent = new FakeAgent();
+    agent.assessError = capabilityError();
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
+    const created = await commands.submitManual(project.id, {
+      commandId: "assessment-permission",
+      content: "Launch acceptance",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+    const worker = new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("assessment-permission"),
+      now: () => "2026-08-24T08:00:00.000Z",
+    });
+
+    await worker.drainOne();
+    await worker.drainOne();
+
+    const paused = store.getIssue(created.issue.id);
+    expect(paused).toMatchObject({
+      status: "PERMISSION_REQUIRED",
+      pendingCapabilityRequest: {
+        operation: "ASSESS",
+        stage: "ASSESSMENT",
+        resumeStatus: "ASSESSING",
+        capabilities: ["HOST_EXECUTION"],
+      },
+    });
+    expect(paused).not.toHaveProperty("lastFailure");
+    expect(store.listPendingOperations()).toEqual([]);
+    expect(JSON.stringify(paused)).not.toContain("secret-value");
+    expect(JSON.stringify(store.readEvents(created.issue.id))).not.toContain("secret-value");
+  });
+
   it("queues Workspace preparation before Assessment", async () => {
     const agent = new FakeAgent();
     const { commands, store, agents, evidence, workspaces } = createHarness(agent);
@@ -316,3 +356,12 @@ describe("Runtime assessment worker", () => {
     });
   });
 });
+
+function capabilityError(): AgentCapabilityRequiredError {
+  return new AgentCapabilityRequiredError({
+    capabilities: ["HOST_EXECUTION"],
+    reason: "Launch Electron with token=secret-value",
+    blockedCommand: "TOKEN=secret-value pnpm test:e2e:electron",
+    requestedBy: { type: "SKILL", id: "implement-ui-design" },
+  });
+}

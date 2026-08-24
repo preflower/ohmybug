@@ -1,4 +1,8 @@
-import { AgentTurnInterruptedError, type RepairResult } from "@oh-my-bug/core";
+import {
+  AgentCapabilityRequiredError,
+  AgentTurnInterruptedError,
+  type RepairResult,
+} from "@oh-my-bug/core";
 import { describe, expect, it } from "vitest";
 
 import { RuntimeWorker } from "../src/orchestration/worker.js";
@@ -25,6 +29,86 @@ function repairingIssue(id: string) {
 }
 
 describe("Runtime repair worker", () => {
+  it("pauses Repair for a capability request without consuming context", async () => {
+    const agent = new FakeAgent();
+    agent.repairError = new AgentCapabilityRequiredError({
+      capabilities: ["NETWORK_ACCESS"],
+      reason: "Download acceptance dependency",
+      blockedCommand: "pnpm install",
+    });
+    const { store, agents, evidence, workspaces } = createHarness(agent);
+    const issue = repairingIssue("repair-permission");
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-permission"),
+      now: () => now,
+    }).drainOne();
+
+    expect(store.getIssue(issue.id)).toMatchObject({
+      status: "PERMISSION_REQUIRED",
+      repair: { iteration: 1 },
+      pendingCapabilityRequest: {
+        operation: "REPAIR",
+        stage: "REPAIR",
+        resumeStatus: "REPAIRING",
+        capabilities: ["NETWORK_ACCESS"],
+      },
+    });
+    expect(store.getIssue(issue.id)).not.toHaveProperty("lastFailure");
+    expect(store.listPendingOperations()).toEqual([]);
+  });
+
+  it("passes the capability grant marker into resumed Repair", async () => {
+    const agent = new FakeAgent();
+    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    const { store, agents, evidence, workspaces } = createHarness(agent);
+    const issue = {
+      ...repairingIssue("repair-grant-continuation"),
+      revision: 6,
+      capabilityGrants: [{
+        capability: "HOST_EXECUTION" as const,
+        requestId: "request-1",
+        grantedAt: now,
+      }],
+    };
+    store.transaction((transaction) => {
+      transaction.insertIssue(issue, "REPAIR");
+      transaction.appendEvent({
+        id: "grant-event",
+        issueId: issue.id,
+        type: "CAPABILITY_GRANTED",
+        actor: "USER",
+        data: {
+          requestId: "request-1",
+          operation: "REPAIR",
+          capabilities: ["HOST_EXECUTION"],
+          revision: issue.revision,
+        },
+        occurredAt: now,
+      });
+    });
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-grant"),
+      now: () => now,
+    }).drainOne();
+
+    expect(agent.repairInputs[0]?.continuation).toEqual({
+      reason: "CAPABILITY_GRANTED",
+      requestId: "request-1",
+      capabilities: ["HOST_EXECUTION"],
+    });
+  });
+
   it("persists a draft and queues evidence when Repair returns none", async () => {
     const agent = new FakeAgent();
     agent.nextRepairResult = { summary: "Implemented", evidence: [] };

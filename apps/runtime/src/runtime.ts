@@ -125,6 +125,9 @@ export class OhMyBugRuntime {
   rebuildAgentSession(...args: Parameters<RuntimeCommands["rebuildAgentSession"]>) {
     return this.dependencies.commands.rebuildAgentSession(...args);
   }
+  grantIssueCapabilities(...args: Parameters<RuntimeCommands["grantIssueCapabilities"]>) {
+    return this.dependencies.commands.grantIssueCapabilities(...args);
+  }
   cancelIssue(...args: Parameters<RuntimeCommands["cancelIssue"]>) {
     return this.dependencies.commands.cancelIssue(...args);
   }
