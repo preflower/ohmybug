@@ -111,7 +111,14 @@ function installRuntimeProtocolFixture() {
   };
   const bridge = {
     listIntegrationPlugins: async () => clone(manifests),
+    listWorkspaceProviders: async () => [{ id: "local", name: "本机目录", configFields: [] }],
     listProjects: async () => clone(read().projects),
+    inspectProject: async (path: string) => ({
+      path,
+      name: path.split("/").filter(Boolean).at(-1) ?? "project",
+      key: "PROJECT",
+      workspaces: { local: { available: true } },
+    }),
     getProject: async (id: string) => clone(read().projects.find((project) => project.id === id)),
     createProject: async (input: ProjectMutation) => {
       const state = read();
@@ -146,6 +153,7 @@ function installRuntimeProtocolFixture() {
     integrationHealth: async () => ({}),
     listIssues: async (projectId?: string) => clone(read().issues.filter((candidate) => !projectId || candidate.projectId === projectId)),
     getIssue: async (id: string) => clone(requireIssue(id)),
+    getIssueWorkspace: async () => null,
     submitManual: async (input: ManualInput) => {
       const state = read();
       const project = state.projects.find((candidate) => candidate.id === input.projectId);
@@ -177,7 +185,7 @@ function installRuntimeProtocolFixture() {
     rejectDelivery: async (id: string) => saveIssue({ ...requireIssue(id), status: "ACCEPTANCE_REVIEW", updatedAt: now() }),
     approveDelivery: async (id: string) => {
       const current = requireIssue(id);
-      return saveIssue({ ...current, status: "COMPLETED", resolution: "FIXED", revision: current.revision + 1, updatedAt: now() });
+      return { issue: saveIssue({ ...current, status: "COMPLETED", resolution: "FIXED", revision: current.revision + 1, updatedAt: now() }) };
     },
     retryIssue: async (id: string) => clone(requireIssue(id)),
     rebuildAgentSession: async (id: string) => {

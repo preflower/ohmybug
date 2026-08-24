@@ -19,21 +19,43 @@ test("runs the two-gate manual Issue workflow and shows acceptance evidence", as
 
     const rootApproval = page.getByRole("region", { name: "评估结果操作" });
     await expect(rootApproval).toBeVisible({ timeout: 15_000 });
-    await rootApproval.getByRole("button", { name: "确认是 Bug 并开始修复" }).click();
+    await rootApproval.getByRole("button", { name: "开始修复" }).click();
 
     const acceptanceApproval = page.getByRole("region", { name: "Delivery 审核" });
     await expect(acceptanceApproval).toBeVisible({ timeout: 15_000 });
     const evidence = page.getByRole("img", { name: "Checkout acceptance" });
     await expect(evidence).toBeVisible({ timeout: 15_000 });
     await expect(evidence).toHaveJSProperty("naturalWidth", 1280);
-    const artifactDir = resolve("test-results", "acceptance");
+    const artifactDir = process.env.OH_MY_BUG_EVIDENCE_DIR
+      ? resolve(process.env.OH_MY_BUG_EVIDENCE_DIR)
+      : resolve("test-results", "acceptance");
     await mkdir(artifactDir, { recursive: true });
     await page.getByRole("button", { name: "预览 Checkout acceptance" }).click();
     const preview = page.getByRole("dialog", { name: "Checkout acceptance" });
     await expect(preview).toBeVisible();
-    await expect(preview.getByRole("img", { name: "Checkout acceptance" })).toHaveJSProperty("naturalWidth", 1280);
+    await expect(preview.locator(".evidence-preview-header")).toHaveCount(0);
+    await expect(preview.locator(".evidence-preview-stage > .evidence-preview-toolbar")).toBeVisible();
+    const previewImage = preview.getByRole("img", { name: "Checkout acceptance" });
+    await expect(previewImage).toHaveJSProperty("naturalWidth", 1280);
+    const zoomLevel = preview.getByLabel("当前缩放比例");
+    await expect(zoomLevel).toHaveText("100%");
+    await expect(zoomLevel).toHaveCSS("height", "28px");
+    await preview.getByRole("button", { name: "放大" }).click();
+    await preview.getByRole("button", { name: "放大" }).click();
+    await expect(zoomLevel).toHaveText("150%");
+    await expect(previewImage).toHaveCSS("transform", /matrix\(1\.5, 0, 0, 1\.5,/);
+    const imageStage = preview.getByRole("region", { name: /图片预览区域/ });
+    const stageBounds = await imageStage.boundingBox();
+    if (!stageBounds) throw new Error("IMAGE_PREVIEW_STAGE_NOT_VISIBLE");
+    await page.mouse.move(stageBounds.x + stageBounds.width / 2, stageBounds.y + stageBounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(stageBounds.x + stageBounds.width / 2 + 140, stageBounds.y + stageBounds.height / 2);
+    await page.mouse.up();
+    await expect.poll(() => previewImage.evaluate((image) => image.style.transform)).toContain("translate3d(140px, 0px, 0px)");
     await preview.evaluate(async (element) => { await Promise.all(element.getAnimations().map((animation) => animation.finished)); });
-    await page.screenshot({ path: resolve(artifactDir, "delivery-image-preview.png") });
+    await page.screenshot({ path: resolve(artifactDir, "image-preview-zoomed.png") });
+    await preview.getByRole("button", { name: "重置视图" }).click();
+    await expect(preview.getByLabel("当前缩放比例")).toHaveText("100%");
     await preview.getByRole("button", { name: "关闭预览" }).click();
     await expect(preview).toBeHidden();
 
@@ -55,8 +77,8 @@ test("runs the two-gate manual Issue workflow and shows acceptance evidence", as
 
     await page.screenshot({ path: resolve(artifactDir, "root-cause-and-acceptance.png"), fullPage: true });
 
-    await acceptanceApproval.getByRole("button", { name: "批准验收并关闭 Issue" }).click();
-    await expect(page.getByRole("status")).toHaveText("结果：FIXED · 修复已验收，Issue 已关闭。", { timeout: 15_000 });
+    await acceptanceApproval.getByRole("button", { name: "批准验收并完成 Issue" }).click();
+    await expect(page.getByRole("status")).toHaveText("结果：FIXED · 修复已验收，Issue 已完成。", { timeout: 15_000 });
     await page.screenshot({ path: resolve(artifactDir, "completed-workflow.png"), fullPage: true });
   } finally {
     await fixture.cleanup();

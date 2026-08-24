@@ -1,5 +1,5 @@
-import { CircleAlert, Image as ImageIcon, Maximize2, Play, RotateCcw, Search, Square, Wrench, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CircleAlert, Image as ImageIcon, Maximize2, Minus, Play, Plus, RotateCcw, Search, Square, Wrench, X } from "lucide-react";
+import { type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from "react";
 
 import { api } from "../api/client.js";
 import type {
@@ -38,6 +38,11 @@ interface IssueDetailProps {
 }
 
 type VisualEvidence = NonNullable<NonNullable<IssueDto["repair"]>["delivery"]>["evidence"][number];
+type Point = { x: number; y: number };
+
+const MIN_PREVIEW_ZOOM = 0.5;
+const MAX_PREVIEW_ZOOM = 4;
+const PREVIEW_ZOOM_STEP = 0.25;
 
 const verdictLabels: Record<NonNullable<IssueDto["assessment"]>["verdict"], string> = {
   BUG: "是 Bug",
@@ -283,15 +288,11 @@ function EvidenceFigure({ evidence, issueId }: { evidence: VisualEvidence; issue
         <figcaption>{evidence.label}</figcaption>
       </figure>
       <DialogContent aria-describedby={undefined} className="evidence-preview-dialog">
-        <header className="evidence-preview-header">
-          <DialogTitle>{evidence.label}</DialogTitle>
-          <DialogClose render={<Button aria-label="关闭预览" size="icon-sm" type="button" variant="ghost" />}><X /></DialogClose>
-        </header>
-        <div className="evidence-preview-stage">
-          {recording
-            ? <video aria-label={`${evidence.label} 视频`} autoPlay controls onError={() => setMissing(true)} playsInline src={url} />
-            : <img alt={evidence.label} onError={() => setMissing(true)} src={url} />}
-        </div>
+        <DialogTitle className="sr-only">{evidence.label}</DialogTitle>
+        <DialogClose render={<Button aria-label="关闭预览" className="evidence-preview-close" size="icon-sm" title="关闭预览" type="button" variant="ghost" />}><X /></DialogClose>
+        {recording
+          ? <div className="evidence-preview-stage evidence-preview-video-stage"><video aria-label={`${evidence.label} 视频`} autoPlay controls onError={() => setMissing(true)} playsInline src={url} /></div>
+          : <ImagePreview alt={evidence.label} onError={() => setMissing(true)} src={url} />}
       </DialogContent>
     </Dialog>;
   }
@@ -299,4 +300,95 @@ function EvidenceFigure({ evidence, issueId }: { evidence: VisualEvidence; issue
     <a href={url}><ImageIcon size={15} />{evidence.label}</a>
     <figcaption>{evidence.label}</figcaption>
   </figure>;
+}
+
+function ImagePreview({ alt, onError, src }: { alt: string; onError: () => void; src: string }) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ offset: Point; pointer: Point; pointerId: number } | undefined>(undefined);
+
+  const changeZoom = (requestedZoom: number, anchor?: Point) => {
+    const nextZoom = Math.min(MAX_PREVIEW_ZOOM, Math.max(MIN_PREVIEW_ZOOM, requestedZoom));
+    if (nextZoom === zoom) return;
+    if (!anchor) {
+      setZoom(nextZoom);
+      return;
+    }
+    setOffset((current) => ({
+      x: anchor.x - ((anchor.x - current.x) * nextZoom) / zoom,
+      y: anchor.y - ((anchor.y - current.y) * nextZoom) / zoom,
+    }));
+    setZoom(nextZoom);
+  };
+
+  const reset = () => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  };
+
+  const onWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    changeZoom(zoom + (event.deltaY < 0 ? PREVIEW_ZOOM_STEP : -PREVIEW_ZOOM_STEP), {
+      x: event.clientX - bounds.left - bounds.width / 2,
+      y: event.clientY - bounds.top - bounds.height / 2,
+    });
+  };
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || zoom === 1) return;
+    drag.current = {
+      offset,
+      pointer: { x: event.clientX, y: event.clientY },
+      pointerId: event.pointerId,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDragging(true);
+  };
+
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const activeDrag = drag.current;
+    if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+    setOffset({
+      x: activeDrag.offset.x + event.clientX - activeDrag.pointer.x,
+      y: activeDrag.offset.y + event.clientY - activeDrag.pointer.y,
+    });
+  };
+
+  const stopDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId !== event.pointerId) return;
+    drag.current = undefined;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setDragging(false);
+  };
+
+  return (
+    <div
+      aria-label="图片预览区域，使用滚轮缩放，拖动图片平移"
+      className={`evidence-preview-stage evidence-preview-image-stage${zoom !== 1 ? " is-pannable" : ""}${dragging ? " is-dragging" : ""}`}
+      onPointerCancel={stopDragging}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={stopDragging}
+      onWheel={onWheel}
+      role="region"
+      tabIndex={0}
+    >
+      <img
+        alt={alt}
+        draggable={false}
+        onError={onError}
+        src={src}
+        style={{ transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom})` }}
+      />
+      <div aria-label="图片缩放控制" className="evidence-preview-toolbar" onPointerDown={(event) => event.stopPropagation()} role="toolbar">
+        <Button aria-label="缩小" disabled={zoom === MIN_PREVIEW_ZOOM} onClick={() => changeZoom(zoom - PREVIEW_ZOOM_STEP)} size="icon-sm" title="缩小" type="button" variant="ghost"><Minus /></Button>
+        <output aria-label="当前缩放比例" aria-live="polite">{Math.round(zoom * 100)}%</output>
+        <Button aria-label="放大" disabled={zoom === MAX_PREVIEW_ZOOM} onClick={() => changeZoom(zoom + PREVIEW_ZOOM_STEP)} size="icon-sm" title="放大" type="button" variant="ghost"><Plus /></Button>
+        <span aria-hidden="true" className="evidence-preview-toolbar-divider" />
+        <Button aria-label="重置视图" disabled={zoom === 1 && offset.x === 0 && offset.y === 0} onClick={reset} size="icon-sm" title="重置视图" type="button" variant="ghost"><RotateCcw /></Button>
+      </div>
+    </div>
+  );
 }
