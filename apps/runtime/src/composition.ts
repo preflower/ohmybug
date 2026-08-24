@@ -352,6 +352,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
           stage: activity.stage,
           level: activity.level,
           ...(activity.detail ? { detail: activity.detail } : {}),
+          ...(activity.correlationId ? { correlationId: activity.correlationId } : {}),
         },
       }));
     },

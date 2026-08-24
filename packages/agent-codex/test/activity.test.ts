@@ -17,6 +17,7 @@ describe("Codex activity reporting", () => {
         {
           type: "item.started",
           item: {
+            id: "command-1",
             type: "command_execution",
             command: "API_KEY=native-secret pnpm test",
             status: "in_progress",
@@ -26,6 +27,7 @@ describe("Codex activity reporting", () => {
         {
           type: "item.completed",
           item: {
+            id: "command-1",
             type: "command_execution",
             command: "API_KEY=native-secret pnpm test",
             status: "failed",
@@ -61,6 +63,11 @@ describe("Codex activity reporting", () => {
       level: "error",
       stage: "ASSESSMENT",
     });
+    expect(activities.filter((activity) => activity.type.startsWith("AGENT_COMMAND_")))
+      .toEqual([
+        expect.objectContaining({ correlationId: "command-1", type: "AGENT_COMMAND_STARTED" }),
+        expect.objectContaining({ correlationId: "command-1", type: "AGENT_COMMAND_FAILED" }),
+      ]);
     expect(JSON.stringify(activities)).not.toContain("native-secret");
     expect(JSON.stringify(activities)).not.toContain("provider-token");
     expect(JSON.stringify(activities)).not.toContain("private-token");

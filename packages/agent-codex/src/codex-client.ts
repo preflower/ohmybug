@@ -28,7 +28,7 @@ export interface CodexTurnOptions {
 export type CodexClientItem =
   | { type: "agent_message"; text: string }
   | { type: "reasoning"; text: string }
-  | { type: "command_execution"; command: string; status: "in_progress" | "completed" | "failed"; output: string }
+  | { type: "command_execution"; id?: string; command: string; status: "in_progress" | "completed" | "failed"; output: string }
   | { type: "file_change"; status: "completed" | "failed"; paths: string[] }
   | { type: "error"; message: string }
   | { type: "other"; name: string };
@@ -249,6 +249,7 @@ function normalizeItem(item: ThreadItem): CodexClientItem {
   if (item.type === "reasoning") return { type: item.type, text: item.text };
   if (item.type === "command_execution") {
     return {
+      id: item.id,
       type: item.type,
       command: item.command,
       status: item.status,

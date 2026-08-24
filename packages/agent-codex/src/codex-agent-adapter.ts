@@ -378,23 +378,23 @@ function publicActivity(
   const item = event.item;
   if (item.type === "command_execution") {
     if (event.type === "item.started") {
-      return activity(
+      return withCorrelationId(activity(
         sessionId,
         stage,
         "AGENT_COMMAND_STARTED",
         "正在执行项目命令",
         sanitizeDiagnostic(`$ ${item.command}`),
-      );
+      ), item.id);
     }
     const failed = item.status === "failed";
-    return activity(
+    return withCorrelationId(activity(
       sessionId,
       stage,
       failed ? "AGENT_COMMAND_FAILED" : "AGENT_COMMAND_COMPLETED",
       failed ? "项目命令执行失败" : "项目命令执行完成",
       sanitizeDiagnostic([`$ ${item.command}`, item.output].filter(Boolean).join("\n")),
       failed ? "error" : "info",
-    );
+    ), item.id);
   }
   if (event.type === "item.completed" && item.type === "file_change") {
     const count = item.paths.length;
@@ -436,6 +436,10 @@ function activity(
     ...(detail ? { detail } : {}),
     level,
   };
+}
+
+function withCorrelationId(update: AgentActivityUpdate, correlationId?: string): AgentActivityUpdate {
+  return correlationId ? { ...update, correlationId } : update;
 }
 
 function publicErrorSummary(message: string): string {

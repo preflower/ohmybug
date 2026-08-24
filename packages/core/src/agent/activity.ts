@@ -7,6 +7,7 @@ export interface AgentActivityUpdate {
   type: string;
   message: string;
   detail?: string;
+  correlationId?: string;
   level: AgentActivityLevel;
 }
 
