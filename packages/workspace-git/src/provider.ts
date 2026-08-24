@@ -493,18 +493,32 @@ async function mergeIntoBaseBranch(
     return;
   }
 
+  const baseCommit = await runGit(state.repositoryPath, ["rev-parse", baseRef]);
+  const resultCommit = await createAutomaticMergeCommit(
+    state.repositoryPath,
+    baseCommit,
+    commit,
+    state.branch,
+    state.baseBranch,
+  );
   const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
   const checkedOutPath = worktreePathForBranch(listed, baseRef);
-  const temporaryPath = `${state.worktreePath}-baseline`;
-  const mergePath = checkedOutPath ?? temporaryPath;
-  const ownsTemporaryWorktree = checkedOutPath === temporaryPath || checkedOutPath === undefined;
 
-  if (checkedOutPath === undefined) {
-    await runGit(state.repositoryPath, ["worktree", "add", temporaryPath, state.baseBranch]);
-  }
-  try {
+  if (checkedOutPath !== undefined) {
     try {
-      await assertWorktreeAndSubmodulesClean(mergePath);
+      await assertWorktreeAndSubmodulesClean(checkedOutPath);
+      await assertNoIgnoredMergeCollisions(
+        state.repositoryPath,
+        checkedOutPath,
+        baseCommit,
+        resultCommit,
+      );
+      await assertNoInitializedGitlinkUpdates(
+        state.repositoryPath,
+        checkedOutPath,
+        baseCommit,
+        resultCommit,
+      );
     } catch (error) {
       if (error instanceof Error && error.message === "GIT_WORKTREE_NOT_CLEAN") {
         throw new Error("GIT_AUTO_MERGE_BASE_DIRTY", { cause: error });
@@ -512,27 +526,142 @@ async function mergeIntoBaseBranch(
       throw error;
     }
     try {
-      await runGit(mergePath, ["merge", "--no-edit", commit]);
+      await runGit(checkedOutPath, ["merge", "--ff-only", resultCommit]);
     } catch (error) {
-      const conflicts = await runGit(mergePath, ["diff", "--name-only", "--diff-filter=U"])
-        .catch(() => "");
-      await runGit(mergePath, ["merge", "--abort"]).catch(() => undefined);
-      throw new Error(
-        conflicts ? "GIT_AUTO_MERGE_CONFLICT" : "GIT_AUTO_MERGE_FAILED",
-        { cause: error },
-      );
+      throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
     }
-  } finally {
-    if (ownsTemporaryWorktree) {
-      await assertWorktreeAndSubmodulesClean(temporaryPath);
-      await runGit(state.repositoryPath, [
-        "worktree",
-        "remove",
-        "--force",
-        temporaryPath,
-      ]);
+    return;
+  }
+
+  try {
+    await runGit(state.repositoryPath, [
+      "update-ref",
+      baseRef,
+      resultCommit,
+      baseCommit,
+    ]);
+  } catch (error) {
+    throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
+  }
+}
+
+async function createAutomaticMergeCommit(
+  repositoryPath: string,
+  baseCommit: string,
+  issueCommit: string,
+  issueBranch: string,
+  baseBranch: string,
+): Promise<string> {
+  if (await tryRunGit(
+    repositoryPath,
+    ["merge-base", "--is-ancestor", baseCommit, issueCommit],
+  ) !== undefined) {
+    return issueCommit;
+  }
+
+  let tree: string;
+  try {
+    tree = await runGit(repositoryPath, ["merge-tree", "--write-tree", baseCommit, issueCommit]);
+  } catch (error) {
+    if (gitErrorExitCode(error) === 1) {
+      throw new Error("GIT_AUTO_MERGE_CONFLICT", { cause: error });
+    }
+    throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
+  }
+
+  const treeObject = tree.split("\n", 1)[0]?.trim();
+  if (!treeObject) throw new Error("GIT_AUTO_MERGE_FAILED");
+  try {
+    return await runGit(repositoryPath, [
+      "commit-tree",
+      treeObject,
+      "-p",
+      baseCommit,
+      "-p",
+      issueCommit,
+      "-m",
+      `Merge ${issueBranch} into ${baseBranch}`,
+    ]);
+  } catch (error) {
+    throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
+  }
+}
+
+function gitErrorExitCode(error: unknown): number | undefined {
+  const processError = error instanceof Error ? error.cause : undefined;
+  if (!processError || typeof processError !== "object" || !("code" in processError)) {
+    return undefined;
+  }
+  return typeof processError.code === "number" ? processError.code : undefined;
+}
+
+async function assertNoIgnoredMergeCollisions(
+  repositoryPath: string,
+  worktreePath: string,
+  baseCommit: string,
+  resultCommit: string,
+): Promise<void> {
+  const changedPaths = await getChangedPaths(repositoryPath, baseCommit, resultCommit);
+  const pathsAndParents = new Set<string>();
+  for (const path of changedPaths) {
+    const segments = path.split("/");
+    for (let index = 1; index <= segments.length; index += 1) {
+      pathsAndParents.add(segments.slice(0, index).join("/"));
     }
   }
+  const pathspecs = [...pathsAndParents].map((path) => `:(literal)${path}`);
+  for (let offset = 0; offset < pathspecs.length; offset += 128) {
+    const ignored = await runGit(worktreePath, [
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "-z",
+      "--",
+      ...pathspecs.slice(offset, offset + 128),
+    ]);
+    if (ignored) throw new Error("GIT_WORKTREE_NOT_CLEAN");
+  }
+}
+
+async function assertNoInitializedGitlinkUpdates(
+  repositoryPath: string,
+  worktreePath: string,
+  baseCommit: string,
+  resultCommit: string,
+): Promise<void> {
+  const before = await getCommitGitlinks(repositoryPath, baseCommit);
+  const after = await getCommitGitlinks(repositoryPath, resultCommit);
+  for (const path of new Set([...before.keys(), ...after.keys()])) {
+    if (before.get(path) === after.get(path)) continue;
+    if (await pathExists(join(worktreePath, path, ".git"))) {
+      throw new Error("GIT_WORKTREE_NOT_CLEAN");
+    }
+  }
+}
+
+async function getChangedPaths(
+  repositoryPath: string,
+  before: string,
+  after: string,
+): Promise<string[]> {
+  const output = await runGit(repositoryPath, ["diff", "--name-only", "-z", before, after]);
+  return output.split("\0").filter(Boolean);
+}
+
+async function getCommitGitlinks(
+  repositoryPath: string,
+  commit: string,
+): Promise<Map<string, string>> {
+  const entries = await runGit(repositoryPath, ["ls-tree", "-r", "-z", commit]);
+  const gitlinks = new Map<string, string>();
+  for (const entry of entries.split("\0")) {
+    const separator = entry.indexOf("\t");
+    if (separator === -1) continue;
+    const [mode, , object] = entry.slice(0, separator).split(" ");
+    if (mode === "160000" && object) gitlinks.set(entry.slice(separator + 1), object);
+  }
+  return gitlinks;
 }
 
 function worktreePathForBranch(list: string, branchRef: string): string | undefined {
