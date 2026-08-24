@@ -150,16 +150,16 @@ describe("Runtime recovery", () => {
     });
   });
 
-  it("queues only finalization for an approved Issue recovered after restart", async () => {
+  it("queues finalization for a FINALIZING Issue recovered after restart", async () => {
     const { store, workspaces, workspacePersistence } = createHarness();
-    const approved = {
-      id: "approved-restart",
+    const finalizing = {
+      id: "finalizing-restart",
       projectId: project.id,
       projectPath: project.path,
-      identifier: "OMB-APPROVED",
-      title: "Approved",
+      identifier: "OMB-FINALIZING",
+      title: "Finalizing",
       titleSource: "user" as const,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
       inputs: [],
       assessment,
@@ -168,15 +168,45 @@ describe("Runtime recovery", () => {
       createdAt: now,
       updatedAt: now,
     };
-    store.transaction((transaction) => transaction.insertIssue(approved, "FINALIZE"));
-    store.transaction((transaction) => transaction.updateIssue(approved, approved.revision, null));
+    store.transaction((transaction) => transaction.insertIssue(finalizing, "FINALIZE"));
+    store.transaction((transaction) => transaction.updateIssue(
+      finalizing,
+      finalizing.revision,
+      null,
+    ));
 
     await workspaces.recover();
 
     expect(store.listPendingOperations()).toEqual([
-      { issue: expect.objectContaining({ id: approved.id }), operation: "FINALIZE" },
+      { issue: expect.objectContaining({ id: finalizing.id }), operation: "FINALIZE" },
     ]);
-    expect(workspacePersistence.getBinding(approved.id)?.providerId).toBe("local");
+    expect(workspacePersistence.getBinding(finalizing.id)?.providerId).toBe("local");
+  });
+
+  it("leaves FINALIZATION_FAILED idle after restart", async () => {
+    const { store, workspaces, workspacePersistence } = createHarness();
+    const failed = {
+      id: "finalization-failed-restart",
+      projectId: project.id,
+      projectPath: project.path,
+      identifier: "OMB-FINALIZATION-FAILED",
+      title: "Finalization failed",
+      titleSource: "user" as const,
+      status: "FINALIZATION_FAILED" as const,
+      resolution: "FIXED" as const,
+      inputs: [],
+      assessment,
+      repair: { iteration: 1 },
+      revision: 8,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => transaction.insertIssue(failed, null));
+
+    await workspaces.recover();
+
+    expect(store.listPendingOperations()).toEqual([]);
+    expect(workspacePersistence.getBinding(failed.id)?.providerId).toBe("local");
   });
 
   it("restores a missing path from its persisted READY binding", async () => {

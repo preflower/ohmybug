@@ -152,13 +152,13 @@ export class RuntimeCommands {
   approveDelivery(issueId: string): Issue {
     this.assertAccepting();
     const current = this.getIssue(issueId);
-    if (current.status === "APPROVED") {
-      this.dependencies.store.transaction((transaction) => {
-        transaction.updateIssue(current, current.revision, "FINALIZE");
-        transaction.appendEvent(this.event(issueId, "DELIVERY_FINALIZATION_RETRIED"));
-      });
-      this.dependencies.wake();
-      return current;
+    if (current.status === "FINALIZATION_FAILED") {
+      return this.change(
+        issueId,
+        "DELIVERY_FINALIZATION_RETRIED",
+        "FINALIZE",
+        (issue, now) => transitionIssue(issue, "RETRY_FINALIZATION", now),
+      );
     }
 
     const approved = this.change(issueId, "DELIVERY_APPROVED", "FINALIZE", (issue, now) =>

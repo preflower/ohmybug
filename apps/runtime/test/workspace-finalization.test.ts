@@ -52,7 +52,7 @@ describe("Workspace finalization", () => {
     await worker.drain();
 
     const approved = commands.approveDelivery(assessed.id);
-    expect(approved.status).toBe("APPROVED");
+    expect(approved.status).toBe("FINALIZING");
     expect(store.listPendingOperations()).toEqual([
       { issue: approved, operation: "FINALIZE" },
     ]);
@@ -141,7 +141,9 @@ describe("Workspace finalization", () => {
     });
     const failed = await runtime.approveDelivery(created.issue.id);
 
-    expect(failed).toEqual({ issue: expect.objectContaining({ status: "APPROVED" }) });
+    expect(failed).toEqual({
+      issue: expect.objectContaining({ status: "FINALIZATION_FAILED" }),
+    });
     expect(store.listPendingOperations()).toEqual([]);
     expect(workspacePersistence.getBinding(created.issue.id)?.status).toBe("READY");
     expect(store.readEvents(created.issue.id).map((event) => event.type))
