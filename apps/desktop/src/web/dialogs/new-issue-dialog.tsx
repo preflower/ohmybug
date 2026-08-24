@@ -30,14 +30,18 @@ interface NewIssueDialogProps {
   open: boolean;
   trigger?: ReactElement;
   projects: ProjectDto[];
+  preferredProjectId?: string;
   onOpenChange(open: boolean): void;
   onCreated(issue: IssueDto): void;
 }
+
+const LAST_ISSUE_PROJECT_STORAGE_KEY = "oh-my-bug:last-issue-project";
 
 export function NewIssueDialog({
   open,
   trigger,
   projects,
+  preferredProjectId,
   onOpenChange,
   onCreated,
 }: NewIssueDialogProps) {
@@ -47,6 +51,7 @@ export function NewIssueDialog({
       {open ? (
         <NewIssueDialogContent
           projects={projects}
+          preferredProjectId={preferredProjectId}
           onCreated={(issue) => {
             onCreated(issue);
             onOpenChange(false);
@@ -59,12 +64,14 @@ export function NewIssueDialog({
 
 function NewIssueDialogContent({
   projects,
+  preferredProjectId,
   onCreated,
 }: {
   projects: ProjectDto[];
+  preferredProjectId?: string;
   onCreated(issue: IssueDto): void;
 }) {
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
+  const [projectId, setProjectId] = useState(() => defaultProjectId(projects, preferredProjectId));
   const [summary, setSummary] = useState("");
   const [content, setContent] = useState("");
   const [error, setError] = useState("");
@@ -85,6 +92,11 @@ function NewIssueDialogContent({
         content: content.trim(),
         ...(summary.trim() ? { summary: summary.trim() } : {}),
       });
+      try {
+        localStorage.setItem(LAST_ISSUE_PROJECT_STORAGE_KEY, projectId);
+      } catch {
+        // Issue creation must still succeed when preference storage is unavailable.
+      }
       onCreated(issue);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Issue 创建失败");
@@ -156,6 +168,21 @@ function NewIssueDialogContent({
       )}
     </DialogContent>
   );
+}
+
+function defaultProjectId(projects: ProjectDto[], preferredProjectId?: string): string {
+  if (preferredProjectId && projects.some((project) => project.id === preferredProjectId)) {
+    return preferredProjectId;
+  }
+  try {
+    const rememberedProjectId = localStorage.getItem(LAST_ISSUE_PROJECT_STORAGE_KEY);
+    if (rememberedProjectId && projects.some((project) => project.id === rememberedProjectId)) {
+      return rememberedProjectId;
+    }
+  } catch {
+    // Storage can be unavailable in hardened renderer environments.
+  }
+  return projects[0]?.id ?? "";
 }
 
 function CloseAction() {

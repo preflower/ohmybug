@@ -52,6 +52,7 @@ const issue: IssueDto = {
 };
 
 afterEach(() => {
+  localStorage.clear();
   vi.restoreAllMocks();
   delete window.ohMyBug;
   history.replaceState({}, "", "/");
@@ -211,6 +212,122 @@ describe("control center workbench", () => {
     expect(within(filteredList).getByText("Storefront search is stale")).toBeVisible();
     expect(within(filteredList).queryByText("Checkout returns 500")).not.toBeInTheDocument();
     expect(screen.getByText("Storefront", { selector: ".breadcrumb span:last-child" })).toBeVisible();
+  });
+
+  it("defaults a new Issue to the active sidebar project", async () => {
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Storefront" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建 Issue" }));
+
+    expect(screen.getByRole("combobox", { name: "项目" })).toHaveTextContent("Storefront");
+  });
+
+  it("defaults a top-level new Issue to the last successfully used project", async () => {
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    localStorage.setItem("oh-my-bug:last-issue-project", storefront.id);
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+
+    expect(screen.getByRole("combobox", { name: "项目" })).toHaveTextContent("Storefront");
+  });
+
+  it("remembers the project after an Issue is created successfully", async () => {
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "submitManual").mockResolvedValue({
+      ...issue,
+      id: "issue-2",
+      projectId: storefront.id,
+      identifier: "STO-1",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Storefront" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建 Issue" }));
+    fireEvent.change(screen.getByLabelText("问题内容"), {
+      target: { value: "Storefront checkout failed" },
+    });
+    expect(localStorage.getItem("oh-my-bug:last-issue-project")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "创建并开始分析" }));
+
+    await waitFor(() => expect(localStorage.getItem("oh-my-bug:last-issue-project")).toBe(storefront.id));
+  });
+
+  it("does not remember a project when Issue creation fails", async () => {
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "submitManual").mockRejectedValue(new Error("创建请求失败"));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Storefront" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建 Issue" }));
+    fireEvent.change(screen.getByLabelText("问题内容"), {
+      target: { value: "Storefront checkout failed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建并开始分析" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("创建请求失败");
+    expect(localStorage.getItem("oh-my-bug:last-issue-project")).toBeNull();
+  });
+
+  it("ignores a remembered project that is no longer available", async () => {
+    localStorage.setItem("oh-my-bug:last-issue-project", "deleted-project");
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+
+    expect(screen.getByRole("combobox", { name: "项目" })).toHaveTextContent("Checkout");
   });
 
   it("loads Runtime issues, opens manual creation, and navigates to project configuration", async () => {
