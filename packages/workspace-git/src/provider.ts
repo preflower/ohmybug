@@ -1,11 +1,20 @@
 import { access, lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 
-import type { ConfigValue, Issue, RuntimeProject } from "@oh-my-bug/core";
+import type {
+  ConfigValue,
+  FinalizationRecoveryResult,
+  Issue,
+  RuntimeProject,
+  WorkspaceFinalizationDiagnostic,
+  WorkspaceFinalizationStep,
+} from "@oh-my-bug/core";
 import type {
   BranchInfo,
   ModuleStateStore,
   WorkspaceBranchDiscovery,
+  WorkspaceFinalizationRecoveryContext,
+  WorkspaceFinalizationRecoveryValidation,
   WorkspaceProvider,
   WorkspaceProviderFactory,
   WorkspaceProviderInspection,
@@ -13,6 +22,13 @@ import type {
 import { z } from "zod";
 
 import { gitRefExists, runGit, tryRunGit } from "./git-client.js";
+import {
+  assertPublicationPreflight,
+  finalizationError,
+  prepareGitFinalizationRecovery,
+  validateGitFinalizationRecovery,
+  type GitFinalizationFingerprint,
+} from "./finalization-recovery.js";
 
 const MODULE_ID = "workspace-git";
 
@@ -57,6 +73,7 @@ export interface GitWorkspaceState {
   remote?: string;
   remoteUrl?: string;
   branchInfo?: BranchInfo;
+  finalizationRecovery?: GitFinalizationFingerprint;
 }
 
 export interface GitWorkspaceFactoryOptions {
@@ -376,62 +393,129 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       throw new Error("GIT_WORKSPACE_NOT_FINALIZING");
     }
 
-    await assertNoHiddenIndexEntries(state.worktreePath);
-    await assertInitializedSubmodulesClean(state.worktreePath);
-    const changes = await runGit(state.worktreePath, [
-      "status",
-      "--porcelain",
-      "--untracked-files=all",
-      "--ignore-submodules=none",
-    ]);
-    if (changes) {
-      await runGit(state.worktreePath, ["add", "-A"]);
-      await assertNoUndeclaredGitlinks(state.worktreePath);
+    let step: WorkspaceFinalizationStep = "status";
+    try {
+      await assertNoHiddenIndexEntries(state.worktreePath);
       await assertInitializedSubmodulesClean(state.worktreePath);
-      await runGit(state.worktreePath, [
-        "commit",
-        "-m",
-        `${input.issue.identifier}: ${input.issue.title}`,
+      const changes = await runGit(state.worktreePath, [
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--ignore-submodules=none",
       ]);
-    }
-    const commit = await runGit(state.worktreePath, ["rev-parse", "HEAD"]);
-    const pushToRemote = shouldPushToRemote(state);
-    if (pushToRemote) {
-      await runGit(state.worktreePath, [
-        "push",
-        state.remote!,
-        `refs/heads/${state.branch}:refs/heads/${state.branch}`,
-      ]);
-    }
-    if (state.mergeToBaseBranch) {
-      await mergeIntoBaseBranch(state, commit);
-    }
+      if (changes) {
+        step = "add";
+        await assertPublicationPreflight(state.worktreePath);
+        await runGit(state.worktreePath, ["add", "-A"]);
+        await assertNoUndeclaredGitlinks(state.worktreePath);
+        await assertInitializedSubmodulesClean(state.worktreePath);
+        step = "commit";
+        await runGit(state.worktreePath, [
+          "commit",
+          "-m",
+          `${input.issue.identifier}: ${input.issue.title}`,
+        ]);
+      }
+      const commit = await runGit(state.worktreePath, ["rev-parse", "HEAD"]);
+      const pushToRemote = shouldPushToRemote(state);
+      if (pushToRemote) {
+        step = "push";
+        await runGit(state.worktreePath, [
+          "push",
+          state.remote!,
+          `refs/heads/${state.branch}:refs/heads/${state.branch}`,
+        ]);
+      }
+      if (state.mergeToBaseBranch) {
+        step = "merge";
+        await mergeIntoBaseBranch(state, commit);
+      }
 
-    const branchInfo: BranchInfo = {
-      name: state.branch,
-      commit,
-      ...(pushToRemote ? { remote: state.remote } : {}),
-    };
+      const branchInfo: BranchInfo = {
+        name: state.branch,
+        commit,
+        ...(pushToRemote ? { remote: state.remote } : {}),
+      };
+      const { finalizationRecovery: _recovery, ...completedState } = state;
+      this.options.state.set(MODULE_ID, input.resourceId, {
+        ...completedState,
+        branchInfo,
+      });
+      return branchInfo;
+    } catch (error) {
+      throw finalizationError({
+        error,
+        providerId: this.id,
+        step,
+        worktreePath: state.worktreePath,
+      });
+    }
+  }
+
+  async prepareFinalizationRecovery(input: {
+    issue: Issue;
+    resourceId: string;
+    diagnostic: WorkspaceFinalizationDiagnostic;
+    attemptId: string;
+  }): Promise<WorkspaceFinalizationRecoveryContext> {
+    const state = this.getSavedState(input.issue, input.resourceId);
+    const fingerprintRef = `${input.resourceId}:finalization:${input.attemptId}`;
+    const prepared = await prepareGitFinalizationRecovery({
+      worktreePath: state.worktreePath,
+      diagnostic: input.diagnostic,
+      attemptId: input.attemptId,
+      fingerprintRef,
+    });
     this.options.state.set(MODULE_ID, input.resourceId, {
       ...state,
-      branchInfo,
+      finalizationRecovery: prepared.fingerprint,
     });
-    return branchInfo;
+    return prepared.context;
+  }
+
+  async validateFinalizationRecovery(input: {
+    issue: Issue;
+    resourceId: string;
+    fingerprintRef: string;
+    result: FinalizationRecoveryResult;
+  }): Promise<WorkspaceFinalizationRecoveryValidation> {
+    const state = this.getSavedState(input.issue, input.resourceId);
+    const fingerprint = state.finalizationRecovery;
+    if (!fingerprint || fingerprint.fingerprintRef !== input.fingerprintRef) {
+      return {
+        kind: "UNSAFE",
+        changedPaths: [],
+        reason: "FINALIZATION_RECOVERY_FINGERPRINT_NOT_FOUND",
+      };
+    }
+    return validateGitFinalizationRecovery({
+      worktreePath: state.worktreePath,
+      fingerprint,
+    });
   }
 
   async release(input: { issue: Issue; resourceId: string }): Promise<void> {
     const state = this.getSavedState(input.issue, input.resourceId);
-    if (!(await pathExists(state.worktreePath))) {
-      await runGit(state.repositoryPath, ["worktree", "prune"]);
-      return;
+    try {
+      if (!(await pathExists(state.worktreePath))) {
+        await runGit(state.repositoryPath, ["worktree", "prune"]);
+        return;
+      }
+      await assertWorktreeAndSubmodulesClean(state.worktreePath);
+      await runGit(state.repositoryPath, [
+        "worktree",
+        "remove",
+        "--force",
+        state.worktreePath,
+      ]);
+    } catch (error) {
+      throw finalizationError({
+        error,
+        providerId: this.id,
+        step: "release",
+        worktreePath: state.worktreePath,
+      });
     }
-    await assertWorktreeAndSubmodulesClean(state.worktreePath);
-    await runGit(state.repositoryPath, [
-      "worktree",
-      "remove",
-      "--force",
-      state.worktreePath,
-    ]);
   }
 
   private async restoreWorktree(state: GitWorkspaceState): Promise<void> {

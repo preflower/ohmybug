@@ -7,6 +7,7 @@ export interface RunGitOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   nonInteractive?: boolean;
+  env?: NodeJS.ProcessEnv;
 }
 
 export class GitCommandError extends Error {
@@ -42,13 +43,16 @@ export async function runGit(
       maxBuffer: 10 * 1024 * 1024,
       ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
-      ...(options.nonInteractive
+      ...(options.nonInteractive || options.env
         ? {
             env: {
               ...process.env,
+              ...options.env,
+              ...(options.nonInteractive ? {
               GCM_INTERACTIVE: "Never",
               GIT_TERMINAL_PROMPT: "0",
               SSH_ASKPASS_REQUIRE: "never",
+              } : {}),
             },
           }
         : {}),
@@ -63,9 +67,10 @@ export async function tryRunGit(
   cwd: string,
   args: readonly string[],
   allowedExitCodes: readonly number[] = [1],
+  options: RunGitOptions = {},
 ): Promise<string | undefined> {
   try {
-    return await runGit(cwd, args);
+    return await runGit(cwd, args, options);
   } catch (error) {
     if (
       error instanceof GitCommandError
