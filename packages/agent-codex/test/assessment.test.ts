@@ -14,6 +14,42 @@ import {
 import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
 describe("Codex assessment", () => {
+  it.each([
+    [[], "read-only", false],
+    [["NETWORK_ACCESS"], "read-only", true],
+    [["HOST_EXECUTION"], "danger-full-access", false],
+    [["HOST_EXECUTION", "NETWORK_ACCESS"], "danger-full-access", true],
+  ] as const)(
+    "runs Assessment with grants %j",
+    async (capabilities, sandboxMode, networkAccessEnabled) => {
+      const sessions = new MemorySessions();
+      await bindSession(sessions);
+      const client = new FixtureClient([JSON.stringify({
+        verdict: "NOT_A_BUG",
+        suggestedTitle: "No change needed",
+        reasoning: "Expected behavior",
+        rootCause: null,
+        solution: null,
+        suspectedDuplicateOf: null,
+      })]);
+      const adapter = new CodexAgentAdapter({ client, sessions });
+      const current = issue({
+        capabilityGrants: capabilities.map((capability) => ({
+          capability,
+          requestId: `grant-${capability}`,
+          grantedAt: "2026-08-24T08:00:00.000Z",
+        })),
+      });
+
+      await adapter.assess(
+        { agent: "codex", sessionId: "logical-1" },
+        { issue: current, project },
+      );
+
+      expect(client.starts[0]).toMatchObject({ sandboxMode, networkAccessEnabled });
+    },
+  );
+
   it("uses the fixed nullable object shape required by Codex structured outputs", () => {
     expect([...assessmentResultOutputSchema.required].sort()).toEqual(
       Object.keys(assessmentResultOutputSchema.properties).sort(),

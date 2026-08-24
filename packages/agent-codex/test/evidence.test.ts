@@ -16,6 +16,55 @@ const assessment: Assessment = {
 };
 
 describe("Codex evidence capture", () => {
+  it("corrects an already-available capability request exactly once", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-redundant", "thread-redundant");
+    const client = new FixtureClient([
+      JSON.stringify({
+        outcome: "CAPABILITY_REQUIRED",
+        capabilities: ["HOST_EXECUTION"],
+        reason: "Launch acceptance",
+        blockedCommand: null,
+        requestedBy: null,
+      }),
+      JSON.stringify({ evidence: [{
+        type: "screenshot",
+        label: "Payment page",
+        relativePath: "payment.png",
+      }] }),
+    ]);
+    const adapter = new CodexAgentAdapter({ client, sessions });
+    const current = evidenceIssue();
+
+    await expect(adapter.captureEvidence(
+      { agent: "codex", sessionId: "logical-redundant" },
+      evidenceInput(current),
+    )).resolves.toMatchObject({ evidence: [{ relativePath: "payment.png" }] });
+    expect(client.prompts).toHaveLength(2);
+    expect(client.prompts[1]).toContain("already available in this stage");
+  });
+
+  it("rejects a repeated already-available request after one correction", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-loop", "thread-loop");
+    const redundant = JSON.stringify({
+      outcome: "CAPABILITY_REQUIRED",
+      capabilities: ["NETWORK_ACCESS"],
+      reason: "Access network",
+      blockedCommand: null,
+      requestedBy: null,
+    });
+    const client = new FixtureClient([redundant, redundant]);
+    const adapter = new CodexAgentAdapter({ client, sessions });
+    const current = evidenceIssue();
+
+    await expect(adapter.captureEvidence(
+      { agent: "codex", sessionId: "logical-loop" },
+      evidenceInput(current),
+    )).rejects.toThrow("AGENT_CAPABILITY_REQUEST_INVALID");
+    expect(client.prompts).toHaveLength(2);
+  });
+
   it("tells the Agent that Evidence already has host and network access", () => {
     const current = issue({
       status: "EVIDENCE_CAPTURE",
@@ -98,3 +147,28 @@ describe("Codex evidence capture", () => {
     expect(client.prompts.at(-1)).toContain("Previous screenshot was blank");
   });
 });
+
+function evidenceIssue() {
+  return issue({
+    status: "EVIDENCE_CAPTURE",
+    assessment,
+    repair: {
+      iteration: 1,
+      deliveryDraft: {
+        summary: "Implemented",
+        repairIteration: 1,
+        implementationCompletedAt: "2026-08-24T08:00:00.000Z",
+      },
+    },
+  });
+}
+
+function evidenceInput(current: ReturnType<typeof evidenceIssue>) {
+  return {
+    issue: current,
+    project,
+    assessment,
+    deliveryDraft: current.repair!.deliveryDraft!,
+    evidenceDirectory: "/workspace/evidence",
+  };
+}

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Assessment } from "@oh-my-bug/core";
 
@@ -17,6 +17,97 @@ const assessment: Assessment = {
 };
 
 describe("Codex repair", () => {
+  it("turns a structured capability branch into typed control flow without AGENT_ERROR", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-capability", "thread-capability");
+    const client = new FixtureClient([JSON.stringify({
+      outcome: "CAPABILITY_REQUIRED",
+      capabilities: ["HOST_EXECUTION"],
+      reason: "Launch Electron acceptance",
+      blockedCommand: "pnpm test:e2e:electron",
+      requestedBy: { type: "SKILL", id: "implement-ui-design" },
+    })]);
+    const reportActivity = vi.fn();
+    const adapter = new CodexAgentAdapter({ client, sessions, reportActivity });
+
+    await expect(adapter.repair(
+      { agent: "codex", sessionId: "logical-capability" },
+      {
+        issue: issue({ status: "REPAIRING", assessment, repair: { iteration: 1 } }),
+        project,
+        assessment,
+        evidenceDirectory: "/private/intake/issue-1/1",
+      },
+    )).rejects.toMatchObject({
+      code: "AGENT_CAPABILITY_REQUIRED",
+      request: {
+        capabilities: ["HOST_EXECUTION"],
+        reason: "Launch Electron acceptance",
+      },
+    });
+    expect(reportActivity).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "AGENT_ERROR" }),
+    );
+  });
+
+  it("uses one corrective continuation for a permission-like failure", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-correction", "thread-correction");
+    const client = new FixtureClient([
+      { events: [{ type: "turn.failed", message: "permission denied by sandbox" }] },
+      JSON.stringify({
+        outcome: "CAPABILITY_REQUIRED",
+        capabilities: ["HOST_EXECUTION"],
+        reason: "Launch Electron acceptance",
+        blockedCommand: null,
+        requestedBy: null,
+      }),
+    ]);
+    const adapter = new CodexAgentAdapter({ client, sessions });
+
+    await expect(adapter.repair(
+      { agent: "codex", sessionId: "logical-correction" },
+      {
+        issue: issue({ status: "REPAIRING", assessment, repair: { iteration: 1 } }),
+        project,
+        assessment,
+        evidenceDirectory: "/private/intake/issue-1/1",
+      },
+    )).rejects.toMatchObject({ code: "AGENT_CAPABILITY_REQUIRED" });
+    expect(client.prompts).toHaveLength(2);
+    expect(client.prompts[1]).toContain("Do not retry the blocked command");
+  });
+
+  it("applies Issue grants to Repair turn options", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-granted", "thread-granted");
+    const client = new FixtureClient([JSON.stringify({ summary: "Implemented", evidence: [] })]);
+    const adapter = new CodexAgentAdapter({ client, sessions });
+
+    await adapter.repair(
+      { agent: "codex", sessionId: "logical-granted" },
+      {
+        issue: issue({
+          status: "REPAIRING",
+          assessment,
+          repair: { iteration: 1 },
+          capabilityGrants: [
+            { capability: "HOST_EXECUTION", requestId: "host", grantedAt: "2026-08-24T08:00:00.000Z" },
+            { capability: "NETWORK_ACCESS", requestId: "network", grantedAt: "2026-08-24T08:00:00.000Z" },
+          ],
+        }),
+        project,
+        assessment,
+        evidenceDirectory: "/private/intake/issue-1/1",
+      },
+    );
+
+    expect(client.resumes[0]?.options).toMatchObject({
+      sandboxMode: "danger-full-access",
+      networkAccessEnabled: true,
+    });
+  });
+
   it("explains capability requests and current Issue grants", () => {
     const current = issue({
       status: "REPAIRING",

@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 
 import {
+  AgentCapabilityRequiredError,
   AgentTurnInterruptedError,
   assessmentSchema,
   canonicalHash,
@@ -8,6 +9,8 @@ import {
   type AgentInterruptionReason,
   type AgentActivityReporter,
   type AgentActivityUpdate,
+  type AgentCapability,
+  type AgentCapabilityRequest,
   type AgentPlugin,
   type AgentPluginContext,
   type AgentSessionRecord,
@@ -33,6 +36,7 @@ import { isNativeThreadUnavailableError, SdkCodexClient } from "./codex-client.j
 import {
   assessmentOutputSchema,
   parseAssessmentOutput,
+  parseCapabilityRequiredOutput,
   parseEvidenceOutput,
   parseRepairOutput,
   evidenceOutputSchema,
@@ -80,14 +84,16 @@ export class CodexAgentAdapter implements AgentAdapter {
   }
 
   async assess(session: AgentSessionRef, input: AssessInput): Promise<Assessment> {
-    const output = await this.turn(
+    const output = await this.stageTurn(
       session,
       input,
       "ASSESSMENT",
       {
         workingDirectory: requireProjectPath(input.issue),
-        sandboxMode: "read-only",
-        networkAccessEnabled: false,
+        ...effectiveTurnOptions(input.issue, {
+          sandboxMode: "read-only",
+          networkAccessEnabled: false,
+        }),
         approvalPolicy: "never",
       },
       assessmentPrompt(input),
@@ -111,14 +117,16 @@ export class CodexAgentAdapter implements AgentAdapter {
     if (input.assessment.verdict !== "BUG" && input.assessment.verdict !== "FEATURE") {
       throw new Error("IMPLEMENTABLE_ASSESSMENT_REQUIRED");
     }
-    const rawOutput = await this.turn(
+    const rawOutput = await this.stageTurn(
       session,
       input,
       "REPAIR",
       {
         workingDirectory: requireProjectPath(input.issue),
-        sandboxMode: "workspace-write",
-        networkAccessEnabled: false,
+        ...effectiveTurnOptions(input.issue, {
+          sandboxMode: "workspace-write",
+          networkAccessEnabled: false,
+        }),
         approvalPolicy: "never",
       },
       repairPrompt(input),
@@ -148,7 +156,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     if (input.assessment.verdict !== "BUG" && input.assessment.verdict !== "FEATURE") {
       throw new Error("IMPLEMENTABLE_ASSESSMENT_REQUIRED");
     }
-    const rawOutput = await this.turn(
+    const rawOutput = await this.stageTurn(
       session,
       input,
       "EVIDENCE",
@@ -186,6 +194,56 @@ export class CodexAgentAdapter implements AgentAdapter {
     if (!active) return;
     active.abort.abort(new AgentTurnInterruptedError(reason));
     await active.done;
+  }
+
+  private async stageTurn(
+    session: AgentSessionRef,
+    input: AssessInput | RepairInput | EvidenceCaptureInput,
+    stage: CodexActivity["stage"],
+    threadOptions: CodexThreadOptions,
+    prompt: string,
+    outputSchema: unknown,
+  ): Promise<unknown> {
+    const run = (nextPrompt: string) => this.turn(
+      session,
+      input,
+      stage,
+      threadOptions,
+      nextPrompt,
+      outputSchema,
+    );
+    let correctionUsed = false;
+    let output: unknown;
+    try {
+      output = await run(prompt);
+    } catch (error) {
+      if (!looksPermissionBlocked(error)) throw error;
+      correctionUsed = true;
+      output = await run([
+        prompt,
+        "The previous attempt was permission-blocked. Make exactly one choice: use a lower-privilege alternative, or return CAPABILITY_REQUIRED. Do not retry the blocked command.",
+      ].join("\n\n"));
+    }
+
+    const checked = checkCapabilityRequest(output, input.issue, stage);
+    if (checked.kind === "NEW") {
+      throw new AgentCapabilityRequiredError(checked.request);
+    }
+    if (checked.kind === "NONE") return output;
+    if (correctionUsed) throw new Error("AGENT_CAPABILITY_REQUEST_INVALID");
+
+    const corrected = await run([
+      prompt,
+      "Every capability in the previous request is already available in this stage. Continue the task and return the normal stage result. Do not request it again.",
+    ].join("\n\n"));
+    const rechecked = checkCapabilityRequest(corrected, input.issue, stage);
+    if (rechecked.kind === "NEW") {
+      throw new AgentCapabilityRequiredError(rechecked.request);
+    }
+    if (rechecked.kind === "REDUNDANT") {
+      throw new Error("AGENT_CAPABILITY_REQUEST_INVALID");
+    }
+    return corrected;
   }
 
   private async turn(
@@ -307,6 +365,62 @@ export class CodexAgentAdapter implements AgentAdapter {
     const message = error instanceof Error ? error.message : "AGENT_FAILURE";
     await this.reportActivity(sessionId, stage, { type: "error", message });
   }
+}
+
+type CapabilityRequestCheck =
+  | { kind: "NONE" }
+  | { kind: "NEW"; request: AgentCapabilityRequest }
+  | { kind: "REDUNDANT" };
+
+function checkCapabilityRequest(
+  output: unknown,
+  issue: Issue,
+  stage: CodexActivity["stage"],
+): CapabilityRequestCheck {
+  const request = parseCapabilityRequiredOutput(output);
+  if (!request) return { kind: "NONE" };
+  const available = effectiveCapabilities(issue, stage);
+  const capabilities = request.capabilities.filter(
+    (capability) => !available.has(capability),
+  );
+  return capabilities.length === 0
+    ? { kind: "REDUNDANT" }
+    : { kind: "NEW", request: { ...request, capabilities } };
+}
+
+function effectiveCapabilities(
+  issue: Issue,
+  stage: CodexActivity["stage"],
+): Set<AgentCapability> {
+  const available = new Set(
+    issue.capabilityGrants?.map((grant) => grant.capability),
+  );
+  if (stage === "EVIDENCE") {
+    available.add("HOST_EXECUTION");
+    available.add("NETWORK_ACCESS");
+  }
+  return available;
+}
+
+function effectiveTurnOptions(
+  issue: Issue,
+  defaults: Pick<CodexThreadOptions, "sandboxMode" | "networkAccessEnabled">,
+): Pick<CodexThreadOptions, "sandboxMode" | "networkAccessEnabled"> {
+  const grants = effectiveCapabilities(issue, "ASSESSMENT");
+  return {
+    sandboxMode: grants.has("HOST_EXECUTION")
+      ? "danger-full-access"
+      : defaults.sandboxMode,
+    networkAccessEnabled: grants.has("NETWORK_ACCESS")
+      ? true
+      : defaults.networkAccessEnabled,
+  };
+}
+
+function looksPermissionBlocked(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /\b(?:EPERM|EACCES)\b|operation not permitted|permission denied|sandbox|network.*(?:disabled|denied|unavailable)/i
+    .test(error.message);
 }
 
 export function codexAgent(
