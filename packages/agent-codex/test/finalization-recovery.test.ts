@@ -42,7 +42,11 @@ describe("Codex finalization recovery", () => {
       type: "object",
       additionalProperties: false,
     });
-    expect(finalizationRecoveryOutputSchema).toHaveProperty("anyOf");
+    expect(finalizationRecoveryOutputSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+    });
+    expect(finalizationRecoveryOutputSchema).not.toHaveProperty("anyOf");
     expect(parseFinalizationRecoveryOutput({
       summary: "Removed the stale temporary artifact",
       diagnosis: "A generated temp directory blocked the Git add step",
@@ -85,10 +89,14 @@ describe("Codex finalization recovery", () => {
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-recovery", "thread-recovery");
     const client = new FixtureClient([JSON.stringify({
-      summary: "Removed the stale lock",
-      diagnosis: "An abandoned lock blocked staging",
-      disposition: "RECOVERED",
-      affectedPaths: [".git/index.lock"],
+      outcome: "RESULT",
+      result: {
+        summary: "Removed the stale lock",
+        diagnosis: "An abandoned lock blocked staging",
+        disposition: "RECOVERED",
+        affectedPaths: [".git/index.lock"],
+      },
+      capabilityRequest: null,
     })]);
     const adapter = new CodexAgentAdapter({ client, sessions });
 
@@ -125,10 +133,14 @@ describe("Codex finalization recovery", () => {
     await bindSession(sessions, "logical-recovery", "thread-recovery");
     const activities: AgentActivityUpdate[] = [];
     const client = new FixtureClient([JSON.stringify({
-      summary: "No safe automatic change",
-      diagnosis: "The repository state diverged",
-      disposition: "UNSAFE",
-      affectedPaths: [],
+      outcome: "RESULT",
+      result: {
+        summary: "No safe automatic change",
+        diagnosis: "The repository state diverged",
+        disposition: "UNSAFE",
+        affectedPaths: [],
+      },
+      capabilityRequest: null,
     })]);
     const adapter = new CodexAgentAdapter({
       client,
@@ -155,10 +167,13 @@ describe("Codex finalization recovery", () => {
     await bindSession(sessions, "logical-recovery", "thread-recovery");
     const client = new FixtureClient([JSON.stringify({
       outcome: "CAPABILITY_REQUIRED",
-      capabilities: ["HOST_EXECUTION"],
-      reason: "Inspect a host-owned lock file",
-      blockedCommand: "stat .git/index.lock",
-      requestedBy: null,
+      result: null,
+      capabilityRequest: {
+        capabilities: ["HOST_EXECUTION"],
+        reason: "Inspect a host-owned lock file",
+        blockedCommand: "stat .git/index.lock",
+        requestedBy: null,
+      },
     })]);
     const adapter = new CodexAgentAdapter({ client, sessions });
 
