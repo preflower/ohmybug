@@ -1,4 +1,4 @@
-import { access, mkdir, realpath } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 
 import type { ConfigValue, Issue, RuntimeProject } from "@oh-my-bug/core";
@@ -471,8 +471,19 @@ async function assertInitializedSubmodulesClean(
   visited.add(await realpath(worktreePath));
   for (const gitlink of await getIndexGitlinks(worktreePath)) {
     const submodulePath = join(worktreePath, gitlink);
-    if (!(await pathExists(join(submodulePath, ".git")))) continue;
-    await assertWorktreeAndSubmodulesClean(submodulePath, visited);
+    if (await pathExists(join(submodulePath, ".git"))) {
+      await assertWorktreeAndSubmodulesClean(submodulePath, visited);
+    } else {
+      await assertUninitializedGitlinkEmpty(submodulePath);
+    }
+  }
+}
+
+async function assertUninitializedGitlinkEmpty(path: string): Promise<void> {
+  if (!(await pathExists(path))) return;
+  const stats = await lstat(path);
+  if (!stats.isDirectory() || (await readdir(path)).length > 0) {
+    throw new Error("GIT_WORKTREE_NOT_CLEAN");
   }
 }
 

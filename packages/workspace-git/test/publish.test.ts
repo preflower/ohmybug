@@ -502,6 +502,52 @@ describe("GitWorkspace publish", () => {
 
     await expect(access(hiddenFile)).resolves.toBeUndefined();
   });
+
+  it("preserves files inside an uninitialized submodule directory", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const source = join(fixture.root, "uninitialized-submodule-source");
+    await createCommittedRepository(source);
+    await git(
+      fixture.repository,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      source,
+      "vendor/uninitialized",
+    );
+    await git(fixture.repository, "commit", "-am", "add uninitialized submodule");
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const uninitialized = join(acquired.projectPath, "vendor/uninitialized");
+    await mkdir(uninitialized, { recursive: true });
+    const hiddenFile = join(uninitialized, "hidden-local-note.txt");
+    await writeFile(hiddenFile, "keep me\n");
+    expect(await git(
+      acquired.projectPath,
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--ignore-submodules=none",
+    )).toBe("");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(access(hiddenFile)).resolves.toBeUndefined();
+  });
 });
 
 async function createCommittedRepository(path: string): Promise<void> {
