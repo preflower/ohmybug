@@ -168,13 +168,6 @@ export async function validateGitFinalizationRecovery(input: {
   if (before.diagnosticRoots.some((root) => !root.entirelyUntracked)) {
     return unsafe("FINALIZATION_RECOVERY_DIAGNOSTIC_ROOT_TRACKED");
   }
-  if (current.diagnosticEntries.length > 0) {
-    return unsafe(
-      "FINALIZATION_RECOVERY_GENERATED_ARTIFACT_REMAINS",
-      current.diagnosticEntries.map((entry) => entry.path),
-    );
-  }
-
   const trackedChanges = changedEntries(before.tracked, current.tracked);
   if (trackedChanges.length > 0) {
     return { kind: "CHANGED", changedPaths: trackedChanges };
@@ -189,6 +182,12 @@ export async function validateGitFinalizationRecovery(input: {
   }
   if (untrackedChanges.length > 0) {
     return { kind: "CHANGED", changedPaths: untrackedChanges };
+  }
+  if (current.diagnosticEntries.length > 0) {
+    return unsafe(
+      "FINALIZATION_RECOVERY_GENERATED_ARTIFACT_REMAINS",
+      current.diagnosticEntries.map((entry) => entry.path),
+    );
   }
 
   try {
@@ -292,7 +291,16 @@ async function captureFingerprint(input: {
 }
 
 async function repositoryStateHash(worktreePath: string): Promise<string> {
-  return digest(await runGit(worktreePath, ["config", "--local", "--null", "--list"]));
+  const [configuration, refs] = await Promise.all([
+    runGit(worktreePath, ["config", "--local", "--null", "--list"]),
+    runGit(worktreePath, [
+      "for-each-ref",
+      "--format=%(refname)%00%(objectname)",
+      "refs/heads",
+      "refs/remotes",
+    ]),
+  ]);
+  return digest(`${configuration}\0${refs}`);
 }
 
 function assertRecoverableGitDiagnostic(

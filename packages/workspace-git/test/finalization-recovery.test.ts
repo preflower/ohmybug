@@ -163,7 +163,7 @@ describe("Git finalization recovery", () => {
     });
   });
 
-  it("does not reject an unrelated concurrent branch creation", async () => {
+  it("rejects an unrelated ref mutation during the Agent turn", async () => {
     const fixture = await setupRecovery();
     await rm(fixture.diagnosticRoot, { recursive: true });
     await git(fixture.acquired.projectPath, "branch", "unrelated-concurrent-issue");
@@ -173,7 +173,10 @@ describe("Git finalization recovery", () => {
       resourceId: "git:issue-1",
       fingerprintRef: fixture.context.fingerprintRef,
       result: recovered,
-    })).resolves.toEqual({ kind: "UNCHANGED", changedPaths: [] });
+    })).resolves.toMatchObject({
+      kind: "UNSAFE",
+      reason: "FINALIZATION_RECOVERY_REPOSITORY_STATE_CHANGED",
+    });
   });
 
   it("rejects recovery preparation for a non-add failure", async () => {

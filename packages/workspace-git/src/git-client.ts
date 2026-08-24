@@ -107,9 +107,9 @@ function stringProperty(value: unknown, key: string): string {
   return property instanceof Uint8Array ? Buffer.from(property).toString("utf8") : "";
 }
 
-const secretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)\s*[=:]\s*)([^\s"'&]+)/gi;
-const bearerToken = /(bearer\s+)([^\s"']+)/gi;
-const posixAbsolutePath = /(^|[\s"'(])\/(?:Users|home|private|tmp|var|Volumes|opt)\/[^\s"'<>]*/gm;
+const secretAssignment = /((?:[a-z0-9_]*(?:api[_-]?key|access[_-]?key|access[_-]?token|auth[_-]?token|credential|password|passwd|secret|token)[a-z0-9_]*)\s*[=:]\s*)([^\s"'&]+)/gi;
+const authorizationToken = /((?:basic|bearer)\s+)([^\s"']+)/gi;
+const posixAbsolutePath = /(^|[\s"'(])\/(?!\/)[^\s"'<>]*/gm;
 const windowsAbsolutePath = /(^|[\s"'(])[A-Za-z]:[\\/][^\s"'<>]*/gm;
 
 export function sanitizeGitDiagnosticText(
@@ -121,7 +121,7 @@ export function sanitizeGitDiagnosticText(
     .replaceAll(cwd, "<workspace>")
     .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1")
     .replace(secretAssignment, "$1[REDACTED]")
-    .replace(bearerToken, "$1[REDACTED]")
+    .replace(authorizationToken, "$1[REDACTED]")
     .replace(posixAbsolutePath, "$1<absolute-path>")
     .replace(windowsAbsolutePath, "$1<absolute-path>")
   )

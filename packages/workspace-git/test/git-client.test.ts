@@ -13,8 +13,14 @@ describe("Git command execution", () => {
         stderr: [
           "token=private-token",
           "Authorization: Bearer private-bearer",
+          "Authorization: Basic private-basic",
+          "AWS_SECRET_ACCESS_KEY=private-aws-key",
           "https://user:password@example.com/repository.git?access_token=query-secret",
           "/Users/alice/private/secrets.txt",
+          "/etc/gitconfig",
+          "/usr/local/bin/hook",
+          "/srv/repository/hook",
+          "/mnt/secrets/config",
           "/workspace/issue/generated/file.txt",
         ].join("\n"),
       },
@@ -22,12 +28,20 @@ describe("Git command execution", () => {
 
     expect(failure.stderr).not.toContain("private-token");
     expect(failure.stderr).not.toContain("private-bearer");
+    expect(failure.stderr).not.toContain("private-basic");
+    expect(failure.stderr).not.toContain("private-aws-key");
     expect(failure.stderr).not.toContain("password");
     expect(failure.stderr).not.toContain("query-secret");
     expect(failure.stderr).not.toContain("/Users/alice");
+    expect(failure.stderr).not.toContain("/etc/gitconfig");
+    expect(failure.stderr).not.toContain("/usr/local/bin/hook");
+    expect(failure.stderr).not.toContain("/srv/repository/hook");
+    expect(failure.stderr).not.toContain("/mnt/secrets/config");
     expect(failure.stderr).not.toContain("/workspace/issue");
     expect(failure.stderr).toContain("token=[REDACTED]");
     expect(failure.stderr).toContain("Bearer [REDACTED]");
+    expect(failure.stderr).toContain("Basic [REDACTED]");
+    expect(failure.stderr).toContain("AWS_SECRET_ACCESS_KEY=[REDACTED]");
     expect(failure.stderr).toContain("<workspace>/generated/file.txt");
   });
 
