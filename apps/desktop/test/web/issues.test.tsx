@@ -207,6 +207,39 @@ describe("Issue detail", () => {
     const dialog = screen.getByRole("dialog", { name: "Checkout success" });
     expect(within(dialog).getByRole("img", { name: "Checkout success" })).toHaveAttribute("src", "blob:checkout-shot");
     expect(within(dialog).getByRole("button", { name: "关闭预览" })).toBeVisible();
+    expect(dialog.querySelector(".evidence-preview-header")).not.toBeInTheDocument();
+    expect(dialog.querySelector(".evidence-preview-stage > .evidence-preview-toolbar")).toBeInTheDocument();
+  });
+
+  it("zooms, pans, and resets screenshot evidence", async () => {
+    vi.spyOn(api, "evidenceSource").mockResolvedValue({ url: "blob:checkout-shot" });
+    render(<IssueDetail issue={issue} onRefresh={async () => undefined} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "预览 Checkout success" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Checkout success" });
+    const preview = within(dialog);
+    const image = preview.getByRole("img", { name: "Checkout success" });
+    const stage = image.closest(".evidence-preview-stage");
+    expect(stage).not.toBeNull();
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("100%");
+
+    fireEvent.click(preview.getByRole("button", { name: "放大" }));
+    fireEvent.click(preview.getByRole("button", { name: "放大" }));
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("150%");
+
+    fireEvent.pointerDown(stage!, { button: 0, clientX: 120, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(stage!, { clientX: 150, clientY: 120, pointerId: 1 });
+    fireEvent.pointerUp(stage!, { pointerId: 1 });
+    expect(image).toHaveStyle({ transform: "translate3d(30px, 20px, 0) scale(1.5)" });
+
+    fireEvent.click(preview.getByRole("button", { name: "重置视图" }));
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("100%");
+    expect(image).toHaveStyle({ transform: "translate3d(0px, 0px, 0) scale(1)" });
+
+    fireEvent.wheel(stage!, { clientX: 200, clientY: 160, deltaY: -100 });
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("125%");
+    expect(image).not.toHaveStyle({ transform: "translate3d(0px, 0px, 0) scale(1.25)" });
   });
 
   it("plays recording evidence in a large dialog", async () => {
