@@ -84,6 +84,8 @@ describe("Git finalization recovery", () => {
     });
     expect(fixture.error.diagnostic.stderr?.length).toBeLessThanOrEqual(8_000);
     expect(fixture.error.diagnostic.stderr).not.toContain(fixture.acquired.projectPath);
+    expect(fixture.context.fingerprintSummary)
+      .toContain('generated roots: [".pnpm-store"]');
     expect(await git(fixture.acquired.projectPath, "rev-parse", "HEAD"))
       .toBe(fixture.head);
     expect(await git(fixture.acquired.projectPath, "ls-files", "--stage"))

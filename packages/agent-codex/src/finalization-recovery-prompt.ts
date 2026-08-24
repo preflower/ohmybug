@@ -11,6 +11,7 @@ export function finalizationRecoveryPrompt(input: FinalizationRecoveryInput): st
     "Use a practical lower-privilege alternative first. If the permission boundary is insufficient, stop and return CAPABILITY_REQUIRED instead of retrying a blocked command.",
     "Do not commit, merge, push, release, rewrite branches, or rewrite history. Do not run delivery finalization commands; the Workspace Provider owns Git publication.",
     "Do not change product behavior. Prefer removing or relocating generated artifacts only when you can prove they are untracked. If product or approved delivery content must change, return REVALIDATION_REQUIRED.",
+    "Inspect every generated root listed in the fingerprint summary. Remove or relocate each listed root that is entirely untracked; do not return RECOVERED while any listed generated root remains.",
     "Return RECOVERED only when the workspace obstruction was safely removed, REVALIDATION_REQUIRED when delivery content changed, and UNSAFE when no bounded safe repair is possible.",
     "Always use the response envelope. On completion set outcome=RESULT, populate result, and set capabilityRequest=null. For a capability request set outcome=CAPABILITY_REQUIRED, set result=null, and populate capabilityRequest.",
     `Approved delivery summary: ${JSON.stringify(input.issue.repair?.delivery?.summary ?? input.issue.repair?.deliveryDraft?.summary ?? "Unavailable")}`,

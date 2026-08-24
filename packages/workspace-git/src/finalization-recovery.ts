@@ -109,6 +109,7 @@ export async function prepareGitFinalizationRecovery(input: {
         `${fingerprint.tracked.length} tracked paths`,
         `${fingerprint.untracked.length} approved untracked paths`,
         `${fingerprint.diagnosticRoots.length} diagnostic roots`,
+        `generated roots: ${JSON.stringify(fingerprint.diagnosticRoots.map((root) => root.path))}`,
       ].join(", "),
     },
   };
