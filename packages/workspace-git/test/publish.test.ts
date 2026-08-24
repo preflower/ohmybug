@@ -79,6 +79,30 @@ describe("GitWorkspace publish", () => {
       .rejects.toThrow("GIT_EMBEDDED_REPOSITORY_NOT_ALLOWED");
   });
 
+  it("rejects hidden index entries before publishing", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const before = await git(acquired.projectPath, "rev-parse", "HEAD");
+    await git(acquired.projectPath, "update-index", "--assume-unchanged", "README.md");
+    await writeFile(join(acquired.projectPath, "README.md"), "hidden tracked change\n");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    expect(await git(acquired.projectPath, "rev-parse", "HEAD")).toBe(before);
+  });
+
   it("publishes a properly declared submodule", async () => {
     const fixture = await createGitFixture();
     cleanups.push(fixture.cleanup);
@@ -102,7 +126,7 @@ describe("GitWorkspace publish", () => {
       "submodule",
       "add",
       source,
-      "vendor/declared",
+      "vendor/declared module",
     );
     const approved = {
       ...fixture.issue,
@@ -254,6 +278,41 @@ describe("GitWorkspace publish", () => {
 
     await expect(access(join(acquired.projectPath, "hidden-local-note.txt")))
       .resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["assume-unchanged", "--assume-unchanged"],
+    ["skip-worktree", "--skip-worktree"],
+  ])("preserves tracked changes hidden by %s during release", async (_kind, flag) => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+    await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+    await git(acquired.projectPath, "update-index", flag, "README.md");
+    const changedFile = join(acquired.projectPath, "README.md");
+    await writeFile(changedFile, "hidden tracked change\n");
+    expect(await git(
+      acquired.projectPath,
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--ignore-submodules=none",
+    )).toBe("");
+
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(access(changedFile)).resolves.toBeUndefined();
   });
 
   it("preserves submodule changes hidden by ignore=all during release", async () => {

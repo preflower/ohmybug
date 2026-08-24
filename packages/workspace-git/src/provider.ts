@@ -356,6 +356,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       throw new Error("GIT_WORKSPACE_NOT_APPROVED");
     }
 
+    await assertNoHiddenIndexEntries(state.worktreePath);
     const changes = await runGit(state.worktreePath, [
       "status",
       "--porcelain",
@@ -399,6 +400,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       await runGit(state.repositoryPath, ["worktree", "prune"]);
       return;
     }
+    await assertNoHiddenIndexEntries(state.worktreePath);
     const changes = await runGit(state.worktreePath, [
       "status",
       "--porcelain",
@@ -460,6 +462,13 @@ function shouldPushToRemote(state: GitWorkspaceState): boolean {
   return state.pushToRemote ?? state.delivery === "remote";
 }
 
+async function assertNoHiddenIndexEntries(worktreePath: string): Promise<void> {
+  const entries = await runGit(worktreePath, ["ls-files", "-v", "-z"]);
+  if (entries.split("\0").some((entry) => /^[a-zS] /.test(entry))) {
+    throw new Error("GIT_WORKTREE_NOT_CLEAN");
+  }
+}
+
 async function assertNoUndeclaredGitlinks(worktreePath: string): Promise<void> {
   try {
     const entries = await runGit(worktreePath, ["ls-files", "--stage", "-z"]);
@@ -473,13 +482,13 @@ async function assertNoUndeclaredGitlinks(worktreePath: string): Promise<void> {
 
     const mappings = await tryRunGit(
       worktreePath,
-      ["config", "--blob", ":.gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
+      ["config", "-z", "--blob", ":.gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
       [1],
     );
     const declaredPaths = new Set(
-      mappings?.split("\n").flatMap((mapping) => {
-        const separator = mapping.search(/\s/);
-        return separator === -1 ? [] : [mapping.slice(separator).trimStart()];
+      mappings?.split("\0").flatMap((mapping) => {
+        const separator = mapping.indexOf("\n");
+        return separator === -1 ? [] : [mapping.slice(separator + 1)];
       }) ?? [],
     );
     if (gitlinks.some((path) => !declaredPaths.has(path))) {
