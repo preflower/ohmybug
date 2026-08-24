@@ -19,6 +19,7 @@ import {
   transitionIssue,
   type EvidenceInspector,
   type EvidenceStore,
+  type FinalizationRecoveryResult,
   type AgentAdapter,
   type AgentContinuation,
   type AgentSessionRef,
@@ -47,7 +48,10 @@ export interface RuntimeWorkerDependencies {
   agents: AgentRegistry;
   evidence: EvidenceStore & EvidenceInspector;
   capture?: EvidenceCaptureProvider;
-  workspaces: Pick<WorkspaceCoordinator, "prepare" | "finalize" | "recover">;
+  workspaces: Pick<
+    WorkspaceCoordinator,
+    "prepare" | "finalize" | "recover" | "validateFinalizationRecovery"
+  >;
   hooks?: RuntimeLifecycleHooks;
   id: () => string;
   now: () => string;
@@ -137,6 +141,9 @@ export class RuntimeWorker {
     if (pending.operation === "EVIDENCE") return this.inspectEvidence(pending.issue);
     if (pending.operation === "FINALIZE") {
       return this.dependencies.workspaces.finalize(pending.issue);
+    }
+    if (pending.operation === "RECOVER_FINALIZATION") {
+      return this.recoverFinalization(pending.issue);
     }
     throw new Error("UNSUPPORTED_PENDING_OPERATION");
   }
@@ -567,9 +574,98 @@ export class RuntimeWorker {
     }
   }
 
+  private async recoverFinalization(pending: Issue): Promise<void> {
+    const current = this.dependencies.store.getIssue(pending.id);
+    if (
+      !current
+      || current.revision !== pending.revision
+      || current.status !== "FINALIZATION_RECOVERY"
+    ) return;
+    const attemptId = current.finalizationRecovery?.attemptId;
+    const diagnostic = current.finalizationRecovery?.diagnostic;
+    const fingerprintRef = current.finalizationRecovery?.fingerprintRef;
+    const contextEvent = this.dependencies.store.readEvents(current.id).findLast((event) =>
+      event.type === "DELIVERY_FINALIZATION_RECOVERY_STARTED"
+      && event.data.attemptId === attemptId);
+    const workspaceStatus = contextEvent?.data.workspaceStatus;
+    const fingerprintSummary = contextEvent?.data.fingerprintSummary;
+    const project = this.dependencies.store.getProject(current.projectId);
+    if (
+      !project
+      || !current.agentSession
+      || !attemptId
+      || !diagnostic
+      || !fingerprintRef
+      || typeof workspaceStatus !== "string"
+      || typeof fingerprintSummary !== "string"
+    ) {
+      await this.dependencies.workspaces.validateFinalizationRecovery(
+        current,
+        unsafeRecoveryResult("FINALIZATION_RECOVERY_CONTEXT_REQUIRED"),
+      );
+      return;
+    }
+
+    let agent: AgentAdapter;
+    try {
+      agent = this.dependencies.agents.forSession(current.agentSession);
+      if (!agent.recoverFinalization) throw new Error("FINALIZATION_RECOVERY_AGENT_UNSUPPORTED");
+    } catch (error) {
+      await this.dependencies.workspaces.validateFinalizationRecovery(
+        current,
+        unsafeRecoveryResult(agentFailureCode(error)),
+      );
+      return;
+    }
+    const claimed = this.dependencies.store.transaction((tx) => {
+      const latest = this.dependencies.store.getIssue(current.id);
+      if (
+        !latest
+        || latest.revision !== current.revision
+        || latest.status !== "FINALIZATION_RECOVERY"
+      ) return undefined;
+      tx.updateIssue(latest, latest.revision, null);
+      return latest;
+    });
+    if (!claimed) return;
+
+    try {
+      const result = await agent.recoverFinalization!(claimed.agentSession!, {
+        issue: claimed,
+        project,
+        diagnostic,
+        workspaceStatus,
+        fingerprintSummary,
+        continuation: this.continuation(claimed, "RECOVER_FINALIZATION"),
+      });
+      await this.dependencies.workspaces.validateFinalizationRecovery(
+        claimed,
+        publicRecoveryResult(result),
+      );
+    } catch (error) {
+      if (this.pauseForCapability(
+        claimed,
+        error,
+        "RECOVER_FINALIZATION",
+        "FINALIZATION_RECOVERY",
+        attemptId,
+      )) return;
+      if (this.requeueInterrupted(
+        claimed,
+        error,
+        "RECOVER_FINALIZATION",
+        attemptId,
+      )) return;
+      await this.dependencies.workspaces.validateFinalizationRecovery(
+        claimed,
+        unsafeRecoveryResult(agentFailureCode(error)),
+      );
+    }
+  }
+
   private continuation(
     issue: Issue,
-    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
+    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION",
   ): AgentContinuation | undefined {
     const events = this.dependencies.store.readEvents(issue.id);
     const granted = events.findLast((event) =>
@@ -609,8 +705,8 @@ export class RuntimeWorker {
   private pauseForCapability(
     claimed: Issue,
     error: unknown,
-    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
-    stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE",
+    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION",
+    stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE" | "FINALIZATION_RECOVERY",
     attemptId: string,
   ): boolean {
     if (!isAgentCapabilityRequiredError(error)) return false;
@@ -650,7 +746,7 @@ export class RuntimeWorker {
   private requeueInterrupted(
     claimed: Issue,
     error: unknown,
-    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
+    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION",
     attemptId: string,
   ): boolean {
     if (
@@ -668,7 +764,13 @@ export class RuntimeWorker {
       };
       tx.updateIssue(resumable, current.revision, operation);
       tx.appendEvent(this.event(resumable.id, "RUNTIME_INTERRUPTED", "SYSTEM", {
-        stage: operation === "ASSESS" ? "ASSESSMENT" : operation === "REPAIR" ? "REPAIR" : "EVIDENCE",
+        stage: operation === "ASSESS"
+          ? "ASSESSMENT"
+          : operation === "REPAIR"
+            ? "REPAIR"
+            : operation === "CAPTURE_EVIDENCE"
+              ? "EVIDENCE"
+              : "FINALIZATION_RECOVERY",
         reason: error.reason,
         operation,
         attemptId,
@@ -848,4 +950,35 @@ function publicEvidenceFailure(error: unknown): string {
 
 function evidenceFailureCode(error: unknown, fallback: string): string {
   return error instanceof EvidenceCaptureError ? error.code : fallback;
+}
+
+const recoverySecretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)\s*[=:]\s*)([^\s"']+)/gi;
+const recoveryBearerToken = /(bearer\s+)([^\s"']+)/gi;
+
+function publicRecoveryText(value: string, maxLength: number): string {
+  return value
+    .trim()
+    .replace(recoverySecretAssignment, "$1[REDACTED]")
+    .replace(recoveryBearerToken, "$1[REDACTED]")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .slice(0, maxLength);
+}
+
+function publicRecoveryResult(result: FinalizationRecoveryResult): FinalizationRecoveryResult {
+  return {
+    summary: publicRecoveryText(result.summary, 4_000) || "Automatic finalization recovery finished",
+    diagnosis: publicRecoveryText(result.diagnosis, 4_000) || "No diagnosis was provided",
+    disposition: result.disposition,
+    affectedPaths: result.affectedPaths.slice(0, 50).map((path) =>
+      publicRecoveryText(path, 1_000)),
+  };
+}
+
+function unsafeRecoveryResult(diagnosis: string): FinalizationRecoveryResult {
+  return publicRecoveryResult({
+    summary: "Automatic finalization recovery stopped safely",
+    diagnosis,
+    disposition: "UNSAFE",
+    affectedPaths: [],
+  });
 }

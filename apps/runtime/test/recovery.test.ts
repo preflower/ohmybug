@@ -183,6 +183,49 @@ describe("Runtime recovery", () => {
     expect(workspacePersistence.getBinding(finalizing.id)?.providerId).toBe("local");
   });
 
+  it("requeues one in-progress finalization recovery without spending another attempt", () => {
+    const { store } = createHarness();
+    const recovering = reviewedIssue({
+      id: "finalization-recovery-restart",
+      status: "FINALIZATION_RECOVERY",
+      projectPath: project.path,
+      agentSession: { agent: "fake", sessionId: "session-recovery" },
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: "attempt-1",
+        fingerprintRef: "fingerprint-1",
+        diagnostic: {
+          providerId: "git",
+          step: "add",
+          code: "GIT_ADD_FAILED",
+          message: "git add failed",
+          relatedPaths: [".pnpm-store"],
+        },
+      },
+    });
+    store.transaction((transaction) => {
+      transaction.insertIssue(recovering, "RECOVER_FINALIZATION");
+      transaction.updateIssue(recovering, recovering.revision, null);
+    });
+    const dependencies = { store, id: eventIds("recovery-restart"), now: () => now };
+
+    reconcileInterruptedIssues(dependencies);
+    reconcileInterruptedIssues(dependencies);
+
+    expect(store.getIssue(recovering.id)).toMatchObject({
+      status: "FINALIZATION_RECOVERY",
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: "attempt-1",
+        fingerprintRef: "fingerprint-1",
+      },
+    });
+    expect(store.listPendingOperations().map((pending) => pending.operation))
+      .toEqual(["RECOVER_FINALIZATION"]);
+    expect(store.readEvents(recovering.id).filter((event) =>
+      event.type === "RUNTIME_INTERRUPTED")).toHaveLength(1);
+  });
+
   it("leaves FINALIZATION_FAILED idle after restart", async () => {
     const { store, workspaces, workspacePersistence } = createHarness();
     const failed = {

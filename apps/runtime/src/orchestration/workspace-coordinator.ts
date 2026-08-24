@@ -1,5 +1,6 @@
 import {
   beginFinalizationRecovery,
+  recordFinalizationRecoveryResult,
   transitionIssue,
   workspaceFinalizationDiagnosticSchema,
   type Issue,
@@ -7,10 +8,12 @@ import {
   type RuntimeProject,
   type RuntimeStore,
   type WorkspaceFinalizationDiagnostic,
+  type FinalizationRecoveryResult,
 } from "@oh-my-bug/core";
 import type {
   LifecycleEventMap,
   WorkspaceBinding,
+  WorkspaceFinalizationRecoveryValidation,
   WorkspacePersistence,
   WorkspaceProvider,
 } from "@oh-my-bug/module-api";
@@ -246,6 +249,7 @@ export class WorkspaceCoordinator {
                   attemptId,
                   fingerprintRef: context.fingerprintRef,
                   fingerprintSummary: context.fingerprintSummary,
+                  workspaceStatus: context.workspaceStatus,
                 },
               ));
             });
@@ -271,6 +275,103 @@ export class WorkspaceCoordinator {
           : "FINALIZATION_RECOVERY_UNSUPPORTED",
       );
     }
+  }
+
+  async validateFinalizationRecovery(
+    pending: Issue,
+    rawResult: FinalizationRecoveryResult,
+  ): Promise<void> {
+    const issue = this.dependencies.store.getIssue(pending.id);
+    if (
+      !issue
+      || issue.revision !== pending.revision
+      || issue.status !== "FINALIZATION_RECOVERY"
+    ) return;
+    const result = safeRecoveryResult(rawResult);
+    const binding = this.dependencies.persistence.getBinding(issue.id);
+    let validation: WorkspaceFinalizationRecoveryValidation;
+    if (result.disposition === "UNSAFE") {
+      validation = {
+        kind: "UNSAFE",
+        changedPaths: result.affectedPaths,
+        reason: "FINALIZATION_RECOVERY_AGENT_UNSAFE",
+      };
+    } else {
+      try {
+        if (!binding || binding.status !== "READY") {
+          throw new Error("WORKSPACE_BINDING_NOT_READY");
+        }
+        const provider = this.dependencies.registry.create(binding.providerId, {});
+        if (!provider.validateFinalizationRecovery) {
+          throw new Error("FINALIZATION_RECOVERY_UNSUPPORTED");
+        }
+        const fingerprintRef = issue.finalizationRecovery?.fingerprintRef;
+        if (!fingerprintRef) throw new Error("FINALIZATION_RECOVERY_FINGERPRINT_REQUIRED");
+        validation = await provider.validateFinalizationRecovery({
+          issue,
+          resourceId: binding.resourceId,
+          fingerprintRef,
+          result,
+        });
+      } catch (error) {
+        validation = {
+          kind: "UNSAFE",
+          changedPaths: [],
+          reason: safeRecoveryText(
+            workspaceFailureMessage(error, "FINALIZATION_RECOVERY_VALIDATION_FAILED"),
+            400,
+          ),
+        };
+      }
+    }
+
+    const next = recordFinalizationRecoveryResult(
+      issue,
+      result,
+      validation.kind,
+      this.dependencies.now(),
+    );
+    const operation: PendingOperation | null = validation.kind === "UNCHANGED"
+      ? "FINALIZE"
+      : validation.kind === "CHANGED"
+        ? "CAPTURE_EVIDENCE"
+        : null;
+    const eventData = {
+      attemptId: issue.finalizationRecovery?.attemptId,
+      summary: result.summary,
+      diagnosis: result.diagnosis,
+      disposition: result.disposition,
+      validation: validation.kind,
+      changedPaths: safeRecoveryPaths(validation.changedPaths),
+      ...(validation.kind === "UNSAFE"
+        ? { reason: safeRecoveryText(validation.reason, 400) }
+        : {}),
+    };
+    this.dependencies.persistence.transaction(() => {
+      this.dependencies.store.transaction((transaction) => {
+        transaction.updateIssue(next, issue.revision, operation);
+        if (validation.kind === "UNSAFE") {
+          transaction.appendEvent(this.event(
+            issue.id,
+            "DELIVERY_FINALIZATION_RECOVERY_FAILED",
+            eventData,
+          ));
+          return;
+        }
+        transaction.appendEvent(this.event(
+          issue.id,
+          "DELIVERY_FINALIZATION_RECOVERY_COMPLETED",
+          eventData,
+        ));
+        transaction.appendEvent(this.event(
+          issue.id,
+          validation.kind === "UNCHANGED"
+            ? "DELIVERY_FINALIZATION_AUTO_RETRIED"
+            : "DELIVERY_FINALIZATION_REVALIDATION_REQUIRED",
+          eventData,
+        ));
+      });
+    });
   }
 
   private persistFinalizationFailure(
@@ -512,4 +613,26 @@ function safeDiagnosticText(value: string, maxLength: number): string {
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
     .slice(0, maxLength)
     .trim();
+}
+
+const recoverySecretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)\s*[=:]\s*)([^\s"']+)/gi;
+const recoveryBearerToken = /(bearer\s+)([^\s"']+)/gi;
+
+function safeRecoveryText(value: string, maxLength: number): string {
+  return safeDiagnosticText(value, maxLength)
+    .replace(recoverySecretAssignment, "$1[REDACTED]")
+    .replace(recoveryBearerToken, "$1[REDACTED]");
+}
+
+function safeRecoveryPaths(paths: string[]): string[] {
+  return paths.slice(0, 50).map((path) => safeRecoveryText(path, 1_000));
+}
+
+function safeRecoveryResult(result: FinalizationRecoveryResult): FinalizationRecoveryResult {
+  return {
+    summary: safeRecoveryText(result.summary, 4_000) || "Automatic finalization recovery finished",
+    diagnosis: safeRecoveryText(result.diagnosis, 4_000) || "No diagnosis was provided",
+    disposition: result.disposition,
+    affectedPaths: safeRecoveryPaths(result.affectedPaths),
+  };
 }
