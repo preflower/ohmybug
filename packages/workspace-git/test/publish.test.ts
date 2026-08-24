@@ -356,4 +356,160 @@ describe("GitWorkspace publish", () => {
 
     await expect(access(changedFile)).resolves.toBeUndefined();
   });
+
+  it("rejects hidden tracked changes inside a submodule before publishing", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const source = join(fixture.root, "publish-hidden-submodule-source");
+    await createCommittedRepository(source);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    await git(
+      acquired.projectPath,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      source,
+      "vendor/hidden-publish",
+    );
+    const submodule = join(acquired.projectPath, "vendor/hidden-publish");
+    await git(submodule, "update-index", "--assume-unchanged", "README.md");
+    const changedFile = join(submodule, "README.md");
+    await writeFile(changedFile, "hidden tracked change\n");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(access(changedFile)).resolves.toBeUndefined();
+  });
+
+  it("preserves untracked files hidden inside a submodule during release", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const source = join(fixture.root, "release-hidden-submodule-source");
+    await createCommittedRepository(source);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    await git(
+      acquired.projectPath,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      source,
+      "vendor/hidden-release",
+    );
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+    await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+    const submodule = join(acquired.projectPath, "vendor/hidden-release");
+    await git(submodule, "config", "status.showUntrackedFiles", "no");
+    const hiddenFile = join(submodule, "hidden-local-note.txt");
+    await writeFile(hiddenFile, "keep me\n");
+    expect(await git(
+      acquired.projectPath,
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--ignore-submodules=none",
+    )).toBe("");
+
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(access(hiddenFile)).resolves.toBeUndefined();
+  });
+
+  it("preserves hidden files inside nested submodules during release", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const leaf = join(fixture.root, "nested-leaf-source");
+    await createCommittedRepository(leaf);
+    const middle = join(fixture.root, "nested-middle-source");
+    await createCommittedRepository(middle);
+    await git(
+      middle,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      leaf,
+      "nested/leaf",
+    );
+    await git(middle, "commit", "-am", "add nested submodule");
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    await git(
+      acquired.projectPath,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      middle,
+      "vendor/middle",
+    );
+    await git(
+      acquired.projectPath,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "update",
+      "--init",
+      "--recursive",
+      "vendor/middle",
+    );
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+    await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+    const leafCheckout = join(acquired.projectPath, "vendor/middle/nested/leaf");
+    await git(leafCheckout, "config", "status.showUntrackedFiles", "no");
+    const hiddenFile = join(leafCheckout, "nested-local-note.txt");
+    await writeFile(hiddenFile, "keep nested file\n");
+    expect(await git(
+      acquired.projectPath,
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--ignore-submodules=none",
+    )).toBe("");
+
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(access(hiddenFile)).resolves.toBeUndefined();
+  });
 });
+
+async function createCommittedRepository(path: string): Promise<void> {
+  await mkdir(path);
+  await git(path, "init", "-b", "main");
+  await git(path, "config", "user.name", "Submodule Test");
+  await git(path, "config", "user.email", "submodule@ohmybug.local");
+  await writeFile(join(path, "README.md"), "declared submodule\n");
+  await git(path, "add", "README.md");
+  await git(path, "commit", "-m", "baseline");
+}

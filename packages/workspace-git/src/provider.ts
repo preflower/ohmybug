@@ -357,6 +357,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     }
 
     await assertNoHiddenIndexEntries(state.worktreePath);
+    await assertInitializedSubmodulesClean(state.worktreePath);
     const changes = await runGit(state.worktreePath, [
       "status",
       "--porcelain",
@@ -366,6 +367,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     if (changes) {
       await runGit(state.worktreePath, ["add", "-A"]);
       await assertNoUndeclaredGitlinks(state.worktreePath);
+      await assertInitializedSubmodulesClean(state.worktreePath);
       await runGit(state.worktreePath, [
         "commit",
         "-m",
@@ -400,14 +402,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       await runGit(state.repositoryPath, ["worktree", "prune"]);
       return;
     }
-    await assertNoHiddenIndexEntries(state.worktreePath);
-    const changes = await runGit(state.worktreePath, [
-      "status",
-      "--porcelain",
-      "--untracked-files=all",
-      "--ignore-submodules=none",
-    ]);
-    if (changes) throw new Error("GIT_WORKTREE_NOT_CLEAN");
+    await assertWorktreeAndSubmodulesClean(state.worktreePath);
     await runGit(state.repositoryPath, [
       "worktree",
       "remove",
@@ -469,15 +464,49 @@ async function assertNoHiddenIndexEntries(worktreePath: string): Promise<void> {
   }
 }
 
+async function assertInitializedSubmodulesClean(
+  worktreePath: string,
+  visited = new Set<string>(),
+): Promise<void> {
+  visited.add(await realpath(worktreePath));
+  for (const gitlink of await getIndexGitlinks(worktreePath)) {
+    const submodulePath = join(worktreePath, gitlink);
+    if (!(await pathExists(join(submodulePath, ".git")))) continue;
+    await assertWorktreeAndSubmodulesClean(submodulePath, visited);
+  }
+}
+
+async function assertWorktreeAndSubmodulesClean(
+  worktreePath: string,
+  visited = new Set<string>(),
+): Promise<void> {
+  const canonicalPath = await realpath(worktreePath);
+  if (visited.has(canonicalPath)) return;
+  visited.add(canonicalPath);
+  await assertNoHiddenIndexEntries(worktreePath);
+  const changes = await runGit(worktreePath, [
+    "status",
+    "--porcelain",
+    "--untracked-files=all",
+    "--ignore-submodules=none",
+  ]);
+  if (changes) throw new Error("GIT_WORKTREE_NOT_CLEAN");
+  await assertInitializedSubmodulesClean(worktreePath, visited);
+}
+
+async function getIndexGitlinks(worktreePath: string): Promise<string[]> {
+  const entries = await runGit(worktreePath, ["ls-files", "--stage", "-z"]);
+  return entries.split("\0").flatMap((entry) => {
+    const separator = entry.indexOf("\t");
+    if (separator === -1) return [];
+    const [mode, , stage] = entry.slice(0, separator).split(" ");
+    return mode === "160000" && stage === "0" ? [entry.slice(separator + 1)] : [];
+  });
+}
+
 async function assertNoUndeclaredGitlinks(worktreePath: string): Promise<void> {
   try {
-    const entries = await runGit(worktreePath, ["ls-files", "--stage", "-z"]);
-    const gitlinks = entries.split("\0").flatMap((entry) => {
-      const separator = entry.indexOf("\t");
-      if (separator === -1) return [];
-      const [mode, , stage] = entry.slice(0, separator).split(" ");
-      return mode === "160000" && stage === "0" ? [entry.slice(separator + 1)] : [];
-    });
+    const gitlinks = await getIndexGitlinks(worktreePath);
     if (gitlinks.length === 0) return;
 
     const mappings = await tryRunGit(
