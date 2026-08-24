@@ -284,7 +284,7 @@ describe("Codex repair", () => {
       options: {
         workingDirectory: repairing.projectPath,
         sandboxMode: "workspace-write",
-        networkAccessEnabled: false,
+        networkAccessEnabled: true,
       },
     });
     expect(client.prompts[0]).toContain("/private/intake/issue-1/2");

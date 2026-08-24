@@ -5,6 +5,11 @@ import type {
   RepairInput,
 } from "@oh-my-bug/core";
 
+import {
+  effectiveStageCapabilities,
+  type CodexAgentStage,
+} from "./stage-capabilities.js";
+
 export function assessmentPrompt(input: AssessInput): string {
   return [
     "Assess whether this Issue requests a software bug fix or a feature change. Do not modify files or Git state.",
@@ -77,15 +82,9 @@ function continuationPrompt(
 
 function capabilityPrompt(
   issue: Issue,
-  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE",
+  stage: CodexAgentStage,
 ): string[] {
-  const available = new Set(
-    issue.capabilityGrants?.map((grant) => grant.capability),
-  );
-  if (stage === "EVIDENCE") {
-    available.add("HOST_EXECUTION");
-    available.add("NETWORK_ACCESS");
-  }
+  const available = effectiveStageCapabilities(issue, stage);
   return [
     `Capabilities already available in this stage: ${JSON.stringify([...available])}`,
     "Use a practical lower-privilege alternative first.",
