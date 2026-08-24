@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../src/web/api/client.js";
@@ -47,9 +47,68 @@ const issue: IssueDto = {
   updatedAt: "2026-08-19T09:10:00.000Z",
 };
 
+const permissionRequiredIssue: IssueDto = {
+  ...issue,
+  status: "PERMISSION_REQUIRED",
+  resolution: undefined,
+  revision: 10,
+  pendingCapabilityRequest: {
+    id: "request-1",
+    operation: "REPAIR",
+    stage: "REPAIR",
+    resumeStatus: "REPAIRING",
+    capabilities: ["HOST_EXECUTION"],
+    reason: "Launch Electron acceptance",
+    blockedCommand: "pnpm test:e2e:electron",
+    requestedAt: "2026-08-24T08:00:00.000Z",
+  },
+};
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("Issue detail", () => {
+  it("shows an inline host permission request with grant and cancel actions", async () => {
+    const onGrantCapabilities = vi.fn(async () => undefined);
+    const onCancel = vi.fn(async () => undefined);
+    render(<IssueDetail
+      issue={permissionRequiredIssue}
+      onRefresh={async () => undefined}
+      onGrantCapabilities={onGrantCapabilities}
+      onCancel={onCancel}
+    />);
+
+    expect(screen.getAllByText("权限不足").length).toBeGreaterThan(0);
+    expect(screen.getByText(/不受工作区沙箱限制的宿主命令执行权限/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "暂不授权" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "授权并继续" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "取消 Issue" })).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消 Agent 运行" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "授权并继续" }));
+    expect(await screen.findByRole("dialog", { name: "授权宿主执行权限？" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "确认授权并继续" }));
+    await waitFor(() => expect(onGrantCapabilities).toHaveBeenCalledWith(
+      permissionRequiredIssue.revision,
+      "request-1",
+    ));
+  });
+
+  it("keeps the request actionable when a stale grant is rejected", async () => {
+    render(<IssueDetail
+      issue={permissionRequiredIssue}
+      onRefresh={async () => undefined}
+      onGrantCapabilities={async () => { throw new Error("CONCURRENT_UPDATE"); }}
+      onCancel={async () => undefined}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "授权并继续" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认授权并继续" }));
+
+    expect(await screen.findByText("CONCURRENT_UPDATE")).toBeVisible();
+    expect(screen.getByRole("button", { name: "授权并继续" })).toBeEnabled();
+  });
+
   it("shows an implemented Feature with its implementation plan", () => {
     render(<IssueDetail issue={{
       ...issue,

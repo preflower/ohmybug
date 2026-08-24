@@ -1336,6 +1336,125 @@ a:focus-visible {
   grid-column: 1 / -1;
 }
 
+.capability-request-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 16px;
+}
+
+.capability-request-panel > header {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+}
+
+.capability-request-panel > header > svg {
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+.capability-request-panel > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.capability-request-panel > header span {
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 560;
+}
+
+.capability-request-panel h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 560;
+}
+
+.capability-request-panel > p {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.capability-request-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.capability-request-list li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.capability-request-list svg {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.capability-request-list div {
+  display: grid;
+  gap: 2px;
+}
+
+.capability-request-list strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 540;
+}
+
+.capability-request-list span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.capability-request-meta {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  border-radius: 6px;
+  background: var(--canvas);
+  padding: 8px 10px;
+}
+
+.capability-request-meta > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.capability-request-meta dt,
+.capability-request-meta dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.capability-request-meta code {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.capability-request-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .approval-meta {
   display: flex;
   align-items: center;
@@ -2738,6 +2857,11 @@ a:focus-visible {
 
   .theme-selector {
     justify-items: start;
+  }
+
+  .capability-request-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 
   .project-settings-tabs {

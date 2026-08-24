@@ -18,6 +18,7 @@ import {
   DialogTrigger,
 } from "../components/ui/dialog.js";
 import { ApprovalPanel } from "./approval-panel.js";
+import { CapabilityRequestPanel } from "./capability-request-panel.js";
 import { IssueStatusBadge } from "./issue-status.js";
 
 interface IssueDetailProps {
@@ -33,6 +34,7 @@ interface IssueDetailProps {
   onCancel?: () => Promise<void>;
   onRetry?: () => Promise<void>;
   onRebuildSession?: () => Promise<void>;
+  onGrantCapabilities?: (expectedRevision: number, requestId: string) => Promise<void>;
 }
 
 type VisualEvidence = NonNullable<NonNullable<IssueDto["repair"]>["delivery"]>["evidence"][number];
@@ -72,6 +74,7 @@ export function IssueDetail({
   onCancel,
   onRetry,
   onRebuildSession,
+  onGrantCapabilities,
 }: IssueDetailProps) {
   const assessment = issue.assessment;
   const delivery = issue.repair?.delivery;
@@ -84,7 +87,10 @@ export function IssueDetail({
   const [rebuildError, setRebuildError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
-  const canCancel = ["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE", "EVIDENCE_CHECK"].includes(issue.status);
+  const capabilityRequest = issue.status === "PERMISSION_REQUIRED"
+    ? issue.pendingCapabilityRequest
+    : undefined;
+  const canCancel = ["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE", "EVIDENCE_CHECK", "PERMISSION_REQUIRED"].includes(issue.status);
   const compactAssessment = issue.status === "ASSESSMENT_REVIEW"
     && Boolean(assessment)
     && (assessment?.verdict === "BUG" || assessment?.verdict === "FEATURE")
@@ -123,7 +129,13 @@ export function IssueDetail({
         {issue.status === "EVIDENCE_FAILED" && !retrying ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />证据采集失败；实现改动和工作目录已保留。</div> : issue.lastFailure && !retrying ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />{failureMessage(issue.lastFailure)}</div> : null}
       </header>
 
-      {canCancel && onCancel ? <section aria-label="运行控制" className="failure-actions"><div><strong>Agent 正在运行</strong><span>取消会终止当前回合，并将 Issue 标记为已取消。</span></div>{cancelError ? <Alert className="form-error" variant="destructive"><AlertDescription>{cancelError}</AlertDescription></Alert> : null}<Button disabled={canceling} type="button" variant="secondary" onClick={() => { setCanceling(true); setCancelError(""); void refreshAfter(onCancel).catch((caught) => setCancelError(caught instanceof Error ? caught.message : "取消失败")).finally(() => setCanceling(false)); }}><Square aria-hidden="true" size={12} />{canceling ? "取消中…" : "取消 Agent 运行"}</Button></section> : null}
+      {capabilityRequest && onGrantCapabilities && onCancel ? <CapabilityRequestPanel
+        request={capabilityRequest}
+        onGrant={() => refreshAfter(() => onGrantCapabilities(issue.revision, capabilityRequest.id))}
+        onCancel={() => refreshAfter(onCancel)}
+      /> : null}
+
+      {canCancel && !capabilityRequest && onCancel ? <section aria-label="运行控制" className="failure-actions"><div><strong>Agent 正在运行</strong><span>取消会终止当前回合，并将 Issue 标记为已取消。</span></div>{cancelError ? <Alert className="form-error" variant="destructive"><AlertDescription>{cancelError}</AlertDescription></Alert> : null}<Button disabled={canceling} type="button" variant="secondary" onClick={() => { setCanceling(true); setCancelError(""); void refreshAfter(onCancel).catch((caught) => setCancelError(caught instanceof Error ? caught.message : "取消失败")).finally(() => setCanceling(false)); }}><Square aria-hidden="true" size={12} />{canceling ? "取消中…" : "取消 Agent 运行"}</Button></section> : null}
 
       {retryLabel && onRetry ? <section aria-label="失败恢复" className="failure-actions"><div><strong>{retryLabel}</strong><span>{issue.status === "EVIDENCE_FAILED" ? "实现改动和工作目录已保留，只会重新采集证据。" : "Issue 上下文和已确认内容会保留，并从可恢复阶段继续。"}</span></div>{retryError ? <Alert className="form-error" variant="destructive"><AlertDescription>{retryError}</AlertDescription></Alert> : null}<Button disabled={retrying} type="button" variant="secondary" onClick={() => { setRetrying(true); setRetryError(""); void refreshAfter(onRetry).catch((caught) => setRetryError(caught instanceof Error ? caught.message : "重试失败")).finally(() => setRetrying(false)); }}><RotateCcw size={13} />{retrying ? "重试中…" : retryLabel}</Button></section> : null}
 

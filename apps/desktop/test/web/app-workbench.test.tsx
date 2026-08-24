@@ -59,6 +59,45 @@ afterEach(() => {
 });
 
 describe("control center workbench", () => {
+  it("grants the selected Issue capability request with its revision and request ID", async () => {
+    const permissionRequiredIssue: IssueDto = {
+      ...issue,
+      status: "PERMISSION_REQUIRED",
+      revision: 10,
+      pendingCapabilityRequest: {
+        id: "request-1",
+        operation: "REPAIR",
+        stage: "REPAIR",
+        resumeStatus: "REPAIRING",
+        capabilities: ["HOST_EXECUTION"],
+        reason: "Launch Electron acceptance",
+        requestedAt: "2026-08-24T08:00:00.000Z",
+      },
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([permissionRequiredIssue]);
+    vi.spyOn(api, "issue").mockResolvedValue(permissionRequiredIssue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    const grant = vi.spyOn(api, "grantIssueCapabilities").mockResolvedValue({
+      ...permissionRequiredIssue,
+      status: "REPAIRING",
+      pendingCapabilityRequest: undefined,
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "授权并继续" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认授权并继续" }));
+
+    await waitFor(() => expect(grant).toHaveBeenCalledWith(
+      permissionRequiredIssue.id,
+      permissionRequiredIssue.revision,
+      "request-1",
+    ));
+  });
+
   it("orders the Issue list newest first and selects the newest Issue", async () => {
     const newestIssue: IssueDto = {
       ...issue,
