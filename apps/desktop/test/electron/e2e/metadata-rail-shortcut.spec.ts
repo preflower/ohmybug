@@ -28,10 +28,10 @@ test("toggles the Issue details rail with the documented keyboard shortcut", asy
     const hideAction = desktop.page.getByRole("button", { name: "隐藏详情栏" });
     await expect(hideAction).toHaveAttribute(
       "aria-keyshortcuts",
-      "Control+Shift+B Meta+Shift+B",
+      "Control+B Meta+B",
     );
     await hideAction.hover();
-    await expect(desktop.page.getByRole("tooltip")).toContainText("Shift");
+    await expect(desktop.page.getByRole("tooltip")).toHaveText("隐藏详情栏");
 
     await desktop.page.getByRole("button", { name: "新建 Issue" }).click();
     const focusedInput = desktop.page.getByRole("dialog", { name: "新建 Issue" })
@@ -42,17 +42,20 @@ test("toggles the Issue details rail with the documented keyboard shortcut", asy
     await desktop.page.keyboard.press("Escape");
     await expect(desktop.page.getByRole("dialog", { name: "新建 Issue" })).toHaveCount(0);
     await hideAction.hover();
-    await expect(desktop.page.getByRole("tooltip")).toContainText("Shift");
+    await expect(desktop.page.getByRole("tooltip")).toHaveText("隐藏详情栏");
+
+    await desktop.page.keyboard.press(oldShortcut());
+    await expect(desktop.page.getByTestId("issue-metadata-rail")).toBeVisible();
 
     await desktop.page.keyboard.press(shortcut());
     await expect(desktop.page.getByTestId("issue-metadata-rail")).toHaveCount(0);
     const showAction = desktop.page.getByRole("button", { name: "显示详情栏" });
     await expect(showAction).toHaveAttribute(
       "aria-keyshortcuts",
-      "Control+Shift+B Meta+Shift+B",
+      "Control+B Meta+B",
     );
     await showAction.hover();
-    await expect(desktop.page.getByRole("tooltip")).toContainText("Shift");
+    await expect(desktop.page.getByRole("tooltip")).toHaveText("显示详情栏");
 
     const evidenceDir = process.env.OH_MY_BUG_EVIDENCE_DIR
       ?? resolve("test-results", "electron-acceptance");
@@ -65,7 +68,7 @@ test("toggles the Issue details rail with the documented keyboard shortcut", asy
     await desktop.page.keyboard.press(shortcut());
     await expect(desktop.page.getByTestId("issue-metadata-rail")).toBeVisible();
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).hover();
-    await expect(desktop.page.getByRole("tooltip")).toContainText("Shift");
+    await expect(desktop.page.getByRole("tooltip")).toHaveText("隐藏详情栏");
     await desktop.page.screenshot({
       path: resolve(evidenceDir, "metadata-rail-shortcut-restored.png"),
       fullPage: true,
@@ -76,5 +79,9 @@ test("toggles the Issue details rail with the documented keyboard shortcut", asy
 });
 
 function shortcut(): string {
+  return process.platform === "darwin" ? "Meta+B" : "Control+B";
+}
+
+function oldShortcut(): string {
   return process.platform === "darwin" ? "Meta+Shift+B" : "Control+Shift+B";
 }

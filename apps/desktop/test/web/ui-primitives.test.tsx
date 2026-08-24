@@ -179,6 +179,15 @@ describe("shadcn UI primitives", () => {
     );
 
     fireEvent.focus(screen.getByRole("button", { name: "关闭" }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("关闭");
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("关闭");
+    expect(tooltip).toHaveClass(
+      "bg-foreground",
+      "text-background",
+      "rounded-md",
+      "px-2",
+      "py-1.5",
+    );
+    expect(tooltip).not.toHaveClass("border", "border-border");
   });
 });

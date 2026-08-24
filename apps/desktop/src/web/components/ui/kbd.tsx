@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import type { KeyboardShortcut } from "../../keyboard/shortcuts.js";
+import { shortcutKeys, shortcutText } from "../../keyboard/shortcuts.js";
 import { cn } from "../../lib/utils.js";
 
 function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
@@ -26,21 +28,30 @@ function KbdGroup({ className, ...props }: React.ComponentProps<"kbd">) {
 }
 
 function KbdShortcut({
+  accessible = false,
   className,
-  keyName,
-  shift = false,
+  platform,
+  shortcut,
   ...props
-}: React.ComponentProps<"kbd"> & { keyName: string; shift?: boolean }) {
-  const modifier = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
-    ? "⌘"
-    : "Ctrl";
-
+}: Omit<React.ComponentProps<"kbd">, "children"> & {
+  accessible?: boolean;
+  platform?: string;
+  shortcut: KeyboardShortcut;
+}) {
+  const keys = shortcutKeys(shortcut, platform);
   return (
-    <KbdGroup aria-hidden="true" className={className} {...props}>
-      <Kbd>{modifier}</Kbd>
-      <span data-slot="kbd-separator">+</span>
-      {shift ? <><Kbd>Shift</Kbd><span data-slot="kbd-separator">+</span></> : null}
-      <Kbd>{keyName}</Kbd>
+    <KbdGroup
+      aria-hidden={accessible ? undefined : "true"}
+      aria-label={accessible ? shortcutText(shortcut, platform) : undefined}
+      className={className}
+      {...props}
+    >
+      {keys.map((key, index) => (
+        <React.Fragment key={`${shortcut.id}-${key}-${index}`}>
+          {index > 0 ? <span data-slot="kbd-separator">+</span> : null}
+          <Kbd>{key}</Kbd>
+        </React.Fragment>
+      ))}
     </KbdGroup>
   );
 }
