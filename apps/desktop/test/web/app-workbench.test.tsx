@@ -619,6 +619,83 @@ describe("control center workbench", () => {
     expect(within(railWithoutBranch).queryByText("Worktree")).not.toBeInTheDocument();
   });
 
+  it("restores a completed branch from the durable Issue event", async () => {
+    const acceptanceReview: IssueDto = {
+      ...issue,
+      status: "ACCEPTANCE_REVIEW",
+      revision: 10,
+      repair: {
+        iteration: 1,
+        deliveryDraft: {
+          summary: "Checkout recovery implemented",
+          repairIteration: 1,
+          implementationCompletedAt: "2026-08-24T09:59:00.000Z",
+        },
+        delivery: {
+          summary: "Checkout recovery implemented",
+          evidence: [],
+        },
+      },
+    };
+    const finalizing: IssueDto = {
+      ...acceptanceReview,
+      status: "FINALIZING",
+      resolution: "FIXED",
+      revision: 11,
+    };
+    let snapshot = acceptanceReview;
+    let listener: ((events: AgentEventDto[], cursor: number) => void) | undefined;
+
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([acceptanceReview]);
+    vi.spyOn(api, "issue").mockImplementation(async () => snapshot);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "rejectDelivery").mockResolvedValue(acceptanceReview);
+    vi.spyOn(api, "approveDelivery").mockImplementation(async () => {
+      snapshot = finalizing;
+      return { issue: finalizing };
+    });
+    vi.spyOn(api, "subscribeIssueEvents").mockImplementation(
+      (_id, _cursor, next) => {
+        listener = next;
+        return () => undefined;
+      },
+    );
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "批准验收并完成 Issue",
+    }));
+    expect(await screen.findAllByText("交付处理中")).not.toHaveLength(0);
+    expect(screen.queryByRole("region", { name: "交付分支" })).not.toBeInTheDocument();
+    expect(listener).toBeDefined();
+
+    act(() => listener?.([{
+      id: "event-completed",
+      issueId: acceptanceReview.id,
+      sequence: 20,
+      type: "ISSUE_COMPLETED",
+      actor: "SYSTEM",
+      data: {
+        branch: {
+          name: "ohmybug/chk-1",
+          commit: "abcdef123456",
+          remote: "origin",
+        },
+      },
+      occurredAt: "2026-08-24T10:01:00.000Z",
+    }], 20));
+
+    const branch = await screen.findByRole("region", { name: "交付分支" });
+    expect(within(branch).getByText("ohmybug/chk-1")).toBeVisible();
+    expect(within(branch).getByText("abcdef1")).toBeVisible();
+    expect(within(branch).getByText("origin")).toBeVisible();
+  });
+
   it("hides cached workspace metadata while the same Issue revision refreshes", async () => {
     vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
     vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);

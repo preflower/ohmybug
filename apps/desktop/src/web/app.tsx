@@ -23,6 +23,7 @@ import { NewIssueDialog } from "./dialogs/new-issue-dialog.js";
 import { IssueDetail } from "./issues/issue-detail.js";
 import { IssueStatusBadge } from "./issues/issue-status.js";
 import { AgentActivity } from "./issues/agent-activity.js";
+import { completedBranchFromEvents } from "./issues/completed-branch.js";
 import { newestIssuesFirst } from "./issues/issue-order.js";
 import { useIssueEvents } from "./issues/use-issue-events.js";
 import { useIssueListUpdates } from "./issues/use-issue-list-updates.js";
@@ -374,6 +375,10 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
   });
   useIssueListUpdates(issues, selectedId, onUpdated);
   const events = useIssueEvents(selectedId, onRefresh);
+  const durableBranch = completedBranchFromEvents(events);
+  const selectedBranch = selected
+    ? branches[selected.id] ?? durableBranch
+    : undefined;
   const active = selected ? ["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE", "EVIDENCE_CHECK"].includes(selected.status) : false;
   const [metadataOpen, setMetadataOpen] = useState(true);
   useEffect(() => {
@@ -404,7 +409,7 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
       {issues.length ? <div className="issue-list">{issues.map((issue) => <Button aria-current={issue.id === selectedId ? "true" : undefined} className="issue-row h-auto w-full" key={issue.id} type="button" variant="ghost" onClick={() => onSelect(issue.id)}><span className="issue-row-top"><code>{issue.identifier}</code><IssueStatusBadge status={issue.status} /></span><strong>{issue.title}</strong><small>{issue.inputs.at(-1)?.integration ?? "manual"} · {new Date(issue.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small></Button>)}</div> : <div className="empty-list"><div><CircleDot aria-hidden="true" size={18} strokeWidth={1.5} /><h2>暂无 Issue</h2><p>手动创建，或为项目连接 Sentry 与 DingTalk。</p></div></div>}
     </section>
     <section className={`detail-pane ${selected ? "detail-pane-scroll" : ""}`} aria-label={selected ? "Issue 详情" : "开始使用"}>
-      {selected ? <><div className="mobile-detail-toolbar"><Button type="button" variant="ghost" onClick={onDeselect}><ChevronLeft aria-hidden="true" size={15} />返回 Issue 列表</Button></div><IssueDetail branch={branches[selected.id]} issue={selected} onRefresh={onRefresh} onApproveAssessment={(input) => action(api.approveAssessment(selected.id, input))} onConfirmNotABug={(reference) => action(api.confirmNotABug(selected.id, reference))} onConfirmDuplicate={(reference, duplicateOf) => action(api.confirmDuplicate(selected.id, reference, duplicateOf))} onRequestReassessment={(feedback) => action(api.requestReassessment(selected.id, feedback))} onRejectDelivery={(feedback) => action(api.rejectDelivery(selected.id, feedback))} onApproveDelivery={() => approveDelivery(selected)} onCancel={() => action(api.cancel(selected.id))} onRetry={() => action(api.retry(selected.id))} onRebuildSession={() => action(api.rebuildSession(selected.id, selected.revision))} onGrantCapabilities={(expectedRevision, requestId) => action(api.grantIssueCapabilities(selected.id, expectedRevision, requestId))} /></> : <Welcome />}
+      {selected ? <><div className="mobile-detail-toolbar"><Button type="button" variant="ghost" onClick={onDeselect}><ChevronLeft aria-hidden="true" size={15} />返回 Issue 列表</Button></div><IssueDetail branch={selectedBranch} issue={selected} onRefresh={onRefresh} onApproveAssessment={(input) => action(api.approveAssessment(selected.id, input))} onConfirmNotABug={(reference) => action(api.confirmNotABug(selected.id, reference))} onConfirmDuplicate={(reference, duplicateOf) => action(api.confirmDuplicate(selected.id, reference, duplicateOf))} onRequestReassessment={(feedback) => action(api.requestReassessment(selected.id, feedback))} onRejectDelivery={(feedback) => action(api.rejectDelivery(selected.id, feedback))} onApproveDelivery={() => approveDelivery(selected)} onCancel={() => action(api.cancel(selected.id))} onRetry={() => action(api.retry(selected.id))} onRebuildSession={() => action(api.rebuildSession(selected.id, selected.revision))} onGrantCapabilities={(expectedRevision, requestId) => action(api.grantIssueCapabilities(selected.id, expectedRevision, requestId))} /></> : <Welcome />}
     </section>
     {selected && metadataOpen ? <IssueMetadataRail active={active} events={events} issue={selected} project={selectedProject} workspace={workspaceInfo} onClose={() => setMetadataOpen(false)} /> : null}
     </section>
