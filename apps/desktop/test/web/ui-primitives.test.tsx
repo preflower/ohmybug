@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "../../src/web/components/ui/select.js";
 import { Separator } from "../../src/web/components/ui/separator.js";
+import { Switch } from "../../src/web/components/ui/switch.js";
 import { Textarea } from "../../src/web/components/ui/textarea.js";
 import {
   Tooltip,
@@ -106,6 +107,37 @@ describe("shadcn UI primitives", () => {
     const checkbox = screen.getByRole("checkbox", { name: "启用" });
     fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
+  });
+
+  it("uses the registered primary color for switch checked state", () => {
+    render(
+      <>
+        <Switch aria-label="自动合并" defaultChecked />
+        <Switch aria-label="远程推送" disabled />
+      </>,
+    );
+
+    const checked = screen.getByRole("switch", { name: "自动合并" });
+    expect(checked).toBeChecked();
+    expect(checked).toHaveAttribute("data-slot", "switch");
+    expect(checked).toHaveClass("data-checked:bg-primary");
+    expect(checked).not.toHaveClass("data-checked:bg-accent");
+
+    const disabled = screen.getByRole("switch", { name: "远程推送" });
+    expect(disabled).not.toBeChecked();
+    expect(disabled).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(disabled);
+    expect(disabled).not.toBeChecked();
+  });
+
+  it("centers the switch thumb with symmetric track insets", () => {
+    render(<Switch aria-label="自动合并" defaultChecked />);
+
+    const track = screen.getByRole("switch", { name: "自动合并" });
+    const thumb = track.firstElementChild;
+    expect(track).toHaveClass("items-center");
+    expect(thumb).toHaveClass("translate-x-px");
+    expect(thumb).toHaveClass("data-checked:translate-x-[17px]");
   });
 
   it("closes a dialog with Escape and restores trigger focus", async () => {
