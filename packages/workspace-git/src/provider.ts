@@ -394,7 +394,14 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       await runGit(state.repositoryPath, ["worktree", "prune"]);
       return;
     }
-    await runGit(state.repositoryPath, ["worktree", "remove", state.worktreePath]);
+    const changes = await runGit(state.worktreePath, ["status", "--porcelain"]);
+    if (changes) throw new Error("GIT_WORKTREE_NOT_CLEAN");
+    await runGit(state.repositoryPath, [
+      "worktree",
+      "remove",
+      "--force",
+      state.worktreePath,
+    ]);
   }
 
   private async restoreWorktree(state: GitWorkspaceState): Promise<void> {

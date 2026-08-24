@@ -75,8 +75,10 @@ describe("GitWorkspace publish", () => {
 
     const branch = await provider.publish({ issue: approved, resourceId: "git:issue-1" });
 
-    expect(branch.name).toBe("ohmybug/omb-1");
+    expect(branch).toMatchObject({ name: "ohmybug/omb-1" });
     expect(await git(acquired.projectPath, "status", "--porcelain")).toBe("");
+    await provider.release({ issue: approved, resourceId: "git:issue-1" });
+    await expect(access(acquired.projectPath)).rejects.toThrow();
   });
 
   it("commits only when publish is called and returns one stable local branch", async () => {
@@ -163,5 +165,31 @@ describe("GitWorkspace publish", () => {
     await expect(access(acquired.projectPath)).rejects.toThrow();
     expect(await git(fixture.repository, "show-ref", "--verify", "refs/heads/ohmybug/omb-1"))
       .toContain("refs/heads/ohmybug/omb-1");
+  });
+
+  it.each([
+    ["tracked", async (path: string) => writeFile(join(path, "README.md"), "changed\n")],
+    ["untracked", async (path: string) => writeFile(join(path, "local-note.txt"), "keep me\n")],
+  ])("preserves a worktree with %s changes during release", async (_kind, change) => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+    await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+    await change(acquired.projectPath);
+
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(access(acquired.projectPath)).resolves.toBeUndefined();
   });
 });
