@@ -339,7 +339,10 @@ describe("Workspace finalization", () => {
 
     expect(fixture.store.getIssue(created.issue.id)).toMatchObject({
       status: "FINALIZATION_FAILED",
-      finalizationRecovery: { automaticAttempts: 1 },
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        diagnostic: expect.objectContaining({ code: "GIT_COMMAND_FAILED:add" }),
+      },
     });
     expect(fixture.store.listPendingOperations()).toEqual([]);
     expect(publishAttempts).toBe(2);

@@ -290,39 +290,38 @@ export class WorkspaceCoordinator {
     const result = safeRecoveryResult(rawResult);
     const binding = this.dependencies.persistence.getBinding(issue.id);
     let validation: WorkspaceFinalizationRecoveryValidation;
-    if (result.disposition === "UNSAFE") {
-      validation = {
-        kind: "UNSAFE",
-        changedPaths: result.affectedPaths,
-        reason: "FINALIZATION_RECOVERY_AGENT_UNSAFE",
-      };
-    } else {
-      try {
-        if (!binding || binding.status !== "READY") {
-          throw new Error("WORKSPACE_BINDING_NOT_READY");
-        }
-        const provider = this.dependencies.registry.create(binding.providerId, {});
-        if (!provider.validateFinalizationRecovery) {
-          throw new Error("FINALIZATION_RECOVERY_UNSUPPORTED");
-        }
-        const fingerprintRef = issue.finalizationRecovery?.fingerprintRef;
-        if (!fingerprintRef) throw new Error("FINALIZATION_RECOVERY_FINGERPRINT_REQUIRED");
-        validation = await provider.validateFinalizationRecovery({
-          issue,
-          resourceId: binding.resourceId,
-          fingerprintRef,
-          result,
-        });
-      } catch (error) {
+    try {
+      if (!binding || binding.status !== "READY") {
+        throw new Error("WORKSPACE_BINDING_NOT_READY");
+      }
+      const provider = this.dependencies.registry.create(binding.providerId, {});
+      if (!provider.validateFinalizationRecovery) {
+        throw new Error("FINALIZATION_RECOVERY_UNSUPPORTED");
+      }
+      const fingerprintRef = issue.finalizationRecovery?.fingerprintRef;
+      if (!fingerprintRef) throw new Error("FINALIZATION_RECOVERY_FINGERPRINT_REQUIRED");
+      validation = await provider.validateFinalizationRecovery({
+        issue,
+        resourceId: binding.resourceId,
+        fingerprintRef,
+        result,
+      });
+      if (validation.kind === "UNCHANGED" && result.disposition === "UNSAFE") {
         validation = {
           kind: "UNSAFE",
-          changedPaths: [],
-          reason: safeRecoveryText(
-            workspaceFailureMessage(error, "FINALIZATION_RECOVERY_VALIDATION_FAILED"),
-            400,
-          ),
+          changedPaths: result.affectedPaths,
+          reason: "FINALIZATION_RECOVERY_AGENT_UNSAFE",
         };
       }
+    } catch (error) {
+      validation = {
+        kind: "UNSAFE",
+        changedPaths: [],
+        reason: safeRecoveryText(
+          workspaceFailureMessage(error, "FINALIZATION_RECOVERY_VALIDATION_FAILED"),
+          400,
+        ),
+      };
     }
 
     const next = recordFinalizationRecoveryResult(
@@ -381,11 +380,17 @@ export class WorkspaceCoordinator {
     reason: string,
     cause?: unknown,
   ): void {
-    const failed = transitionIssue(
-      issue,
-      "FINALIZATION_ERRORED",
-      this.dependencies.now(),
-    );
+    const failed = {
+      ...transitionIssue(
+        issue,
+        "FINALIZATION_ERRORED",
+        this.dependencies.now(),
+      ),
+      finalizationRecovery: {
+        ...(issue.finalizationRecovery ?? { automaticAttempts: 0 as const }),
+        diagnostic,
+      },
+    };
     this.dependencies.persistence.transaction(() => {
       this.dependencies.store.transaction((transaction) => {
         transaction.updateIssue(failed, issue.revision, null);

@@ -27,7 +27,11 @@ export class GitCommandError extends Error {
     this.command = command;
     this.args = [...input.args];
     this.exitCode = numericProperty(input.cause, "code");
-    this.stderr = sanitizeStderr(stringProperty(input.cause, "stderr"), input.cwd);
+    this.stderr = sanitizeGitDiagnosticText(
+      stringProperty(input.cause, "stderr"),
+      input.cwd,
+      8_000,
+    );
   }
 }
 
@@ -103,12 +107,25 @@ function stringProperty(value: unknown, key: string): string {
   return property instanceof Uint8Array ? Buffer.from(property).toString("utf8") : "";
 }
 
-function sanitizeStderr(stderr: string, cwd: string): string {
-  return stripControlCharacters(stderr
+const secretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)\s*[=:]\s*)([^\s"'&]+)/gi;
+const bearerToken = /(bearer\s+)([^\s"']+)/gi;
+const posixAbsolutePath = /(^|[\s"'(])\/(?:Users|home|private|tmp|var|Volumes|opt)\/[^\s"'<>]*/gm;
+const windowsAbsolutePath = /(^|[\s"'(])[A-Za-z]:[\\/][^\s"'<>]*/gm;
+
+export function sanitizeGitDiagnosticText(
+  value: string,
+  cwd: string,
+  maxLength: number,
+): string {
+  return stripControlCharacters(value
     .replaceAll(cwd, "<workspace>")
     .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1")
+    .replace(secretAssignment, "$1[REDACTED]")
+    .replace(bearerToken, "$1[REDACTED]")
+    .replace(posixAbsolutePath, "$1<absolute-path>")
+    .replace(windowsAbsolutePath, "$1<absolute-path>")
   )
-    .slice(0, 8_000)
+    .slice(0, maxLength)
     .trim();
 }
 

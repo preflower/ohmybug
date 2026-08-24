@@ -105,6 +105,28 @@ describe("automatic Git finalization recovery", () => {
       .toContain("DELIVERY_FINALIZATION_REVALIDATION_REQUIRED");
   });
 
+  it("requires evidence when the AI changes source and then throws", async () => {
+    const fixture = await createGitFixture(async (input) => {
+      await rm(fixturePath(input, "_tmp_fixture"), { recursive: true, force: true });
+      await rm(generatedCapturePath(input), { recursive: true, force: true });
+      await appendFile(join(input.issue.projectPath!, "approved.txt"), "\npartial AI edit\n");
+      throw new Error("Agent failed after editing source");
+    });
+
+    fixture.fixture.commands.approveDelivery(fixture.issueId);
+    await fixture.worker.drainOne();
+    await fixture.worker.drainOne();
+
+    expect(fixture.fixture.store.getIssue(fixture.issueId)).toMatchObject({
+      status: "EVIDENCE_CAPTURE",
+      repair: { iteration: 2 },
+    });
+    expect(fixture.fixture.store.listPendingOperations().map((pending) => pending.operation))
+      .toEqual(["CAPTURE_EVIDENCE"]);
+    expect(fixture.fixture.store.readEvents(fixture.issueId).map((event) => event.type))
+      .toContain("DELIVERY_FINALIZATION_REVALIDATION_REQUIRED");
+  });
+
   it("stops after one attempt when generated pollution remains", async () => {
     const fixture = await createGitFixture(async () => recovered([]));
 

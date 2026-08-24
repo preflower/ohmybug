@@ -184,8 +184,19 @@ export function IssueDetail({
           <div>
             <strong>交付失败，待重试</strong>
             <span>代码和工作目录已保留，可安全重试交付收尾。</span>
+            {issue.finalizationRecovery?.automaticAttempts === 1 ? (
+              <span>自动恢复尝试 1/1 已用尽</span>
+            ) : null}
             {issue.finalizationRecovery?.summary ? (
               <span>自动恢复结果：{issue.finalizationRecovery.summary}</span>
+            ) : null}
+            {issue.finalizationRecovery?.diagnostic ? (
+              <>
+                <code>
+                  {issue.finalizationRecovery.diagnostic.step} · {issue.finalizationRecovery.diagnostic.code}
+                </code>
+                <span>{issue.finalizationRecovery.diagnostic.message}</span>
+              </>
             ) : null}
           </div>
           {finalizationRetryError ? (

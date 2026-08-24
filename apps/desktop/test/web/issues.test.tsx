@@ -424,6 +424,13 @@ describe("Issue detail", () => {
           attemptId: "attempt-1",
           fingerprintRef: "fingerprint-1",
           summary: "未找到可安全自动修复的路径",
+          diagnostic: {
+            providerId: "git",
+            step: "commit",
+            code: "GIT_COMMAND_FAILED:commit",
+            message: "提交钩子拒绝了交付",
+            relatedPaths: [],
+          },
         },
       }}
       onApproveDelivery={onApproveDelivery}
@@ -433,7 +440,10 @@ describe("Issue detail", () => {
     const recovery = within(screen.getByRole("region", { name: "交付恢复" }));
     expect(recovery.getByText("交付失败，待重试")).toBeVisible();
     expect(recovery.getByText("代码和工作目录已保留，可安全重试交付收尾。")).toBeVisible();
+    expect(recovery.getByText("自动恢复尝试 1/1 已用尽")).toBeVisible();
     expect(recovery.getByText("自动恢复结果：未找到可安全自动修复的路径")).toBeVisible();
+    expect(recovery.getByText("commit · GIT_COMMAND_FAILED:commit")).toBeVisible();
+    expect(recovery.getByText("提交钩子拒绝了交付")).toBeVisible();
     await act(async () => {
       fireEvent.click(recovery.getByRole("button", { name: "重试交付" }));
     });

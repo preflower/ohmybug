@@ -4,6 +4,33 @@ import { GitCommandError, runGit } from "../src/git-client.js";
 import { createGitFixture, git } from "./helpers.js";
 
 describe("Git command execution", () => {
+  it("redacts credentials, tokens, and unrelated absolute paths from stderr", () => {
+    const failure = new GitCommandError({
+      cwd: "/workspace/issue",
+      args: ["commit"],
+      cause: {
+        code: 1,
+        stderr: [
+          "token=private-token",
+          "Authorization: Bearer private-bearer",
+          "https://user:password@example.com/repository.git?access_token=query-secret",
+          "/Users/alice/private/secrets.txt",
+          "/workspace/issue/generated/file.txt",
+        ].join("\n"),
+      },
+    });
+
+    expect(failure.stderr).not.toContain("private-token");
+    expect(failure.stderr).not.toContain("private-bearer");
+    expect(failure.stderr).not.toContain("password");
+    expect(failure.stderr).not.toContain("query-secret");
+    expect(failure.stderr).not.toContain("/Users/alice");
+    expect(failure.stderr).not.toContain("/workspace/issue");
+    expect(failure.stderr).toContain("token=[REDACTED]");
+    expect(failure.stderr).toContain("Bearer [REDACTED]");
+    expect(failure.stderr).toContain("<workspace>/generated/file.txt");
+  });
+
   it("preserves bounded structured command failure details", async () => {
     const value = await createGitFixture();
     try {

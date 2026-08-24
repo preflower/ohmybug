@@ -72,22 +72,36 @@ describe("finalization recovery worker", () => {
     ]);
   });
 
-  it("stops safely when the Agent recovery turn throws", async () => {
+  it("revalidates changed source when the Agent recovery turn throws", async () => {
     const setup = await recoveryHarness(
-      { kind: "UNCHANGED", changedPaths: [] },
+      { kind: "CHANGED", changedPaths: ["src/checkout.ts"] },
       async () => { throw new Error("provider token=private-secret"); },
     );
 
     await setup.worker.drainOne();
 
     expect(setup.fixture.store.getIssue(setup.issueId)).toMatchObject({
-      status: "FINALIZATION_FAILED",
-      lastFailure: { stage: "FINALIZATION_RECOVERY" },
+      status: "EVIDENCE_CAPTURE",
     });
-    expect(setup.fixture.store.listPendingOperations()).toEqual([]);
-    const failed = setup.fixture.store.readEvents(setup.issueId)
-      .findLast((event) => event.type === "DELIVERY_FINALIZATION_RECOVERY_FAILED");
-    expect(JSON.stringify(failed)).not.toContain("private-secret");
+    expect(setup.fixture.store.listPendingOperations().map((pending) => pending.operation))
+      .toEqual(["CAPTURE_EVIDENCE"]);
+    const events = setup.fixture.store.readEvents(setup.issueId);
+    expect(events.map((event) => event.type))
+      .toContain("DELIVERY_FINALIZATION_REVALIDATION_REQUIRED");
+    expect(JSON.stringify(events)).not.toContain("private-secret");
+  });
+
+  it("revalidates changed source even when the Agent reports unsafe", async () => {
+    const setup = await recoveryHarness(
+      { kind: "CHANGED", changedPaths: ["src/checkout.ts"] },
+      async () => ({ ...recoveredResult, disposition: "UNSAFE" }),
+    );
+
+    await setup.worker.drainOne();
+
+    expect(setup.fixture.store.getIssue(setup.issueId)?.status).toBe("EVIDENCE_CAPTURE");
+    expect(setup.fixture.store.listPendingOperations().map((pending) => pending.operation))
+      .toEqual(["CAPTURE_EVIDENCE"]);
   });
 
   it("pauses and resumes the same recovery operation for a capability request", async () => {

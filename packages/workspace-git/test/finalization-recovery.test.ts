@@ -20,7 +20,10 @@ const recovered: FinalizationRecoveryResult = {
   affectedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
 };
 
-async function setupRecovery() {
+async function setupRecovery(options: {
+  diagnosticPaths?: string[];
+  beforePublish?: (worktreePath: string) => Promise<void>;
+} = {}) {
   const fixture = await createGitFixture();
   cleanups.push(fixture.cleanup);
   const provider = gitWorkspaceFactory({
@@ -29,6 +32,8 @@ async function setupRecovery() {
   }).create({ baseBranch: "main", pushToRemote: false });
   const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
   await writeFile(join(acquired.projectPath, "README.md"), "approved source change\n");
+  await git(acquired.projectPath, "branch", "recovery-alternate");
+  await options.beforePublish?.(acquired.projectPath);
   const diagnosticRoot = join(
     acquired.projectPath,
     ".pnpm-store/shared/v11/tmp/_tmp_fixture",
@@ -54,7 +59,10 @@ async function setupRecovery() {
   const context = await provider.prepareFinalizationRecovery?.({
     issue: { ...approved, status: "FINALIZATION_RECOVERY" },
     resourceId: "git:issue-1",
-    diagnostic: error.diagnostic,
+    diagnostic: {
+      ...error.diagnostic,
+      relatedPaths: options.diagnosticPaths ?? error.diagnostic.relatedPaths,
+    },
     attemptId: "recovery-1",
   });
   if (!context) throw new Error("FINALIZATION_RECOVERY_CONTEXT_REQUIRED");
@@ -113,6 +121,82 @@ describe("Git finalization recovery", () => {
       fingerprintRef: fixture.context.fingerprintRef,
       result: recovered,
     })).resolves.toEqual({ kind: "CHANGED", changedPaths: ["README.md"] });
+  });
+
+  it("routes deletion of an intended untracked diagnostic path through revalidation", async () => {
+    const fixture = await setupRecovery({
+      diagnosticPaths: [
+        ".pnpm-store/shared/v11/tmp/_tmp_fixture",
+        "approved-untracked.txt",
+      ],
+      beforePublish: async (worktreePath) => {
+        await writeFile(join(worktreePath, "approved-untracked.txt"), "approved\n");
+      },
+    });
+    await rm(fixture.diagnosticRoot, { recursive: true });
+    await rm(join(fixture.acquired.projectPath, "approved-untracked.txt"));
+
+    await expect(fixture.provider.validateFinalizationRecovery?.({
+      issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },
+      resourceId: "git:issue-1",
+      fingerprintRef: fixture.context.fingerprintRef,
+      result: recovered,
+    })).resolves.toEqual({ kind: "CHANGED", changedPaths: ["approved-untracked.txt"] });
+  });
+
+  it.each([
+    ["switch", async (path: string) => git(path, "switch", "recovery-alternate")],
+    ["detach", async (path: string) => git(path, "switch", "--detach", "HEAD")],
+  ] as const)("rejects a same-commit HEAD %s", async (_name, mutateHead) => {
+    const fixture = await setupRecovery();
+    await rm(fixture.diagnosticRoot, { recursive: true });
+    await mutateHead(fixture.acquired.projectPath);
+
+    await expect(fixture.provider.validateFinalizationRecovery?.({
+      issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },
+      resourceId: "git:issue-1",
+      fingerprintRef: fixture.context.fingerprintRef,
+      result: recovered,
+    })).resolves.toMatchObject({
+      kind: "UNSAFE",
+      reason: "FINALIZATION_RECOVERY_HEAD_REF_CHANGED",
+    });
+  });
+
+  it("does not reject an unrelated concurrent branch creation", async () => {
+    const fixture = await setupRecovery();
+    await rm(fixture.diagnosticRoot, { recursive: true });
+    await git(fixture.acquired.projectPath, "branch", "unrelated-concurrent-issue");
+
+    await expect(fixture.provider.validateFinalizationRecovery?.({
+      issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },
+      resourceId: "git:issue-1",
+      fingerprintRef: fixture.context.fingerprintRef,
+      result: recovered,
+    })).resolves.toEqual({ kind: "UNCHANGED", changedPaths: [] });
+  });
+
+  it("rejects recovery preparation for a non-add failure", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+
+    await expect(provider.prepareFinalizationRecovery?.({
+      issue: { ...fixture.issue, projectPath: acquired.projectPath, status: "FINALIZING" },
+      resourceId: "git:issue-1",
+      diagnostic: {
+        providerId: "git",
+        step: "commit",
+        code: "GIT_COMMAND_FAILED:commit",
+        message: "pre-commit hook failed",
+        relatedPaths: [],
+      },
+      attemptId: "recovery-unsupported",
+    })).rejects.toThrow("FINALIZATION_RECOVERY_DIAGNOSTIC_UNSUPPORTED");
   });
 
   it("rejects generated cache content that would otherwise be committed", async () => {

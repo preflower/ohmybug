@@ -22,6 +22,7 @@ import type {
 import {
   GitCommandError,
   runGit,
+  sanitizeGitDiagnosticText,
   tryRunGit,
   type RunGitOptions,
 } from "./git-client.js";
@@ -42,6 +43,7 @@ export interface GitFinalizationFingerprint {
   fingerprintRef: string;
   attemptId: string;
   head: string;
+  headRef: string;
   index: string;
   indexFlags: string;
   repositoryStateHash: string;
@@ -79,10 +81,20 @@ export function finalizationError(input: {
   const generatedArtifactsError = input.error instanceof GeneratedArtifactsPresentError
     ? input.error
     : undefined;
+  const rawMessage = input.error instanceof Error
+    ? input.error.message
+    : "WORKSPACE_PUBLISH_FAILED";
   const code = commandError?.message
-    ?? (input.error instanceof Error ? input.error.message : "WORKSPACE_PUBLISH_FAILED");
+    ?? generatedArtifactsError?.message
+    ?? (/^[A-Z][A-Z0-9_:.-]{0,199}$/.test(rawMessage)
+      ? rawMessage
+      : "WORKSPACE_PUBLISH_FAILED");
   const stderr = commandError?.stderr || undefined;
-  const message = boundedText(stderr?.split(/\r?\n/, 1)[0] || code, 4_000);
+  const message = sanitizeGitDiagnosticText(
+    stderr?.split(/\r?\n/, 1)[0] || rawMessage,
+    input.worktreePath,
+    4_000,
+  ) || code;
   return new WorkspaceFinalizationError({
     providerId: input.providerId,
     step: input.step,
@@ -104,6 +116,7 @@ export async function prepareGitFinalizationRecovery(input: {
   fingerprint: GitFinalizationFingerprint;
   context: WorkspaceFinalizationRecoveryContext;
 }> {
+  assertRecoverableGitDiagnostic(input.diagnostic);
   const fingerprint = await captureFingerprint({
     worktreePath: input.worktreePath,
     diagnosticPaths: input.diagnostic.relatedPaths,
@@ -139,6 +152,9 @@ export async function validateGitFinalizationRecovery(input: {
   });
   if (current.head !== before.head) {
     return unsafe("FINALIZATION_RECOVERY_HEAD_CHANGED");
+  }
+  if (current.headRef !== before.headRef) {
+    return unsafe("FINALIZATION_RECOVERY_HEAD_REF_CHANGED");
   }
   if (current.index !== before.index) {
     return unsafe("FINALIZATION_RECOVERY_INDEX_CHANGED");
@@ -236,7 +252,6 @@ async function captureFingerprint(input: {
     "-z",
   ]));
   const diagnosticRoots = collapseRoots(normalizePaths([
-    ...input.diagnosticPaths,
     ...input.diagnosticPaths.flatMap(generatedRoot),
     ...allUntrackedPaths.flatMap(generatedRoot),
   ]));
@@ -249,6 +264,11 @@ async function captureFingerprint(input: {
     fingerprintRef: input.fingerprintRef,
     attemptId: input.attemptId,
     head: await runGit(input.worktreePath, ["rev-parse", "HEAD"]),
+    headRef: await tryRunGit(
+      input.worktreePath,
+      ["symbolic-ref", "-q", "HEAD"],
+      [1],
+    ) ?? "DETACHED",
     index: await runGit(input.worktreePath, ["ls-files", "--stage", "-z"]),
     indexFlags: await runGit(input.worktreePath, ["ls-files", "-v", "-z"]),
     repositoryStateHash: await repositoryStateHash(input.worktreePath),
@@ -272,16 +292,16 @@ async function captureFingerprint(input: {
 }
 
 async function repositoryStateHash(worktreePath: string): Promise<string> {
-  const [configuration, refs] = await Promise.all([
-    runGit(worktreePath, ["config", "--local", "--null", "--list"]),
-    runGit(worktreePath, [
-      "for-each-ref",
-      "--format=%(refname)%00%(objectname)",
-      "refs/heads",
-      "refs/remotes",
-    ]),
-  ]);
-  return digest(`${configuration}\0${refs}`);
+  return digest(await runGit(worktreePath, ["config", "--local", "--null", "--list"]));
+}
+
+function assertRecoverableGitDiagnostic(
+  diagnostic: WorkspaceFinalizationDiagnostic,
+): void {
+  const generatedRoots = diagnostic.relatedPaths.flatMap(generatedRoot);
+  if (diagnostic.step !== "add" || generatedRoots.length === 0) {
+    throw new Error("FINALIZATION_RECOVERY_DIAGNOSTIC_UNSUPPORTED");
+  }
 }
 
 async function fingerprintPath(
