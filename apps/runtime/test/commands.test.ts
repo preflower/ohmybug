@@ -215,7 +215,10 @@ describe("Runtime human commands", () => {
       repair: { iteration: 1, delivery },
       revision: 8,
     });
-    store.transaction((transaction) => transaction.insertIssue(failed, null));
+    store.transaction((transaction) => {
+      transaction.insertIssue(failed, "FINALIZE");
+      transaction.updateIssue(failed, failed.revision, null);
+    });
 
     const retrying = commands.approveDelivery(failed.id);
 

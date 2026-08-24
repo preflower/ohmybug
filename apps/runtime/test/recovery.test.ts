@@ -201,7 +201,10 @@ describe("Runtime recovery", () => {
       createdAt: now,
       updatedAt: now,
     };
-    store.transaction((transaction) => transaction.insertIssue(failed, null));
+    store.transaction((transaction) => {
+      transaction.insertIssue(failed, "FINALIZE");
+      transaction.updateIssue(failed, failed.revision, null);
+    });
 
     await workspaces.recover();
 
