@@ -35,6 +35,12 @@ function issueAt(status: IssueStatus): Issue {
 }
 
 describe("Issue workflow", () => {
+  const capabilityGrants = [{
+    capability: "HOST_EXECUTION" as const,
+    requestId: "request-1",
+    grantedAt: "2026-08-24T08:00:00.000Z",
+  }];
+
   it("persists Delivery approval before final completion", () => {
     const approved = transitionIssue(
       { ...issueAt("ACCEPTANCE_REVIEW"), assessment },
@@ -349,6 +355,56 @@ describe("Issue workflow", () => {
         "2026-08-20T07:50:00.000Z",
       ),
     ).toThrow(/Illegal Issue transition/);
+  });
+
+  it("cancels a permission-blocked Issue and revokes capability state", () => {
+    const canceled = transitionIssue({
+      ...issueAt("PERMISSION_REQUIRED"),
+      capabilityGrants,
+      pendingCapabilityRequest: {
+        id: "request-2",
+        operation: "REPAIR",
+        stage: "REPAIR",
+        resumeStatus: "REPAIRING",
+        capabilities: ["NETWORK_ACCESS"],
+        reason: "Download test fixture",
+        requestedAt: "2026-08-24T08:01:00.000Z",
+      },
+    }, "CANCEL", "2026-08-24T08:02:00.000Z");
+
+    expect(canceled).toMatchObject({ status: "CANCELED", resolution: "CANCELED" });
+    expect(canceled.capabilityGrants).toBeUndefined();
+    expect(canceled.pendingCapabilityRequest).toBeUndefined();
+  });
+
+  it("revokes grants when an approved delivery completes", () => {
+    const completed = transitionIssue({
+      ...issueAt("APPROVED"),
+      capabilityGrants,
+    }, "COMPLETE_DELIVERY", "2026-08-24T08:02:00.000Z");
+
+    expect(completed.status).toBe("COMPLETED");
+    expect(completed.capabilityGrants).toBeUndefined();
+  });
+
+  it("revokes grants when a non-bug assessment closes the Issue", () => {
+    const notABugAssessment = {
+      ...assessment,
+      contentHash: "c".repeat(64),
+      verdict: "NOT_A_BUG" as const,
+    };
+    const closed = confirmAssessmentResolution({
+      ...issueAt("ASSESSMENT_REVIEW"),
+      assessment: notABugAssessment,
+      capabilityGrants,
+    }, {
+      assessmentRevision: notABugAssessment.revision,
+      assessmentContentHash: notABugAssessment.contentHash,
+      resolution: "NOT_A_BUG",
+    }, "2026-08-24T08:02:00.000Z");
+
+    expect(closed.status).toBe("CLOSED");
+    expect(closed.capabilityGrants).toBeUndefined();
   });
 
   it("rejects actions that do not belong to the current state", () => {

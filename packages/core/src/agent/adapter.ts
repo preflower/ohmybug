@@ -1,5 +1,7 @@
 import type { Issue } from "../issue/types.js";
 import type {
+  AgentCapability,
+  AgentCapabilityRequest,
   AgentSessionRef,
   Assessment,
   Delivery,
@@ -25,9 +27,30 @@ export function isAgentTurnInterruptedError(
   return value instanceof AgentTurnInterruptedError;
 }
 
-export interface AgentContinuation {
-  reason: "RUNTIME_INTERRUPTED";
-  previousAttemptId?: string;
+export type AgentContinuation =
+  | {
+      reason: "RUNTIME_INTERRUPTED";
+      previousAttemptId?: string;
+    }
+  | {
+      reason: "CAPABILITY_GRANTED";
+      requestId: string;
+      capabilities: AgentCapability[];
+    };
+
+export class AgentCapabilityRequiredError extends Error {
+  readonly code = "AGENT_CAPABILITY_REQUIRED" as const;
+
+  constructor(readonly request: AgentCapabilityRequest) {
+    super("AGENT_CAPABILITY_REQUIRED");
+    this.name = "AgentCapabilityRequiredError";
+  }
+}
+
+export function isAgentCapabilityRequiredError(
+  value: unknown,
+): value is AgentCapabilityRequiredError {
+  return value instanceof AgentCapabilityRequiredError;
 }
 
 export type ProjectEvidenceCapture =

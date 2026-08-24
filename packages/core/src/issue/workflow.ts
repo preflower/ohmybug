@@ -75,6 +75,7 @@ const transitions: Record<
     RETRY_REPAIR: "REPAIRING",
     CANCEL: "CANCELED",
   },
+  PERMISSION_REQUIRED: { CANCEL: "CANCELED" },
   ACCEPTANCE_REVIEW: {
     REJECT_DELIVERY: "REPAIRING",
     APPROVE_DELIVERY: "APPROVED",
@@ -150,6 +151,10 @@ function applyTransition(
   }
   if (action === "RETRY_ASSESSMENT" || action === "RETRY_REPAIR") {
     delete nextIssue.lastFailure;
+  }
+  if (["COMPLETED", "CLOSED", "CANCELED"].includes(nextIssue.status)) {
+    delete nextIssue.capabilityGrants;
+    delete nextIssue.pendingCapabilityRequest;
   }
   return nextIssue;
 }

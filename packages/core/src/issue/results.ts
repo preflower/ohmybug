@@ -8,7 +8,11 @@ import type {
   Assessment,
   Delivery,
 } from "../agent/types.js";
-import type { Issue, IssueFailure } from "./types.js";
+import type {
+  Issue,
+  IssueFailure,
+  PendingCapabilityRequest,
+} from "./types.js";
 import { transitionIssue } from "./workflow.js";
 
 function required(value: string, code: string): string {
@@ -19,6 +23,73 @@ function required(value: string, code: string): string {
 
 function withFailure(issue: Issue, failure: IssueFailure): Issue {
   return { ...issue, lastFailure: failure };
+}
+
+const resumeStatusByOperation = {
+  ASSESS: "ASSESSING",
+  REPAIR: "REPAIRING",
+  CAPTURE_EVIDENCE: "EVIDENCE_CAPTURE",
+} as const;
+
+const stageByOperation = {
+  ASSESS: "ASSESSMENT",
+  REPAIR: "REPAIR",
+  CAPTURE_EVIDENCE: "EVIDENCE",
+} as const;
+
+export function recordCapabilityRequest(
+  issue: Issue,
+  request: Omit<PendingCapabilityRequest, "resumeStatus">,
+  now: string,
+): Issue {
+  const expectedStatus = resumeStatusByOperation[request.operation];
+  if (issue.status !== expectedStatus || request.stage !== stageByOperation[request.operation]) {
+    throw new Error("CAPABILITY_REQUEST_STAGE_MISMATCH");
+  }
+  const alreadyGranted = new Set(
+    issue.capabilityGrants?.map((grant) => grant.capability),
+  );
+  const capabilities = [...new Set(request.capabilities)]
+    .filter((capability) => !alreadyGranted.has(capability));
+  if (capabilities.length === 0) throw new Error("CAPABILITY_ALREADY_GRANTED");
+  return {
+    ...issue,
+    status: "PERMISSION_REQUIRED",
+    pendingCapabilityRequest: {
+      ...request,
+      capabilities,
+      resumeStatus: expectedStatus,
+    },
+    lastFailure: undefined,
+    revision: issue.revision + 1,
+    updatedAt: now,
+  };
+}
+
+export function grantCapabilityRequest(
+  issue: Issue,
+  requestId: string,
+  now: string,
+): Issue {
+  const request = issue.pendingCapabilityRequest;
+  if (issue.status !== "PERMISSION_REQUIRED" || !request) {
+    throw new Error("CAPABILITY_REQUEST_NOT_AVAILABLE");
+  }
+  if (request.id !== requestId) throw new Error("CAPABILITY_REQUEST_STALE");
+  const grants = new Map(
+    issue.capabilityGrants?.map((grant) => [grant.capability, grant]),
+  );
+  for (const capability of request.capabilities) {
+    grants.set(capability, { capability, requestId, grantedAt: now });
+  }
+  return {
+    ...issue,
+    status: request.resumeStatus,
+    capabilityGrants: [...grants.values()],
+    pendingCapabilityRequest: undefined,
+    revision: issue.revision + 1,
+    updatedAt: now,
+  };
 }
 
 export function recordAgentSession(

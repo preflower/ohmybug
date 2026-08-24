@@ -13,6 +13,26 @@ export type AgentSessionRef = z.infer<typeof agentSessionRefSchema>;
 export type VisualEvidence = z.infer<typeof visualEvidenceSchema>;
 export type Delivery = z.infer<typeof deliverySchema>;
 
+export type AgentCapability = "HOST_EXECUTION" | "NETWORK_ACCESS";
+
+export interface AgentCapabilityRequester {
+  type: "AGENT" | "SKILL";
+  id?: string;
+}
+
+export interface AgentCapabilityRequest {
+  capabilities: AgentCapability[];
+  reason: string;
+  blockedCommand?: string;
+  requestedBy?: AgentCapabilityRequester;
+}
+
+export interface CapabilityGrant {
+  capability: AgentCapability;
+  requestId: string;
+  grantedAt: string;
+}
+
 export interface DeliveryDraft {
   summary: string;
   repairIteration: number;

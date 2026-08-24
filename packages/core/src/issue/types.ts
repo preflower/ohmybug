@@ -1,8 +1,10 @@
 import type {
+  AgentCapabilityRequest,
   AgentSessionRef,
   Assessment,
   Delivery,
   DeliveryDraft,
+  CapabilityGrant,
 } from "../agent/types.js";
 import type { IntegrationInput } from "../integration/input.js";
 
@@ -16,6 +18,7 @@ export type IssueStatus =
   | "EVIDENCE_CHECK"
   | "EVIDENCE_FAILED"
   | "REPAIR_FAILED"
+  | "PERMISSION_REQUIRED"
   | "ACCEPTANCE_REVIEW"
   | "APPROVED"
   | "COMPLETED"
@@ -44,6 +47,14 @@ export interface IssueFailure {
   code: string;
 }
 
+export interface PendingCapabilityRequest extends AgentCapabilityRequest {
+  id: string;
+  operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE";
+  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE";
+  resumeStatus: "ASSESSING" | "REPAIRING" | "EVIDENCE_CAPTURE";
+  requestedAt: string;
+}
+
 export interface Issue {
   id: string;
   projectId: string;
@@ -60,6 +71,8 @@ export interface Issue {
   assessmentFeedback?: string;
   repair?: RepairState;
   lastFailure?: IssueFailure;
+  capabilityGrants?: CapabilityGrant[];
+  pendingCapabilityRequest?: PendingCapabilityRequest;
   revision: number;
   createdAt: string;
   updatedAt: string;

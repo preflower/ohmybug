@@ -55,4 +55,37 @@ describe("Issue persistence schema", () => {
   it("stores only the concrete Issue project path", () => {
     expect(issueSchema.parse(issue).projectPath).toBe("/tmp/worktrees/OMB-1");
   });
+
+  it("round-trips an Issue paused for a capability request", () => {
+    const paused = {
+      ...issue,
+      status: "PERMISSION_REQUIRED" as const,
+      capabilityGrants: [{
+        capability: "NETWORK_ACCESS" as const,
+        requestId: "request-old",
+        grantedAt: "2026-08-24T08:00:00.000Z",
+      }],
+      pendingCapabilityRequest: {
+        id: "request-1",
+        operation: "REPAIR" as const,
+        stage: "REPAIR" as const,
+        resumeStatus: "REPAIRING" as const,
+        capabilities: ["HOST_EXECUTION" as const],
+        reason: "Launch Electron acceptance",
+        requestedAt: "2026-08-24T08:01:00.000Z",
+      },
+    };
+
+    expect(issueSchema.parse(paused)).toEqual(paused);
+  });
+
+  it("rejects duplicate capability state", () => {
+    expect(() => issueSchema.parse({
+      ...issue,
+      capabilityGrants: [
+        { capability: "NETWORK_ACCESS", requestId: "request-1", grantedAt: issue.updatedAt },
+        { capability: "NETWORK_ACCESS", requestId: "request-2", grantedAt: issue.updatedAt },
+      ],
+    })).toThrow("CAPABILITY_GRANT_DUPLICATE");
+  });
 });

@@ -1,8 +1,11 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
+  AgentCapabilityRequiredError,
   AgentTurnInterruptedError,
+  isAgentCapabilityRequiredError,
   isAgentTurnInterruptedError,
+  type AgentContinuation,
   type AgentInterruptionReason,
   AgentAdapter,
   AgentSessionRef,
@@ -33,6 +36,30 @@ const project = {
 } satisfies ProjectContext;
 
 describe("AgentAdapter", () => {
+  it("carries a structured capability request as non-failure control flow", () => {
+    const error = new AgentCapabilityRequiredError({
+      capabilities: ["HOST_EXECUTION", "NETWORK_ACCESS"],
+      reason: "Launch Electron acceptance",
+      blockedCommand: "pnpm test:e2e:electron",
+      requestedBy: { type: "SKILL", id: "implement-ui-design" },
+    });
+
+    expect(error).toMatchObject({
+      name: "AgentCapabilityRequiredError",
+      code: "AGENT_CAPABILITY_REQUIRED",
+      message: "AGENT_CAPABILITY_REQUIRED",
+    });
+    expect(isAgentCapabilityRequiredError(error)).toBe(true);
+    expect(isAgentCapabilityRequiredError(new Error(error.message))).toBe(false);
+
+    const continuation: AgentContinuation = {
+      reason: "CAPABILITY_GRANTED",
+      requestId: "request-1",
+      capabilities: ["HOST_EXECUTION"],
+    };
+    expect(continuation.reason).toBe("CAPABILITY_GRANTED");
+  });
+
   it.each(["RUNTIME_STOPPING", "USER_CANCELED"] as const)(
     "preserves the typed %s interruption reason",
     (reason) => {

@@ -10,6 +10,8 @@ import {
   recordEvidenceRejection,
   recordImplementationDraft,
   recordRepairFailure,
+  grantCapabilityRequest,
+  recordCapabilityRequest,
   replaceAgentSession,
   requestAssessmentChanges,
   requestDeliveryChanges,
@@ -59,6 +61,15 @@ function issueAt(status: IssueStatus): Issue {
 }
 
 describe("Issue workflow results", () => {
+  const capabilityRequest = {
+    id: "request-1",
+    operation: "REPAIR" as const,
+    stage: "REPAIR" as const,
+    capabilities: ["HOST_EXECUTION" as const],
+    reason: "Launch the application",
+    requestedAt: now,
+  };
+
   it("binds one logical Agent session idempotently", () => {
     const session = { agent: "fake", sessionId: "session-1" };
     const bound = recordAgentSession(issueAt("RECEIVED"), session, now);
@@ -213,5 +224,82 @@ describe("Issue workflow results", () => {
   it("rejects results that do not belong to the current state", () => {
     expect(() => recordAssessment(issueAt("RECEIVED"), assessment, now)).toThrow(/Illegal Issue transition/);
     expect(() => recordDelivery(issueAt("ASSESSMENT_REVIEW"), delivery, now)).toThrow(/Illegal Issue transition/);
+  });
+
+  it.each([
+    ["ASSESSING", "ASSESSMENT", "ASSESS"],
+    ["REPAIRING", "REPAIR", "REPAIR"],
+    ["EVIDENCE_CAPTURE", "EVIDENCE", "CAPTURE_EVIDENCE"],
+  ] as const)("pauses %s for a capability request", (status, stage, operation) => {
+    const current = {
+      ...issueAt(status),
+      ...(status === "EVIDENCE_CAPTURE"
+        ? { repair: { iteration: 2, evidenceRetries: 1, deliveryDraft: draft } }
+        : {}),
+      lastFailure: { stage, code: "AGENT_FAILURE" },
+    };
+    const paused = recordCapabilityRequest(current, {
+      ...capabilityRequest,
+      stage,
+      operation,
+    }, now);
+
+    expect(paused).toMatchObject({
+      status: "PERMISSION_REQUIRED",
+      pendingCapabilityRequest: {
+        id: "request-1",
+        resumeStatus: status,
+        stage,
+        operation,
+      },
+    });
+    expect(paused.repair?.evidenceRetries).toBe(current.repair?.evidenceRetries);
+    expect(paused.lastFailure).toBeUndefined();
+  });
+
+  it("grants only the active request and restores its exact stage", () => {
+    const paused = recordCapabilityRequest(
+      issueAt("REPAIRING"),
+      capabilityRequest,
+      now,
+    );
+    const later = "2026-08-24T08:10:00.000Z";
+    const resumed = grantCapabilityRequest(paused, "request-1", later);
+
+    expect(resumed).toMatchObject({
+      status: "REPAIRING",
+      capabilityGrants: [{
+        capability: "HOST_EXECUTION",
+        requestId: "request-1",
+        grantedAt: later,
+      }],
+    });
+    expect(resumed.pendingCapabilityRequest).toBeUndefined();
+    expect(() => grantCapabilityRequest(paused, "stale", later))
+      .toThrow("CAPABILITY_REQUEST_STALE");
+  });
+
+  it("normalizes requests to capabilities not already granted", () => {
+    const paused = recordCapabilityRequest({
+      ...issueAt("REPAIRING"),
+      capabilityGrants: [{
+        capability: "NETWORK_ACCESS",
+        requestId: "request-old",
+        grantedAt: now,
+      }],
+    }, {
+      ...capabilityRequest,
+      capabilities: ["NETWORK_ACCESS", "HOST_EXECUTION"],
+    }, now);
+
+    expect(paused.pendingCapabilityRequest?.capabilities).toEqual(["HOST_EXECUTION"]);
+    expect(() => recordCapabilityRequest({
+      ...issueAt("REPAIRING"),
+      capabilityGrants: [{
+        capability: "HOST_EXECUTION",
+        requestId: "request-old",
+        grantedAt: now,
+      }],
+    }, capabilityRequest, now)).toThrow("CAPABILITY_ALREADY_GRANTED");
   });
 });

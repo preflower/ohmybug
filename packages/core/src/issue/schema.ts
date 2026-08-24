@@ -18,12 +18,38 @@ export const issueStatusSchema = z.enum([
   "EVIDENCE_CHECK",
   "EVIDENCE_FAILED",
   "REPAIR_FAILED",
+  "PERMISSION_REQUIRED",
   "ACCEPTANCE_REVIEW",
   "APPROVED",
   "COMPLETED",
   "CLOSED",
   "CANCELED",
 ]);
+
+const agentCapabilitySchema = z.enum(["HOST_EXECUTION", "NETWORK_ACCESS"]);
+const capabilityRequesterSchema = z.object({
+  type: z.enum(["AGENT", "SKILL"]),
+  id: z.string().trim().min(1).max(200).optional(),
+}).strict();
+const capabilityGrantSchema = z.object({
+  capability: agentCapabilitySchema,
+  requestId: z.string().trim().min(1),
+  grantedAt: z.iso.datetime(),
+}).strict();
+const pendingCapabilityRequestSchema = z.object({
+  id: z.string().trim().min(1),
+  operation: z.enum(["ASSESS", "REPAIR", "CAPTURE_EVIDENCE"]),
+  stage: z.enum(["ASSESSMENT", "REPAIR", "EVIDENCE"]),
+  resumeStatus: z.enum(["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE"]),
+  capabilities: z.array(agentCapabilitySchema).min(1).max(2).refine(
+    (items) => new Set(items).size === items.length,
+    "AGENT_CAPABILITY_DUPLICATE",
+  ),
+  reason: z.string().trim().min(1).max(4_000),
+  blockedCommand: z.string().trim().min(1).max(2_000).optional(),
+  requestedBy: capabilityRequesterSchema.optional(),
+  requestedAt: z.iso.datetime(),
+}).strict();
 
 export const issueSchema: z.ZodType<Issue> = z
   .object({
@@ -62,6 +88,11 @@ export const issueSchema: z.ZodType<Issue> = z
       })
       .strict()
       .optional(),
+    capabilityGrants: z.array(capabilityGrantSchema).refine(
+      (grants) => new Set(grants.map((grant) => grant.capability)).size === grants.length,
+      "CAPABILITY_GRANT_DUPLICATE",
+    ).optional(),
+    pendingCapabilityRequest: pendingCapabilityRequestSchema.optional(),
     revision: z.number().int().positive(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
