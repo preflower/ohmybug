@@ -7,11 +7,13 @@ import type {
   AgentSessionRef,
   Assessment,
   Delivery,
+  FinalizationRecoveryResult,
 } from "../agent/types.js";
 import type {
   Issue,
   IssueFailure,
   PendingCapabilityRequest,
+  WorkspaceFinalizationDiagnostic,
 } from "./types.js";
 import { transitionIssue } from "./workflow.js";
 
@@ -29,12 +31,14 @@ const resumeStatusByOperation = {
   ASSESS: "ASSESSING",
   REPAIR: "REPAIRING",
   CAPTURE_EVIDENCE: "EVIDENCE_CAPTURE",
+  RECOVER_FINALIZATION: "FINALIZATION_RECOVERY",
 } as const;
 
 const stageByOperation = {
   ASSESS: "ASSESSMENT",
   REPAIR: "REPAIR",
   CAPTURE_EVIDENCE: "EVIDENCE",
+  RECOVER_FINALIZATION: "FINALIZATION_RECOVERY",
 } as const;
 
 export function recordCapabilityRequest(
@@ -247,6 +251,86 @@ export function recordImplementationDraft(
     },
     lastFailure: undefined,
   };
+}
+
+export interface BeginFinalizationRecoveryInput {
+  attemptId: string;
+  diagnostic: WorkspaceFinalizationDiagnostic;
+  fingerprintRef: string;
+}
+
+export function beginFinalizationRecovery(
+  issue: Issue,
+  input: BeginFinalizationRecoveryInput,
+  now: string,
+): Issue {
+  if ((issue.finalizationRecovery?.automaticAttempts ?? 0) >= 1) {
+    throw new Error("FINALIZATION_RECOVERY_BUDGET_SPENT");
+  }
+  const attemptId = required(input.attemptId, "FINALIZATION_RECOVERY_ATTEMPT_REQUIRED");
+  const fingerprintRef = required(
+    input.fingerprintRef,
+    "FINALIZATION_RECOVERY_FINGERPRINT_REQUIRED",
+  );
+  return {
+    ...transitionIssue(issue, "BEGIN_FINALIZATION_RECOVERY", now),
+    finalizationRecovery: {
+      automaticAttempts: 1,
+      attemptId,
+      diagnostic: input.diagnostic,
+      fingerprintRef,
+    },
+    lastFailure: undefined,
+  };
+}
+
+export type FinalizationRecoveryValidationKind =
+  | "UNCHANGED"
+  | "CHANGED"
+  | "UNSAFE";
+
+export function recordFinalizationRecoveryResult(
+  issue: Issue,
+  result: FinalizationRecoveryResult,
+  validationKind: FinalizationRecoveryValidationKind,
+  now: string,
+): Issue {
+  const summary = required(result.summary, "FINALIZATION_RECOVERY_SUMMARY_REQUIRED");
+  const finalizationRecovery = {
+    ...(issue.finalizationRecovery ?? { automaticAttempts: 1 as const }),
+    summary,
+  };
+  if (validationKind === "UNCHANGED") {
+    return {
+      ...transitionIssue(issue, "RETRY_FINALIZATION", now),
+      finalizationRecovery,
+      lastFailure: undefined,
+    };
+  }
+  if (validationKind === "CHANGED") {
+    const iteration = (issue.repair?.iteration ?? 0) + 1;
+    return {
+      ...transitionIssue(issue, "FINALIZATION_RECOVERY_CHANGED_DELIVERY", now),
+      finalizationRecovery,
+      repair: {
+        iteration,
+        evidenceRetries: 0,
+        deliveryDraft: {
+          summary,
+          repairIteration: iteration,
+          implementationCompletedAt: now,
+        },
+      },
+      lastFailure: undefined,
+    };
+  }
+  return withFailure({
+    ...transitionIssue(issue, "FINALIZATION_RECOVERY_ERRORED", now),
+    finalizationRecovery,
+  }, {
+    stage: "FINALIZATION_RECOVERY",
+    code: "FINALIZATION_RECOVERY_UNSAFE",
+  });
 }
 
 export function recordEvidenceFailure(

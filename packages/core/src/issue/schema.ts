@@ -21,6 +21,7 @@ export const issueStatusSchema = z.enum([
   "PERMISSION_REQUIRED",
   "ACCEPTANCE_REVIEW",
   "FINALIZING",
+  "FINALIZATION_RECOVERY",
   "FINALIZATION_FAILED",
   "COMPLETED",
   "CLOSED",
@@ -39,9 +40,24 @@ const capabilityGrantSchema = z.object({
 }).strict();
 const pendingCapabilityRequestSchema = z.object({
   id: z.string().trim().min(1),
-  operation: z.enum(["ASSESS", "REPAIR", "CAPTURE_EVIDENCE"]),
-  stage: z.enum(["ASSESSMENT", "REPAIR", "EVIDENCE"]),
-  resumeStatus: z.enum(["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE"]),
+  operation: z.enum([
+    "ASSESS",
+    "REPAIR",
+    "CAPTURE_EVIDENCE",
+    "RECOVER_FINALIZATION",
+  ]),
+  stage: z.enum([
+    "ASSESSMENT",
+    "REPAIR",
+    "EVIDENCE",
+    "FINALIZATION_RECOVERY",
+  ]),
+  resumeStatus: z.enum([
+    "ASSESSING",
+    "REPAIRING",
+    "EVIDENCE_CAPTURE",
+    "FINALIZATION_RECOVERY",
+  ]),
   capabilities: z.array(agentCapabilitySchema).min(1).max(2).refine(
     (items) => new Set(items).size === items.length,
     "AGENT_CAPABILITY_DUPLICATE",
@@ -50,6 +66,32 @@ const pendingCapabilityRequestSchema = z.object({
   blockedCommand: z.string().trim().min(1).max(2_000).optional(),
   requestedBy: capabilityRequesterSchema.optional(),
   requestedAt: z.iso.datetime(),
+}).strict();
+
+const repositoryRelativePathSchema = z.string().trim().min(1).max(1_000).refine(
+  (value) =>
+    !value.startsWith("/")
+    && !/^[A-Za-z]:[\\/]/.test(value)
+    && !value.split(/[\\/]/).includes(".."),
+  "REPOSITORY_RELATIVE_PATH_REQUIRED",
+);
+
+const workspaceFinalizationDiagnosticSchema = z.object({
+  providerId: z.string().trim().min(1).max(200),
+  step: z.enum(["status", "add", "commit", "push", "merge", "release", "unknown"]),
+  code: z.string().trim().min(1).max(200),
+  exitCode: z.number().int().optional(),
+  message: z.string().trim().min(1).max(4_000),
+  stderr: z.string().max(8_000).optional(),
+  relatedPaths: z.array(repositoryRelativePathSchema).max(50),
+}).strict();
+
+const finalizationRecoverySchema = z.object({
+  automaticAttempts: z.union([z.literal(0), z.literal(1)]),
+  attemptId: z.string().trim().min(1).max(200).optional(),
+  diagnostic: workspaceFinalizationDiagnosticSchema.optional(),
+  fingerprintRef: z.string().trim().min(1).max(500).optional(),
+  summary: z.string().trim().min(1).max(4_000).optional(),
 }).strict();
 
 export const issueSchema: z.ZodType<Issue> = z
@@ -84,7 +126,12 @@ export const issueSchema: z.ZodType<Issue> = z
       .optional(),
     lastFailure: z
       .object({
-        stage: z.enum(["ASSESSMENT", "REPAIR", "EVIDENCE"]),
+        stage: z.enum([
+          "ASSESSMENT",
+          "REPAIR",
+          "EVIDENCE",
+          "FINALIZATION_RECOVERY",
+        ]),
         code: z.string().trim().min(1),
       })
       .strict()
@@ -94,6 +141,7 @@ export const issueSchema: z.ZodType<Issue> = z
       "CAPABILITY_GRANT_DUPLICATE",
     ).optional(),
     pendingCapabilityRequest: pendingCapabilityRequestSchema.optional(),
+    finalizationRecovery: finalizationRecoverySchema.optional(),
     revision: z.number().int().positive(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),

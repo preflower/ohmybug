@@ -21,6 +21,9 @@ export type IssueAction =
   | "RETRY_REPAIR"
   | "REJECT_DELIVERY"
   | "APPROVE_DELIVERY"
+  | "BEGIN_FINALIZATION_RECOVERY"
+  | "FINALIZATION_RECOVERY_ERRORED"
+  | "FINALIZATION_RECOVERY_CHANGED_DELIVERY"
   | "FINALIZATION_ERRORED"
   | "RETRY_FINALIZATION"
   | "COMPLETE_DELIVERY"
@@ -84,8 +87,15 @@ const transitions: Record<
     CANCEL: "CANCELED",
   },
   FINALIZING: {
+    BEGIN_FINALIZATION_RECOVERY: "FINALIZATION_RECOVERY",
     FINALIZATION_ERRORED: "FINALIZATION_FAILED",
     COMPLETE_DELIVERY: "COMPLETED",
+  },
+  FINALIZATION_RECOVERY: {
+    RETRY_FINALIZATION: "FINALIZING",
+    FINALIZATION_RECOVERY_ERRORED: "FINALIZATION_FAILED",
+    FINALIZATION_RECOVERY_CHANGED_DELIVERY: "EVIDENCE_CAPTURE",
+    CANCEL: "CANCELED",
   },
   FINALIZATION_FAILED: { RETRY_FINALIZATION: "FINALIZING" },
   COMPLETED: {},
@@ -140,11 +150,16 @@ function applyTransition(
           : {}),
       }
     : issue.repair;
+  const finalizationRecovery = action === "APPROVE_DELIVERY"
+    || (action === "RETRY_FINALIZATION" && issue.status === "FINALIZATION_FAILED")
+    ? { automaticAttempts: 0 as const }
+    : issue.finalizationRecovery;
   const nextIssue: Issue = {
     ...issue,
     status: nextStatus,
     ...(resolution ? { resolution } : {}),
     ...(repair ? { repair } : {}),
+    ...(finalizationRecovery ? { finalizationRecovery } : {}),
     revision: issue.revision + 1,
     updatedAt: now,
   };
@@ -161,6 +176,7 @@ function applyTransition(
   if (["COMPLETED", "CLOSED", "CANCELED"].includes(nextIssue.status)) {
     delete nextIssue.capabilityGrants;
     delete nextIssue.pendingCapabilityRequest;
+    delete nextIssue.finalizationRecovery;
   }
   return nextIssue;
 }

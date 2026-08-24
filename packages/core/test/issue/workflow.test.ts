@@ -67,6 +67,47 @@ describe("Issue workflow", () => {
     )).toMatchObject({ status: "COMPLETED", resolution: "FIXED" });
   });
 
+  it("models automatic finalization recovery without replenishing its budget", () => {
+    const finalizing = transitionIssue(
+      { ...issueAt("ACCEPTANCE_REVIEW"), assessment },
+      "APPROVE_DELIVERY",
+      "2026-08-24T10:00:00.000Z",
+    );
+    expect(finalizing.finalizationRecovery).toEqual({ automaticAttempts: 0 });
+
+    const recovering = transitionIssue(
+      finalizing,
+      "BEGIN_FINALIZATION_RECOVERY",
+      "2026-08-24T10:00:01.000Z",
+    );
+    expect(recovering.status).toBe("FINALIZATION_RECOVERY");
+
+    const automaticRetry = transitionIssue(
+      { ...recovering, finalizationRecovery: { automaticAttempts: 1 } },
+      "RETRY_FINALIZATION",
+      "2026-08-24T10:00:02.000Z",
+    );
+    expect(automaticRetry).toMatchObject({
+      status: "FINALIZING",
+      finalizationRecovery: { automaticAttempts: 1 },
+    });
+
+    const failed = transitionIssue(
+      automaticRetry,
+      "FINALIZATION_ERRORED",
+      "2026-08-24T10:00:03.000Z",
+    );
+    const humanRetry = transitionIssue(
+      failed,
+      "RETRY_FINALIZATION",
+      "2026-08-24T10:00:04.000Z",
+    );
+    expect(humanRetry).toMatchObject({
+      status: "FINALIZING",
+      finalizationRecovery: { automaticAttempts: 0 },
+    });
+  });
+
   it("completes a confirmed Bug after approved Delivery is finalized", () => {
     let current = transitionIssue(
       issueAt("RECEIVED"),

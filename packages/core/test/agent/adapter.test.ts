@@ -13,6 +13,7 @@ import {
   Issue,
   ProjectContext,
   RepairResult,
+  FinalizationRecoveryResult,
 } from "../../src/index.js";
 
 const issue = {
@@ -78,7 +79,7 @@ describe("AgentAdapter", () => {
 
   it("exposes session, assessment, repair, evidence, and cancellation capabilities", () => {
     expectTypeOf<keyof AgentAdapter>().toEqualTypeOf<
-      "createSession" | "assess" | "repair" | "captureEvidence" | "cancel"
+      "createSession" | "assess" | "repair" | "captureEvidence" | "recoverFinalization" | "cancel"
     >();
   });
 
@@ -106,6 +107,12 @@ describe("AgentAdapter", () => {
         },
       ],
     };
+    const recovery: FinalizationRecoveryResult = {
+      summary: "Removed generated cache",
+      diagnosis: "An empty nested repository blocked git add",
+      disposition: "RECOVERED",
+      affectedPaths: [".pnpm-store/tmp/repository"],
+    };
 
     const adapter: AgentAdapter = {
       async createSession() {
@@ -122,6 +129,10 @@ describe("AgentAdapter", () => {
       async captureEvidence(ref) {
         usedSessions.push(ref.sessionId);
         return { evidence: repair.evidence };
+      },
+      async recoverFinalization(ref) {
+        usedSessions.push(ref.sessionId);
+        return recovery;
       },
       async cancel(ref, reason) {
         cancellations.push({ sessionId: ref.sessionId, reason });
@@ -147,9 +158,27 @@ describe("AgentAdapter", () => {
       },
       evidenceDirectory: "/tmp/evidence/issue-1/1",
     });
+    await adapter.recoverFinalization(ref, {
+      issue,
+      project,
+      diagnostic: {
+        providerId: "git",
+        step: "add",
+        code: "GIT_COMMAND_FAILED:add",
+        message: "Git add failed",
+        relatedPaths: [".pnpm-store/tmp/repository"],
+      },
+      workspaceStatus: "?? .pnpm-store/tmp/repository/",
+      fingerprintSummary: "1 tracked change, 1 diagnostic root",
+    });
     await adapter.cancel(ref, "USER_CANCELED");
 
-    expect(usedSessions).toEqual(["session-1", "session-1", "session-1"]);
+    expect(usedSessions).toEqual([
+      "session-1",
+      "session-1",
+      "session-1",
+      "session-1",
+    ]);
     expect(cancellations).toEqual([{
       sessionId: "session-1",
       reason: "USER_CANCELED",

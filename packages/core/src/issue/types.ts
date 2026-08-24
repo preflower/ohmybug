@@ -21,6 +21,7 @@ export type IssueStatus =
   | "PERMISSION_REQUIRED"
   | "ACCEPTANCE_REVIEW"
   | "FINALIZING"
+  | "FINALIZATION_RECOVERY"
   | "FINALIZATION_FAILED"
   | "COMPLETED"
   | "CLOSED"
@@ -44,15 +45,46 @@ export interface RepairState {
 }
 
 export interface IssueFailure {
-  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE";
+  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE" | "FINALIZATION_RECOVERY";
   code: string;
+}
+
+export type WorkspaceFinalizationStep =
+  | "status"
+  | "add"
+  | "commit"
+  | "push"
+  | "merge"
+  | "release"
+  | "unknown";
+
+export interface WorkspaceFinalizationDiagnostic {
+  providerId: string;
+  step: WorkspaceFinalizationStep;
+  code: string;
+  exitCode?: number;
+  message: string;
+  stderr?: string;
+  relatedPaths: string[];
+}
+
+export interface FinalizationRecoveryState {
+  automaticAttempts: 0 | 1;
+  attemptId?: string;
+  diagnostic?: WorkspaceFinalizationDiagnostic;
+  fingerprintRef?: string;
+  summary?: string;
 }
 
 export interface PendingCapabilityRequest extends AgentCapabilityRequest {
   id: string;
-  operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE";
-  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE";
-  resumeStatus: "ASSESSING" | "REPAIRING" | "EVIDENCE_CAPTURE";
+  operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION";
+  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE" | "FINALIZATION_RECOVERY";
+  resumeStatus:
+    | "ASSESSING"
+    | "REPAIRING"
+    | "EVIDENCE_CAPTURE"
+    | "FINALIZATION_RECOVERY";
   requestedAt: string;
 }
 
@@ -74,6 +106,7 @@ export interface Issue {
   lastFailure?: IssueFailure;
   capabilityGrants?: CapabilityGrant[];
   pendingCapabilityRequest?: PendingCapabilityRequest;
+  finalizationRecovery?: FinalizationRecoveryState;
   revision: number;
   createdAt: string;
   updatedAt: string;

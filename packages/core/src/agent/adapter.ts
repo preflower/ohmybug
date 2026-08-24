@@ -1,4 +1,7 @@
-import type { Issue } from "../issue/types.js";
+import type {
+  Issue,
+  WorkspaceFinalizationDiagnostic,
+} from "../issue/types.js";
 import type {
   AgentCapability,
   AgentCapabilityRequest,
@@ -8,6 +11,7 @@ import type {
   DeliveryDraft,
   RepairEvidencePath,
   RepairResult,
+  FinalizationRecoveryResult,
 } from "./types.js";
 
 export type AgentInterruptionReason = "RUNTIME_STOPPING" | "USER_CANCELED";
@@ -109,6 +113,15 @@ export interface EvidenceCaptureResult {
   evidence: RepairEvidencePath[];
 }
 
+export interface FinalizationRecoveryInput {
+  issue: Issue;
+  project: ProjectContext;
+  diagnostic: WorkspaceFinalizationDiagnostic;
+  workspaceStatus: string;
+  fingerprintSummary: string;
+  continuation?: AgentContinuation;
+}
+
 export interface AgentAdapter {
   createSession(input: CreateSessionInput): Promise<AgentSessionRef>;
   assess(
@@ -120,6 +133,10 @@ export interface AgentAdapter {
     session: AgentSessionRef,
     input: EvidenceCaptureInput,
   ): Promise<EvidenceCaptureResult>;
+  recoverFinalization(
+    session: AgentSessionRef,
+    input: FinalizationRecoveryInput,
+  ): Promise<FinalizationRecoveryResult>;
   cancel(
     session: AgentSessionRef,
     reason: AgentInterruptionReason,
