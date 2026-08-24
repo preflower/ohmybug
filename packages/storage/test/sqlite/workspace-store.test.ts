@@ -175,7 +175,7 @@ describe("SQLite Workspace persistence", () => {
     const approved = {
       ...issue,
       projectPath: project.path,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
       revision: 5,
     };
