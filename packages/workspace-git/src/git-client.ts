@@ -104,12 +104,19 @@ function stringProperty(value: unknown, key: string): string {
 }
 
 function sanitizeStderr(stderr: string, cwd: string): string {
-  return stderr
+  return stripControlCharacters(stderr
     .replaceAll(cwd, "<workspace>")
     .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+  )
     .slice(0, 8_000)
     .trim();
+}
+
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+  }).join("");
 }
 
 export async function gitRefExists(repositoryPath: string, ref: string): Promise<boolean> {

@@ -956,12 +956,19 @@ const recoverySecretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?toke
 const recoveryBearerToken = /(bearer\s+)([^\s"']+)/gi;
 
 function publicRecoveryText(value: string, maxLength: number): string {
-  return value
+  return stripControlCharacters(value
     .trim()
     .replace(recoverySecretAssignment, "$1[REDACTED]")
     .replace(recoveryBearerToken, "$1[REDACTED]")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+  )
     .slice(0, maxLength);
+}
+
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+  }).join("");
 }
 
 function publicRecoveryResult(result: FinalizationRecoveryResult): FinalizationRecoveryResult {

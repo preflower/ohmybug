@@ -409,10 +409,16 @@ function digest(value: string | Uint8Array): string {
 }
 
 function boundedText(value: string, max: number): string {
-  return value
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+  return stripControlCharacters(value)
     .slice(0, max)
     .trim();
+}
+
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+  }).join("");
 }
 
 function unsafe(

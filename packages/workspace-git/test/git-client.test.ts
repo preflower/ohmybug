@@ -24,7 +24,10 @@ describe("Git command execution", () => {
       });
       expect(failure.stderr.length).toBeLessThanOrEqual(8_000);
       expect(failure.stderr).not.toContain(value.repository);
-      expect(failure.stderr).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/);
+      expect([...failure.stderr].every((character) => {
+        const code = character.charCodeAt(0);
+        return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+      })).toBe(true);
     } finally {
       await value.cleanup();
     }
