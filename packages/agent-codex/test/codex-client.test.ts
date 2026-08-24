@@ -40,10 +40,14 @@ describe("Codex SDK client lifecycle", () => {
 
   it("keeps a stream failure primary when cleanup also fails", async () => {
     const primary = new Error("turn stream failed");
-    async function* failedSdkTurn(): AsyncGenerator<ThreadEvent> {
-      throw primary;
-    }
-    const events = normalizeEvents(failedSdkTurn(), undefined, async () => {
+    const failedSdkTurn: AsyncIterable<ThreadEvent> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => Promise.reject(primary),
+        };
+      },
+    };
+    const events = normalizeEvents(failedSdkTurn, undefined, async () => {
       throw Object.assign(new Error("directory not empty"), { code: "ENOTEMPTY" });
     });
 

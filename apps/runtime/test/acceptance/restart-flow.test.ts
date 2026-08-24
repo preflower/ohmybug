@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
+  AgentCapabilityRequiredError,
   acceptIntegrationInput,
   transitionIssue,
   type Assessment,
@@ -57,7 +58,154 @@ async function submitAssessed(
   return runtime.getIssue(created.issue.id);
 }
 
+class CapabilityRequestAgent extends FakeAgent {
+  private assessmentRequests = 0;
+  private repairRequests = 0;
+
+  async assess(
+    session: Parameters<FakeAgent["assess"]>[0],
+    input: Parameters<FakeAgent["assess"]>[1],
+  ) {
+    this.assessmentRequests += 1;
+    if (this.assessmentRequests === 1) {
+      this.assessSessions.push(session.sessionId);
+      this.assessInputs.push(input);
+      throw new AgentCapabilityRequiredError({
+        capabilities: ["NETWORK_ACCESS"],
+        reason: "Read the upstream API contract",
+        requestedBy: { type: "AGENT" },
+      });
+    }
+    return super.assess(session, input);
+  }
+
+  async repair(
+    session: Parameters<FakeAgent["repair"]>[0],
+    input: Parameters<FakeAgent["repair"]>[1],
+  ) {
+    this.repairRequests += 1;
+    if (this.repairRequests === 1) {
+      this.repairSessions.push(session.sessionId);
+      this.repairInputs.push(input);
+      throw new AgentCapabilityRequiredError({
+        capabilities: ["HOST_EXECUTION"],
+        reason: "Launch Electron acceptance",
+        blockedCommand: "pnpm test:e2e:electron",
+        requestedBy: { type: "SKILL", id: "implement-ui-design" },
+      });
+    }
+    return super.repair(session, input);
+  }
+}
+
 describe("SQLite-backed review and recovery acceptance", () => {
+  it("persists Issue-scoped capability grants and resumes the same Agent session", async () => {
+    const databasePath = temporaryDatabase("omb-runtime-capability-");
+    const projectRoot = join(dirname(databasePath), "project");
+    mkdirSync(projectRoot);
+    const agent = new CapabilityRequestAgent();
+    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    const options = runtimeOptions(databasePath, agent);
+    const runtime = createRuntime(options);
+    runtime.registerProject({ ...project, path: projectRoot });
+    await runtime.start();
+
+    const created = await runtime.submitManual(project.id, {
+      commandId: "capability-primary",
+      content: "Requires upstream context and Electron acceptance",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+    await runtime.drain();
+    const assessmentPaused = runtime.getIssue(created.issue.id);
+    expect(assessmentPaused).toMatchObject({
+      status: "PERMISSION_REQUIRED",
+      agentSession: { sessionId: "session-1" },
+      pendingCapabilityRequest: {
+        operation: "ASSESS",
+        capabilities: ["NETWORK_ACCESS"],
+      },
+    });
+
+    const otherCreated = await runtime.submitManual(project.id, {
+      commandId: "capability-other",
+      content: "Independent Issue",
+    });
+    if (otherCreated.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+    await runtime.drain();
+    const otherIssue = runtime.getIssue(otherCreated.issue.id);
+    expect(otherIssue.status).toBe("ASSESSMENT_REVIEW");
+    expect(otherIssue).not.toHaveProperty("capabilityGrants");
+    await runtime.stop();
+
+    const reopened = createRuntime(options);
+    await reopened.start();
+    await reopened.drain();
+    const stillPaused = reopened.getIssue(assessmentPaused.id);
+    expect(stillPaused).toMatchObject({
+      status: "PERMISSION_REQUIRED",
+      pendingCapabilityRequest: {
+        id: assessmentPaused.pendingCapabilityRequest!.id,
+        capabilities: ["NETWORK_ACCESS"],
+      },
+    });
+    expect(agent.assessSessions.filter((session) => session === "session-1")).toHaveLength(1);
+
+    reopened.grantIssueCapabilities(
+      stillPaused.id,
+      stillPaused.revision,
+      stillPaused.pendingCapabilityRequest!.id,
+    );
+    await reopened.drain();
+    const assessed = reopened.getIssue(stillPaused.id);
+    expect(assessed.status).toBe("ASSESSMENT_REVIEW");
+    expect(agent.assessSessions.filter((session) => session === "session-1")).toHaveLength(2);
+    expect(agent.assessInputs.at(-1)?.continuation).toEqual({
+      reason: "CAPABILITY_GRANTED",
+      requestId: stillPaused.pendingCapabilityRequest!.id,
+      capabilities: ["NETWORK_ACCESS"],
+    });
+
+    reopened.approveAssessment(assessed.id, {
+      ...assessmentReference(assessed.assessment!),
+      title: assessed.assessment!.suggestedTitle,
+    });
+    await reopened.drain();
+    const repairPaused = reopened.getIssue(assessed.id);
+    expect(repairPaused).toMatchObject({
+      status: "PERMISSION_REQUIRED",
+      capabilityGrants: [{ capability: "NETWORK_ACCESS" }],
+      pendingCapabilityRequest: {
+        operation: "REPAIR",
+        capabilities: ["HOST_EXECUTION"],
+      },
+    });
+
+    reopened.grantIssueCapabilities(
+      repairPaused.id,
+      repairPaused.revision,
+      repairPaused.pendingCapabilityRequest!.id,
+    );
+    await reopened.drain();
+    const delivered = reopened.getIssue(repairPaused.id);
+    expect(delivered).toMatchObject({
+      status: "ACCEPTANCE_REVIEW",
+      capabilityGrants: [
+        { capability: "NETWORK_ACCESS" },
+        { capability: "HOST_EXECUTION" },
+      ],
+    });
+    expect(agent.repairSessions).toEqual(["session-1", "session-1"]);
+    expect(agent.repairInputs.at(-1)?.continuation).toEqual({
+      reason: "CAPABILITY_GRANTED",
+      requestId: repairPaused.pendingCapabilityRequest!.id,
+      capabilities: ["HOST_EXECUTION"],
+    });
+    expect(agent.evidenceSessions).toEqual(["session-1"]);
+    expect(agent.evidenceInputs[0]?.continuation).toBeUndefined();
+    expect(reopened.getIssue(otherIssue.id)).not.toHaveProperty("capabilityGrants");
+    await reopened.stop();
+  });
+
   it("persists human NOT_A_BUG and duplicate decisions across restarts", async () => {
     const databasePath = temporaryDatabase("omb-runtime-review-");
     const agent = new FakeAgent();
