@@ -126,6 +126,9 @@ export function gitWorkspaceFactory(
       ) {
         throw new Error("GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH");
       }
+      if (parsed.mergeToBaseBranch) {
+        await assertGitSupportsAutomaticMerge(repositoryPath);
+      }
       await runGit(repositoryPath, [
         "rev-parse",
         "--verify",
@@ -482,6 +485,7 @@ async function mergeIntoBaseBranch(
   state: GitWorkspaceState,
   commit: string,
 ): Promise<void> {
+  await assertGitSupportsAutomaticMerge(state.repositoryPath);
   const baseRef = `refs/heads/${state.baseBranch}`;
   if (!(await gitRefExists(state.repositoryPath, baseRef))) {
     throw new Error("GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH");
@@ -543,6 +547,21 @@ async function mergeIntoBaseBranch(
   } catch (error) {
     throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
   }
+}
+
+async function assertGitSupportsAutomaticMerge(repositoryPath: string): Promise<void> {
+  const version = await runGit(repositoryPath, ["version"]);
+  if (!gitVersionSupportsAutomaticMerge(version)) {
+    throw new Error("GIT_AUTO_MERGE_REQUIRES_GIT_2_38");
+  }
+}
+
+export function gitVersionSupportsAutomaticMerge(versionOutput: string): boolean {
+  const match = /^git version (\d+)\.(\d+)(?:\.|\s|$)/.exec(versionOutput.trim());
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return major > 2 || (major === 2 && minor >= 38);
 }
 
 async function createAutomaticMergeCommit(

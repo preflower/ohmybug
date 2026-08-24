@@ -3,7 +3,10 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { gitWorkspaceFactory } from "../src/provider.js";
+import {
+  gitVersionSupportsAutomaticMerge,
+  gitWorkspaceFactory,
+} from "../src/provider.js";
 import { createGitFixture, git } from "./helpers.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -19,6 +22,14 @@ async function fixture() {
 }
 
 describe("Git Workspace project inspection", () => {
+  it("requires Git 2.38 or newer for automatic merge", () => {
+    expect(gitVersionSupportsAutomaticMerge("git version 2.37.6")).toBe(false);
+    expect(gitVersionSupportsAutomaticMerge("git version 2.38.0")).toBe(true);
+    expect(gitVersionSupportsAutomaticMerge("git version 2.50.1 (Apple Git-155)")).toBe(true);
+    expect(gitVersionSupportsAutomaticMerge("git version 3.0.0")).toBe(true);
+    expect(gitVersionSupportsAutomaticMerge("unexpected output")).toBe(false);
+  });
+
   it("lists local refs immediately and appends fetched remote refs", async () => {
     const value = await fixture();
     const bare = join(value.root, "origin.git");
