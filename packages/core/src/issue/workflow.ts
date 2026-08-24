@@ -177,6 +177,7 @@ function applyTransition(
     delete nextIssue.capabilityGrants;
     delete nextIssue.pendingCapabilityRequest;
     delete nextIssue.finalizationRecovery;
+    delete nextIssue.lastFailure;
   }
   return nextIssue;
 }

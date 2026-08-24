@@ -72,18 +72,16 @@ async function setupRecovery() {
 }
 
 describe("Git finalization recovery", () => {
-  it("diagnoses an empty nested repository without mutating HEAD or the real index", async () => {
+  it("diagnoses generated pollution without mutating HEAD or the real index", async () => {
     const fixture = await setupRecovery();
 
     expect(fixture.error.diagnostic).toMatchObject({
       providerId: "git",
       step: "add",
-      code: "GIT_COMMAND_FAILED:add",
-      exitCode: 128,
-      relatedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
+      code: "GIT_GENERATED_ARTIFACTS_PRESENT",
+      relatedPaths: [".pnpm-store"],
     });
-    expect(fixture.error.diagnostic.stderr?.length).toBeLessThanOrEqual(8_000);
-    expect(fixture.error.diagnostic.stderr).not.toContain(fixture.acquired.projectPath);
+    expect(fixture.error.diagnostic.stderr).toBeUndefined();
     expect(fixture.context.fingerprintSummary)
       .toContain('generated roots: [".pnpm-store"]');
     expect(await git(fixture.acquired.projectPath, "rev-parse", "HEAD"))

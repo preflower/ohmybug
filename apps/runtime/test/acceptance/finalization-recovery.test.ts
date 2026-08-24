@@ -29,7 +29,11 @@ describe("automatic Git finalization recovery", () => {
   it("completes OHMYBUG-14 after one AI removal of generated nested-repository pollution", async () => {
     const fixture = await createGitFixture(async (input) => {
       await rm(fixturePath(input, "_tmp_fixture"), { recursive: true, force: true });
-      return recovered([".pnpm-store/shared/v11/tmp/_tmp_fixture"]);
+      await rm(generatedCapturePath(input), { recursive: true, force: true });
+      return recovered([
+        ".pnpm-store/shared/v11/tmp/_tmp_fixture",
+        ".oh-my-bug-tmp-capture",
+      ]);
     });
     const before = fixture.fixture.store.getIssue(fixture.issueId)!;
     const originalSession = before.agentSession;
@@ -46,6 +50,7 @@ describe("automatic Git finalization recovery", () => {
         step: "add",
         relatedPaths: expect.arrayContaining([
           expect.stringContaining(".pnpm-store"),
+          ".oh-my-bug-tmp-capture",
         ]),
       },
     });
@@ -64,6 +69,8 @@ describe("automatic Git finalization recovery", () => {
       .toBe("human-approved source change");
     expect(await git(fixture.repository, "ls-tree", "-r", "--name-only", String(branch)))
       .not.toContain(".pnpm-store");
+    expect(await git(fixture.repository, "ls-tree", "-r", "--name-only", String(branch)))
+      .not.toContain(".oh-my-bug-tmp-capture");
     expect(await git(fixture.repository, "rev-list", "--count", `main..${branch}`)).toBe("1");
     expect(fixture.fixture.workspacePersistence.getBinding(fixture.issueId))
       .toMatchObject({ status: "RELEASED" });
@@ -72,9 +79,14 @@ describe("automatic Git finalization recovery", () => {
   it("requires evidence again when the AI changes approved source content", async () => {
     const fixture = await createGitFixture(async (input) => {
       await rm(fixturePath(input, "_tmp_fixture"), { recursive: true, force: true });
+      await rm(generatedCapturePath(input), { recursive: true, force: true });
       await appendFile(join(input.issue.projectPath!, "approved.txt"), "\nAI changed product behavior\n");
       return {
-        ...recovered(["approved.txt", ".pnpm-store/shared/v11/tmp/_tmp_fixture"]),
+        ...recovered([
+          "approved.txt",
+          ".pnpm-store/shared/v11/tmp/_tmp_fixture",
+          ".oh-my-bug-tmp-capture",
+        ]),
         disposition: "REVALIDATION_REQUIRED",
       };
     });
@@ -114,7 +126,11 @@ describe("automatic Git finalization recovery", () => {
   it("does not start a second AI attempt when the automatic publish retry also fails", async () => {
     const fixture = await createGitFixture(async (input) => {
       await rm(fixturePath(input, "_tmp_fixture"), { recursive: true, force: true });
-      return recovered([".pnpm-store/shared/v11/tmp/_tmp_fixture"]);
+      await rm(generatedCapturePath(input), { recursive: true, force: true });
+      return recovered([
+        ".pnpm-store/shared/v11/tmp/_tmp_fixture",
+        ".oh-my-bug-tmp-capture",
+      ]);
     });
     const hook = join(fixture.repository, ".git", "hooks", "pre-commit");
     await writeFile(hook, "#!/bin/sh\nexit 1\n");
@@ -217,6 +233,9 @@ async function createGitFixture(
   );
   await mkdir(nestedRepository, { recursive: true });
   await git(nestedRepository, "init");
+  const generatedCapture = join(ready.projectPath, ".oh-my-bug-tmp-capture");
+  await mkdir(generatedCapture);
+  await writeFile(join(generatedCapture, "artifact.txt"), "generated capture\n");
   return { fixture, agent, worker, issueId: created.issue.id, repository };
 }
 
@@ -229,6 +248,10 @@ function fixturePath(input: FinalizationRecoveryInput, name: string): string {
     "tmp",
     name,
   );
+}
+
+function generatedCapturePath(input: FinalizationRecoveryInput): string {
+  return join(input.issue.projectPath!, ".oh-my-bug-tmp-capture");
 }
 
 function recovered(affectedPaths: string[]): FinalizationRecoveryResult {

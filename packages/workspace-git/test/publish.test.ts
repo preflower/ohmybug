@@ -61,6 +61,44 @@ describe("GitWorkspace publish", () => {
     expect(await git(acquired.projectPath, "rev-parse", "HEAD")).toBe(before);
   });
 
+  it.each([
+    ".pnpm-store/cache.bin",
+    ".oh-my-bug-tmp-capture/artifact.txt",
+  ])("rejects generated artifact pollution at %s before publishing", async (path) => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const beforeHead = await git(acquired.projectPath, "rev-parse", "HEAD");
+    const beforeIndex = await git(acquired.projectPath, "ls-files", "--stage");
+    await mkdir(join(acquired.projectPath, path, ".."), { recursive: true });
+    await writeFile(join(acquired.projectPath, path), "generated\n");
+    await writeFile(join(acquired.projectPath, "fixed.txt"), "fixed\n");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "FINALIZING" as const,
+      resolution: "FIXED" as const,
+    };
+
+    const error = await provider.publish({ issue: approved, resourceId: "git:issue-1" })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      diagnostic: {
+        providerId: "git",
+        step: "add",
+        code: "GIT_GENERATED_ARTIFACTS_PRESENT",
+        relatedPaths: [path.split("/", 1)[0]],
+      },
+    });
+    expect(await git(acquired.projectPath, "rev-parse", "HEAD")).toBe(beforeHead);
+    expect(await git(acquired.projectPath, "ls-files", "--stage")).toBe(beforeIndex);
+  });
+
   it("ignores an unstaged .gitmodules file when validating embedded repositories", async () => {
     const fixture = await createGitFixture();
     cleanups.push(fixture.cleanup);

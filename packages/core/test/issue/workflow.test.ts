@@ -433,10 +433,15 @@ describe("Issue workflow", () => {
     const completed = transitionIssue({
       ...issueAt("FINALIZING"),
       capabilityGrants,
+      lastFailure: {
+        stage: "FINALIZATION_RECOVERY",
+        code: "FINALIZATION_RECOVERY_UNSAFE",
+      },
     }, "COMPLETE_DELIVERY", "2026-08-24T08:02:00.000Z");
 
     expect(completed.status).toBe("COMPLETED");
     expect(completed.capabilityGrants).toBeUndefined();
+    expect(completed.lastFailure).toBeUndefined();
   });
 
   it("revokes grants when a non-bug assessment closes the Issue", () => {

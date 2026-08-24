@@ -61,6 +61,13 @@ export class WorkspaceFinalizationError extends Error {
   }
 }
 
+class GeneratedArtifactsPresentError extends Error {
+  constructor(readonly relatedPaths: string[]) {
+    super("GIT_GENERATED_ARTIFACTS_PRESENT");
+    this.name = "GeneratedArtifactsPresentError";
+  }
+}
+
 export function finalizationError(input: {
   error: unknown;
   providerId: string;
@@ -69,6 +76,9 @@ export function finalizationError(input: {
 }): WorkspaceFinalizationError {
   if (input.error instanceof WorkspaceFinalizationError) return input.error;
   const commandError = input.error instanceof GitCommandError ? input.error : undefined;
+  const generatedArtifactsError = input.error instanceof GeneratedArtifactsPresentError
+    ? input.error
+    : undefined;
   const code = commandError?.message
     ?? (input.error instanceof Error ? input.error.message : "WORKSPACE_PUBLISH_FAILED");
   const stderr = commandError?.stderr || undefined;
@@ -80,7 +90,8 @@ export function finalizationError(input: {
     ...(commandError?.exitCode === undefined ? {} : { exitCode: commandError.exitCode }),
     message,
     ...(stderr ? { stderr: boundedText(stderr, 8_000) } : {}),
-    relatedPaths: relatedPaths(stderr ?? code, input.worktreePath),
+    relatedPaths: generatedArtifactsError?.relatedPaths
+      ?? relatedPaths(stderr ?? code, input.worktreePath),
   }, input.error);
 }
 
@@ -174,6 +185,19 @@ export async function validateGitFinalizationRecovery(input: {
 }
 
 export async function assertPublicationPreflight(worktreePath: string): Promise<void> {
+  const untrackedPaths = splitNull(await runGit(worktreePath, [
+    "ls-files",
+    "--others",
+    "--exclude-standard",
+    "-z",
+  ]));
+  const generatedRoots = collapseRoots(normalizePaths(
+    untrackedPaths.flatMap(generatedRoot),
+  ));
+  if (generatedRoots.length > 0) {
+    throw new GeneratedArtifactsPresentError(generatedRoots);
+  }
+
   const temporaryRoot = await mkdtemp(join(tmpdir(), "ohmybug-git-preflight-"));
   try {
     const indexPath = join(temporaryRoot, "index");
