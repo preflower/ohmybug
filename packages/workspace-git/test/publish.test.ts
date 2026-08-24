@@ -1,4 +1,4 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -547,6 +547,44 @@ describe("GitWorkspace publish", () => {
       .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
 
     await expect(access(hiddenFile)).resolves.toBeUndefined();
+  });
+
+  it("preserves a dangling symlink at an uninitialized submodule path", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const source = join(fixture.root, "symlink-submodule-source");
+    await createCommittedRepository(source);
+    await git(
+      fixture.repository,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      source,
+      "vendor/uninitialized-link",
+    );
+    await git(fixture.repository, "commit", "-am", "add uninitialized submodule");
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const uninitialized = join(acquired.projectPath, "vendor/uninitialized-link");
+    await rm(uninitialized, { recursive: true, force: true });
+    await symlink("missing-target", uninitialized);
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(lstat(uninitialized)).resolves.toBeDefined();
   });
 });
 

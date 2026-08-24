@@ -480,8 +480,15 @@ async function assertInitializedSubmodulesClean(
 }
 
 async function assertUninitializedGitlinkEmpty(path: string): Promise<void> {
-  if (!(await pathExists(path))) return;
-  const stats = await lstat(path);
+  let stats;
+  try {
+    stats = await lstat(path);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
   if (!stats.isDirectory() || (await readdir(path)).length > 0) {
     throw new Error("GIT_WORKTREE_NOT_CLEAN");
   }
@@ -495,6 +502,7 @@ async function assertWorktreeAndSubmodulesClean(
   if (visited.has(canonicalPath)) return;
   visited.add(canonicalPath);
   await assertNoHiddenIndexEntries(worktreePath);
+  await assertInitializedSubmodulesClean(worktreePath, visited);
   const changes = await runGit(worktreePath, [
     "status",
     "--porcelain",
@@ -502,7 +510,6 @@ async function assertWorktreeAndSubmodulesClean(
     "--ignore-submodules=none",
   ]);
   if (changes) throw new Error("GIT_WORKTREE_NOT_CLEAN");
-  await assertInitializedSubmodulesClean(worktreePath, visited);
 }
 
 async function getIndexGitlinks(worktreePath: string): Promise<string[]> {
