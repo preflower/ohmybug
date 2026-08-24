@@ -367,20 +367,45 @@ describe("Issue detail", () => {
     expect(rebuild).toBeVisible();
   });
 
-  it("shows retry while an approved branch is waiting to publish", async () => {
+  it("shows active finalization without a retry action", () => {
+    render(<IssueDetail
+      issue={{ ...issue, status: "FINALIZING", repair: undefined }}
+      onApproveDelivery={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("交付处理中")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/发布/)).not.toBeInTheDocument();
+  });
+
+  it("retries only a failed finalization", async () => {
     const onApproveDelivery = vi.fn(async () => undefined);
     render(<IssueDetail
-      issue={{ ...issue, status: "APPROVED", repair: undefined }}
+      issue={{ ...issue, status: "FINALIZATION_FAILED", repair: undefined }}
       onApproveDelivery={onApproveDelivery}
       onRefresh={async () => undefined}
     />);
 
-    expect(within(screen.getByRole("region", { name: "分支发布" }))
-      .getByText("发布中 / 待重试")).toBeVisible();
+    const recovery = within(screen.getByRole("region", { name: "交付恢复" }));
+    expect(recovery.getByText("交付失败，待重试")).toBeVisible();
+    expect(recovery.getByText("代码和工作目录已保留，可安全重试交付收尾。")).toBeVisible();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "重试发布" }));
+      fireEvent.click(recovery.getByRole("button", { name: "重试交付" }));
     });
     expect(onApproveDelivery).toHaveBeenCalledOnce();
+  });
+
+  it("shows the delivery retry fallback error", async () => {
+    render(<IssueDetail
+      issue={{ ...issue, status: "FINALIZATION_FAILED", repair: undefined }}
+      onApproveDelivery={async () => Promise.reject("unavailable")}
+      onRefresh={async () => undefined}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "重试交付" }));
+
+    expect(await screen.findByText("重试交付失败")).toBeVisible();
   });
 
   it("shows the returned branch separately from the completed Issue", () => {

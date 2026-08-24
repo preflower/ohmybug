@@ -72,7 +72,7 @@ describe("control center workbench", () => {
       id: "issue-background",
       identifier: "CHK-1",
       title: "Background issue",
-      status: "APPROVED",
+      status: "FINALIZING",
       revision: 5,
     };
     const terminal: IssueDto = {
