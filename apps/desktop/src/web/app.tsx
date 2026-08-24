@@ -26,6 +26,7 @@ import { IssueStatusBadge } from "./issues/issue-status.js";
 import { AgentActivity } from "./issues/agent-activity.js";
 import { newestIssuesFirst } from "./issues/issue-order.js";
 import { useIssueEvents } from "./issues/use-issue-events.js";
+import { useIssueListUpdates } from "./issues/use-issue-list-updates.js";
 import { ProjectList } from "./projects/project-list.js";
 import { ProjectForm, type ProjectFormValue } from "./projects/project-form.js";
 import { ThemeSelector } from "./settings/theme-selector.js";
@@ -163,12 +164,17 @@ function AppContent() {
     return () => window.removeEventListener(eventName, onRouteChange);
   }, []);
 
+  const updateIssue = useCallback((issue: IssueDto) => {
+    setSelectedIssue((current) => issue.id === selectedId ? issue : current);
+    setIssues((current) => newestIssuesFirst(
+      current.map((entry) => entry.id === issue.id ? issue : entry),
+    ));
+  }, [selectedId]);
+
   const refreshIssue = useCallback(async () => {
     if (!selectedId) return;
-    const issue = await api.issue(selectedId);
-    setSelectedIssue(issue);
-    setIssues((current) => current.map((entry) => (entry.id === issue.id ? issue : entry)));
-  }, [selectedId]);
+    updateIssue(await api.issue(selectedId));
+  }, [selectedId, updateIssue]);
 
   useEffect(() => {
     let active = true;
@@ -211,9 +217,9 @@ function AppContent() {
     if (!selectedId) return;
     void api
       .issue(selectedId)
-      .then(setSelectedIssue)
+      .then(updateIssue)
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Issue 加载失败"));
-  }, [selectedId]);
+  }, [selectedId, updateIssue]);
 
   const goTo = (next: View) => {
     writeRoute(next);
@@ -234,13 +240,6 @@ function AppContent() {
   const navigate = (next: View) => (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     goTo(next);
-  };
-
-  const updateIssue = (issue: IssueDto) => {
-    setSelectedIssue(issue);
-    setIssues((current) => newestIssuesFirst(
-      current.map((entry) => (entry.id === issue.id ? issue : entry)),
-    ));
   };
 
   const rememberProject = (saved: ProjectDto) => {
@@ -363,6 +362,7 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
       setBranches((current) => ({ ...current, [issue.id]: result.branch! }));
     }
   });
+  useIssueListUpdates(issues, selectedId, onUpdated);
   const events = useIssueEvents(selectedId, onRefresh);
   const active = selected ? ["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE", "EVIDENCE_CHECK"].includes(selected.status) : false;
   const [metadataOpen, setMetadataOpen] = useState(true);

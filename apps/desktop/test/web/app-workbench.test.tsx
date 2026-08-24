@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../src/web/app.js";
 import { api } from "../../src/web/api/client.js";
-import type { IssueDto, ProjectDto } from "../../src/web/api/types.js";
+import type { AgentEventDto, IssueDto, ProjectDto } from "../../src/web/api/types.js";
 
 const project: ProjectDto = {
   id: "project-1",
@@ -59,6 +59,76 @@ afterEach(() => {
 });
 
 describe("control center workbench", () => {
+  it("updates a non-selected Issue row when its Runtime event arrives", async () => {
+    const selected: IssueDto = {
+      ...issue,
+      id: "issue-selected",
+      identifier: "CHK-2",
+      title: "Selected issue",
+      updatedAt: "2026-08-20T09:00:00.000Z",
+    };
+    const background: IssueDto = {
+      ...issue,
+      id: "issue-background",
+      identifier: "CHK-1",
+      title: "Background issue",
+      status: "APPROVED",
+      revision: 5,
+    };
+    const terminal: IssueDto = {
+      ...issue,
+      id: "issue-terminal",
+      identifier: "CHK-0",
+      title: "Terminal issue",
+      status: "COMPLETED",
+    };
+    const completed: IssueDto = {
+      ...background,
+      status: "COMPLETED",
+      revision: 6,
+      updatedAt: "2026-08-20T09:02:00.000Z",
+    };
+    const listeners = new Map<
+      string,
+      (events: AgentEventDto[], cursor: number) => void
+    >();
+
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([background, selected, terminal]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) =>
+      id === background.id ? completed : selected
+    );
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const subscribe = vi.spyOn(api, "subscribeIssueEvents").mockImplementation(
+      (id, _cursor, listener) => {
+        listeners.set(id, listener);
+        return () => listeners.delete(id);
+      },
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Selected issue" })).toBeVisible();
+    await waitFor(() => expect(listeners.has(background.id)).toBe(true));
+    expect(subscribe.mock.calls.some(([id]) => id === terminal.id)).toBe(false);
+
+    act(() => listeners.get(background.id)?.([{
+      id: "event-completed",
+      issueId: background.id,
+      sequence: 1,
+      type: "ISSUE_COMPLETED",
+      actor: "SYSTEM",
+      data: {},
+      occurredAt: "2026-08-20T09:02:00.000Z",
+    }], 1));
+
+    const list = screen.getByRole("region", { name: "Issue 列表" });
+    const backgroundRow = within(list).getByRole("button", { name: /CHK-1/ });
+    await waitFor(() => expect(within(backgroundRow).getByText("已完成")).toBeVisible());
+    expect(screen.getByRole("heading", { level: 2, name: "Selected issue" })).toBeVisible();
+  });
+
   it("grants the selected Issue capability request with its revision and request ID", async () => {
     const permissionRequiredIssue: IssueDto = {
       ...issue,
