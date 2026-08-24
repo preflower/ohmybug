@@ -165,10 +165,15 @@ function AppContent() {
   }, []);
 
   const updateIssue = useCallback((issue: IssueDto) => {
-    setSelectedIssue((current) => issue.id === selectedId ? issue : current);
-    setIssues((current) => newestIssuesFirst(
-      current.map((entry) => entry.id === issue.id ? issue : entry),
-    ));
+    setSelectedIssue((current) =>
+      issue.id === selectedId
+        && (current?.id !== issue.id || issue.revision >= current.revision)
+        ? issue
+        : current
+    );
+    setIssues((current) => newestIssuesFirst(current.map((entry) =>
+      entry.id === issue.id && issue.revision >= entry.revision ? issue : entry
+    )));
   }, [selectedId]);
 
   const refreshIssue = useCallback(async () => {

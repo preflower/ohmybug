@@ -129,6 +129,60 @@ describe("control center workbench", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Selected issue" })).toBeVisible();
   });
 
+  it("ignores an older snapshot delivered after a newer Issue revision", async () => {
+    const selected: IssueDto = {
+      ...issue,
+      id: "issue-selected",
+      identifier: "CHK-2",
+      title: "Selected issue",
+      updatedAt: "2026-08-20T09:00:00.000Z",
+    };
+    const current: IssueDto = {
+      ...issue,
+      id: "issue-background",
+      identifier: "CHK-1",
+      title: "Background issue",
+      status: "REPAIRING",
+      revision: 7,
+    };
+    const stale: IssueDto = {
+      ...current,
+      status: "APPROVED",
+      revision: 6,
+    };
+    let backgroundListener: ((events: AgentEventDto[], cursor: number) => void) | undefined;
+
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([current, selected]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) =>
+      id === current.id ? stale : selected
+    );
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockImplementation((id, _cursor, listener) => {
+      if (id === current.id) backgroundListener = listener;
+      return () => undefined;
+    });
+
+    render(<App />);
+    await waitFor(() => expect(backgroundListener).toBeDefined());
+    act(() => backgroundListener?.([{
+      id: "event-stale",
+      issueId: current.id,
+      sequence: 1,
+      type: "DELIVERY_APPROVED",
+      actor: "USER",
+      data: {},
+      occurredAt: "2026-08-20T09:01:00.000Z",
+    }], 1));
+
+    const list = screen.getByRole("region", { name: "Issue 列表" });
+    const backgroundRow = within(list).getByRole("button", { name: /CHK-1/ });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 250)));
+    expect(within(backgroundRow).getByText("实现中")).toBeVisible();
+    expect(within(backgroundRow).queryByText("发布中 / 待重试")).not.toBeInTheDocument();
+  });
+
   it("grants the selected Issue capability request with its revision and request ID", async () => {
     const permissionRequiredIssue: IssueDto = {
       ...issue,
