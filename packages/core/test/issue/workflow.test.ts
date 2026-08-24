@@ -41,16 +41,27 @@ describe("Issue workflow", () => {
     grantedAt: "2026-08-24T08:00:00.000Z",
   }];
 
-  it("persists Delivery approval before final completion", () => {
-    const approved = transitionIssue(
+  it("separates active and failed Delivery finalization", () => {
+    const finalizing = transitionIssue(
       { ...issueAt("ACCEPTANCE_REVIEW"), assessment },
       "APPROVE_DELIVERY",
       "2026-08-20T07:09:00.000Z",
     );
 
-    expect(approved).toMatchObject({ status: "APPROVED", resolution: "FIXED" });
+    expect(finalizing).toMatchObject({ status: "FINALIZING", resolution: "FIXED" });
+    const failed = transitionIssue(
+      finalizing,
+      "FINALIZATION_ERRORED",
+      "2026-08-20T07:09:30.000Z",
+    );
+    expect(failed.status).toBe("FINALIZATION_FAILED");
     expect(transitionIssue(
-      approved,
+      failed,
+      "RETRY_FINALIZATION",
+      "2026-08-20T07:09:45.000Z",
+    ).status).toBe("FINALIZING");
+    expect(transitionIssue(
+      finalizing,
       "COMPLETE_DELIVERY",
       "2026-08-20T07:10:00.000Z",
     )).toMatchObject({ status: "COMPLETED", resolution: "FIXED" });
@@ -379,7 +390,7 @@ describe("Issue workflow", () => {
 
   it("revokes grants when an approved delivery completes", () => {
     const completed = transitionIssue({
-      ...issueAt("APPROVED"),
+      ...issueAt("FINALIZING"),
       capabilityGrants,
     }, "COMPLETE_DELIVERY", "2026-08-24T08:02:00.000Z");
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { issueSchema, type Issue } from "../../src/index.js";
+import { issueSchema, issueStatusSchema, type Issue } from "../../src/index.js";
 
 const issue: Issue = {
   id: "issue-1",
@@ -50,6 +50,17 @@ describe("Issue persistence schema", () => {
 
   it("rejects unknown top-level persistence fields", () => {
     expect(() => issueSchema.parse({ ...issue, unexpectedField: true })).toThrow();
+  });
+
+  it.each(["FINALIZING", "FINALIZATION_FAILED"] as const)(
+    "round-trips the %s status",
+    (status) => {
+      expect(issueSchema.parse({ ...issue, status }).status).toBe(status);
+    },
+  );
+
+  it("rejects the legacy APPROVED status", () => {
+    expect(issueStatusSchema.safeParse("APPROVED").success).toBe(false);
   });
 
   it("stores only the concrete Issue project path", () => {

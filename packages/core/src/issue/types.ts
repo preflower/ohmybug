@@ -20,7 +20,8 @@ export type IssueStatus =
   | "REPAIR_FAILED"
   | "PERMISSION_REQUIRED"
   | "ACCEPTANCE_REVIEW"
-  | "APPROVED"
+  | "FINALIZING"
+  | "FINALIZATION_FAILED"
   | "COMPLETED"
   | "CLOSED"
   | "CANCELED";
