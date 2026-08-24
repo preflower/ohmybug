@@ -1336,6 +1336,57 @@ a:focus-visible {
   grid-column: 1 / -1;
 }
 
+.finalization-recovery-status {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  border: 1px solid color-mix(in oklch, var(--accent) 28%, var(--border));
+  border-radius: 8px;
+  background: var(--accent-soft);
+  padding: 12px 14px;
+}
+
+.finalization-recovery-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-hover);
+}
+
+.finalization-recovery-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.finalization-recovery-heading strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.finalization-recovery-heading span {
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.finalization-recovery-diagnostic {
+  display: grid;
+  gap: 5px;
+  padding-left: 23px;
+}
+
+.finalization-recovery-diagnostic p {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.finalization-recovery-diagnostic code {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
 .capability-request-panel {
   display: grid;
   gap: 12px;

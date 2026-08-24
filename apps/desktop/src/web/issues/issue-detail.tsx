@@ -47,7 +47,13 @@ const verdictLabels: Record<NonNullable<IssueDto["assessment"]>["verdict"], stri
 };
 
 function failureMessage(failure: NonNullable<IssueDto["lastFailure"]>): string {
-  const stage = failure.stage === "ASSESSMENT" ? "分析" : failure.stage === "EVIDENCE" ? "证据采集" : "实现";
+  const stage = failure.stage === "ASSESSMENT"
+    ? "分析"
+    : failure.stage === "EVIDENCE"
+      ? "证据采集"
+      : failure.stage === "FINALIZATION_RECOVERY"
+        ? "交付恢复"
+        : "实现";
   switch (failure.code) {
     case "AGENT_FAILURE": return `Codex 未能完成${stage}`;
     case "AGENT_SESSION_UNAVAILABLE": return "Codex 会话不可用";
@@ -90,7 +96,14 @@ export function IssueDetail({
   const capabilityRequest = issue.status === "PERMISSION_REQUIRED"
     ? issue.pendingCapabilityRequest
     : undefined;
-  const canCancel = ["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE", "EVIDENCE_CHECK", "PERMISSION_REQUIRED"].includes(issue.status);
+  const canCancel = [
+    "ASSESSING",
+    "REPAIRING",
+    "EVIDENCE_CAPTURE",
+    "EVIDENCE_CHECK",
+    "PERMISSION_REQUIRED",
+    "FINALIZATION_RECOVERY",
+  ].includes(issue.status);
   const compactAssessment = issue.status === "ASSESSMENT_REVIEW"
     && Boolean(assessment)
     && (assessment?.verdict === "BUG" || assessment?.verdict === "FEATURE")
@@ -135,6 +148,31 @@ export function IssueDetail({
         onCancel={() => refreshAfter(onCancel)}
       /> : null}
 
+      {issue.status === "FINALIZATION_RECOVERY" && issue.finalizationRecovery ? (
+        <section
+          aria-label="自动交付恢复"
+          aria-live="polite"
+          className="finalization-recovery-status"
+          role="status"
+        >
+          <div className="finalization-recovery-heading">
+            <Wrench aria-hidden="true" size={15} />
+            <div>
+              <strong>AI 正在修复交付阻塞</strong>
+              <span>第 {issue.finalizationRecovery.automaticAttempts}/1 次自动恢复</span>
+            </div>
+          </div>
+          {issue.finalizationRecovery.diagnostic ? (
+            <div className="finalization-recovery-diagnostic">
+              <p>{issue.finalizationRecovery.diagnostic.message}</p>
+              {issue.finalizationRecovery.diagnostic.relatedPaths.map((path) => (
+                <code key={path}>{path}</code>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       {canCancel && !capabilityRequest && onCancel ? <section aria-label="运行控制" className="failure-actions"><div><strong>Agent 正在运行</strong><span>取消会终止当前回合，并将 Issue 标记为已取消。</span></div>{cancelError ? <Alert className="form-error" variant="destructive"><AlertDescription>{cancelError}</AlertDescription></Alert> : null}<Button disabled={canceling} type="button" variant="secondary" onClick={() => { setCanceling(true); setCancelError(""); void refreshAfter(onCancel).catch((caught) => setCancelError(caught instanceof Error ? caught.message : "取消失败")).finally(() => setCanceling(false)); }}><Square aria-hidden="true" size={12} />{canceling ? "取消中…" : "取消 Agent 运行"}</Button></section> : null}
 
       {retryLabel && onRetry ? <section aria-label="失败恢复" className="failure-actions"><div><strong>{retryLabel}</strong><span>{issue.status === "EVIDENCE_FAILED" ? "实现改动和工作目录已保留，只会重新采集证据。" : "Issue 上下文和已确认内容会保留，并从可恢复阶段继续。"}</span></div>{retryError ? <Alert className="form-error" variant="destructive"><AlertDescription>{retryError}</AlertDescription></Alert> : null}<Button disabled={retrying} type="button" variant="secondary" onClick={() => { setRetrying(true); setRetryError(""); void refreshAfter(onRetry).catch((caught) => setRetryError(caught instanceof Error ? caught.message : "重试失败")).finally(() => setRetrying(false)); }}><RotateCcw size={13} />{retrying ? "重试中…" : retryLabel}</Button></section> : null}
@@ -146,6 +184,9 @@ export function IssueDetail({
           <div>
             <strong>交付失败，待重试</strong>
             <span>代码和工作目录已保留，可安全重试交付收尾。</span>
+            {issue.finalizationRecovery?.summary ? (
+              <span>自动恢复结果：{issue.finalizationRecovery.summary}</span>
+            ) : null}
           </div>
           {finalizationRetryError ? (
             <Alert className="form-error" variant="destructive">

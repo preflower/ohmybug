@@ -34,6 +34,11 @@ const eventLabels: Record<string, string> = {
   DELIVERY_READY: "改动完成，等待验收",
   DELIVERY_REJECTED: "验收未通过，继续实现",
   DELIVERY_APPROVED: "改动已验收",
+  DELIVERY_FINALIZATION_RECOVERY_STARTED: "交付失败，已启动 AI 自动恢复",
+  DELIVERY_FINALIZATION_RECOVERY_COMPLETED: "AI 交付恢复已完成",
+  DELIVERY_FINALIZATION_RECOVERY_FAILED: "AI 交付恢复未能安全完成",
+  DELIVERY_FINALIZATION_REVALIDATION_REQUIRED: "交付内容发生变化，需要重新验证",
+  DELIVERY_FINALIZATION_AUTO_RETRIED: "交付阻塞已解除，正在自动重试",
   EVIDENCE_ACCEPTED: "验证证据已通过",
   EVIDENCE_REJECTED: "验证证据未通过",
   AGENT_SESSION_REBUILD_REQUESTED: "正在重建 Codex 会话",
@@ -84,6 +89,7 @@ function eventMessage(event: AgentEventDto): string {
     if (event.data.operation === "REPAIR") return "Runtime 已重启，正在恢复实现";
     if (event.data.operation === "CAPTURE_EVIDENCE") return "Runtime 已重启，正在恢复证据采集";
     if (event.data.operation === "EVIDENCE") return "Runtime 已重启，正在恢复证据检查";
+    if (event.data.operation === "RECOVER_FINALIZATION") return "Runtime 已重启，正在恢复交付修复";
   }
   return eventLabels[event.type] ?? "状态已更新";
 }

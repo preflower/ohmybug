@@ -379,7 +379,13 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
   const selectedBranch = selected
     ? branches[selected.id] ?? durableBranch
     : undefined;
-  const active = selected ? ["ASSESSING", "REPAIRING", "EVIDENCE_CAPTURE", "EVIDENCE_CHECK"].includes(selected.status) : false;
+  const active = selected ? [
+    "ASSESSING",
+    "REPAIRING",
+    "EVIDENCE_CAPTURE",
+    "EVIDENCE_CHECK",
+    "FINALIZATION_RECOVERY",
+  ].includes(selected.status) : false;
   const [metadataOpen, setMetadataOpen] = useState(true);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
