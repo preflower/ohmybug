@@ -193,7 +193,7 @@ Automatic retry is allowed only when all of the following hold:
 - every removed or changed diagnostic root was entirely untracked before recovery;
 - the original failure condition is absent in a dry-run publication preflight.
 
-The Runtime appends `DELIVERY_FINALIZATION_RECOVERED`, transitions to `FINALIZING`, queues `FINALIZE`, consumes the automatic recovery budget, and wakes the Worker.
+The Runtime appends `DELIVERY_FINALIZATION_RECOVERY_COMPLETED` and `DELIVERY_FINALIZATION_AUTO_RETRIED`, transitions to `FINALIZING`, queues `FINALIZE`, consumes the automatic recovery budget, and wakes the Worker.
 
 ### Approved content changed
 
