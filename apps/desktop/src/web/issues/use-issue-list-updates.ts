@@ -23,16 +23,20 @@ export function useIssueListUpdates(
   useEffect(() => {
     if (!subscriptionKey) return;
     const unsubscribers = subscriptionKey.split("\u0000").map((issueId) => {
+      let active = true;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const unsubscribe = api.subscribeIssueEvents(issueId, 0, (events) => {
-        if (events.length === 0) return;
+        if (!active || events.length === 0) return;
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => {
           timer = undefined;
-          void api.issue(issueId).then(onUpdated).catch(() => undefined);
+          void api.issue(issueId).then((issue) => {
+            if (active) onUpdated(issue);
+          }).catch(() => undefined);
         }, 200);
       });
       return () => {
+        active = false;
         if (timer) clearTimeout(timer);
         unsubscribe();
       };
