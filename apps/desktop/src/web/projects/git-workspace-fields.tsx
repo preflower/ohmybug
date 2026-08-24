@@ -47,6 +47,17 @@ export function GitWorkspaceFields({
     </label>
     <div className="git-publication-field">
       <div className="git-publication-copy">
+        <strong id="git-merge-label">完成后合并到基线分支</strong>
+        <small>验收完成后，将 Issue 分支合并到所选的本地基线分支。基线有未提交改动或发生冲突时会停止并保留 Issue 分支。</small>
+      </div>
+      <Switch
+        aria-labelledby="git-merge-label"
+        checked={Boolean(config.mergeToBaseBranch)}
+        onCheckedChange={(checked) => onChange("mergeToBaseBranch", checked)}
+      />
+    </div>
+    <div className="git-publication-field">
+      <div className="git-publication-copy">
         <strong id="git-push-label">完成后推送到远程</strong>
         <small>Issue 完成后，将本地 Issue 分支发布到当前远程仓库。</small>
         {publicationRemote ? <>

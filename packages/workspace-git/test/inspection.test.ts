@@ -79,6 +79,27 @@ describe("Git Workspace project inspection", () => {
     })).rejects.toThrow("GIT_COMMAND_FAILED:rev-parse");
   });
 
+  it("requires a local baseline branch when automatic merge is enabled", async () => {
+    const value = await fixture();
+    const bare = join(value.root, "origin.git");
+    await git(value.root, "init", "--bare", bare);
+    await git(value.repository, "remote", "add", "origin", bare);
+    await git(value.repository, "push", "origin", "main:release");
+    await git(value.repository, "fetch", "origin");
+    const factory = gitWorkspaceFactory({ state: value.state, worktreeRoot: value.worktreeRoot });
+
+    await expect(factory.validateProjectConfiguration?.(value.repository, {
+      baseBranch: "main",
+      pushToRemote: false,
+      mergeToBaseBranch: true,
+    })).resolves.toBeUndefined();
+    await expect(factory.validateProjectConfiguration?.(value.repository, {
+      baseBranch: "origin/release",
+      pushToRemote: false,
+      mergeToBaseBranch: true,
+    })).rejects.toThrow("GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH");
+  });
+
   it("prefers the current branch remote and exposes its URL as read-only evidence", async () => {
     const value = await fixture();
     await git(value.repository, "remote", "add", "origin", "/srv/git/origin.git");

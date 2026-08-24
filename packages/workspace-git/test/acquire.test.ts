@@ -22,6 +22,12 @@ describe("GitWorkspace acquire", () => {
       label: "完成后推送到远程",
       defaultValue: false,
     }));
+    expect(factory.manifest.configFields).toContainEqual(expect.objectContaining({
+      key: "mergeToBaseBranch",
+      type: "boolean",
+      label: "完成后合并到基线分支",
+      defaultValue: false,
+    }));
     expect(factory.manifest.configFields)
       .not.toContainEqual(expect.objectContaining({ key: "delivery" }));
     expect(factory.manifest.configFields)
@@ -38,6 +44,11 @@ describe("GitWorkspace acquire", () => {
       .toThrow("GIT_REMOTE_REQUIRED");
     expect(() => factory.validate({ baseBranch: "main", pushToRemote: false }))
       .not.toThrow();
+    expect(() => factory.validate({
+      baseBranch: "main",
+      pushToRemote: false,
+      mergeToBaseBranch: true,
+    })).not.toThrow();
     expect(() => factory.validate({ baseBranch: "main", delivery: "remote", remote: "delivery" }))
       .not.toThrow();
   });

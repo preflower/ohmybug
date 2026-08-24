@@ -624,6 +624,116 @@ describe("GitWorkspace publish", () => {
 
     await expect(lstat(uninitialized)).resolves.toBeDefined();
   });
+
+  it("automatically merges the approved Issue commit into its local baseline branch", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    await writeFile(join(acquired.projectPath, "fixed.txt"), "fixed\n");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    const published = await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+
+    expect(published).toBeDefined();
+    expect(await git(fixture.repository, "rev-parse", "main")).toBe(published!.commit);
+    expect(await git(fixture.repository, "show", "main:fixed.txt")).toBe("fixed");
+  });
+
+  it("keeps a dirty checked-out baseline unchanged and retries the same Issue commit", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const baseline = await git(fixture.repository, "rev-parse", "main");
+    await writeFile(join(acquired.projectPath, "fixed.txt"), "fixed\n");
+    await writeFile(join(fixture.repository, "local.txt"), "uncommitted\n");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_AUTO_MERGE_BASE_DIRTY");
+    const committed = await git(acquired.projectPath, "rev-parse", "HEAD");
+    expect(await git(fixture.repository, "rev-parse", "main")).toBe(baseline);
+    await rm(join(fixture.repository, "local.txt"));
+
+    const published = await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+
+    expect(published!.commit).toBe(committed);
+    expect(await git(acquired.projectPath, "rev-list", "--count", `${baseline}..HEAD`)).toBe("1");
+    expect(await git(fixture.repository, "rev-parse", "main")).toBe(committed);
+  });
+
+  it("preserves baseline files hidden by Git status configuration", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const baseline = await git(fixture.repository, "rev-parse", "main");
+    await writeFile(join(acquired.projectPath, "fixed.txt"), "fixed\n");
+    await git(fixture.repository, "config", "status.showUntrackedFiles", "no");
+    const hiddenFile = join(fixture.repository, "hidden-local-note.txt");
+    await writeFile(hiddenFile, "keep me\n");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_AUTO_MERGE_BASE_DIRTY");
+
+    expect(await git(fixture.repository, "rev-parse", "main")).toBe(baseline);
+    await expect(access(hiddenFile)).resolves.toBeUndefined();
+  });
+
+  it("aborts a conflicting automatic merge and preserves both branches for retry", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    await writeFile(join(acquired.projectPath, "README.md"), "issue change\n");
+    await writeFile(join(fixture.repository, "README.md"), "baseline change\n");
+    await git(fixture.repository, "add", "README.md");
+    await git(fixture.repository, "commit", "-m", "advance baseline");
+    const baseline = await git(fixture.repository, "rev-parse", "main");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_AUTO_MERGE_CONFLICT");
+
+    expect(await git(fixture.repository, "rev-parse", "main")).toBe(baseline);
+    expect(await git(fixture.repository, "status", "--porcelain")).toBe("");
+    expect(await git(fixture.repository, "show", "main:README.md")).toBe("baseline change");
+    expect(await git(acquired.projectPath, "show", "HEAD:README.md")).toBe("issue change");
+  });
 });
 
 async function createCommittedRepository(path: string): Promise<void> {

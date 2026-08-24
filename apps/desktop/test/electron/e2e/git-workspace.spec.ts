@@ -8,9 +8,10 @@ import { expect, test } from "./electron-fixture.js";
 
 const execFileAsync = promisify(execFile);
 
-test("publishes an approved local Git branch and removes only its worktree", async ({ desktop }) => {
+test("automatically merges an approved Issue branch into its configured baseline", async ({ desktop }) => {
   const project = await createTempDir("oh-my-bug-git-project-");
   const suffix = String(Date.now()).slice(-6);
+  const evidenceDirectory = process.env.OH_MY_BUG_EVIDENCE_DIR;
   try {
     await git(project.path, "init", "-b", "main");
     await git(project.path, "config", "user.email", "e2e@example.com");
@@ -24,11 +25,17 @@ test("publishes an approved local Git branch and removes only its worktree", asy
     await desktop.page.getByRole("button", { name: "打开项目目录" }).click();
     await desktop.page.getByLabel("项目名称").fill(`Git Checkout ${suffix}`);
     await desktop.page.getByLabel("项目标识").fill(`G${suffix}`);
-    await desktop.page.getByRole("tab", { name: "工作目录" }).click();
     await desktop.page.getByRole("combobox", { name: "工作目录方式" }).click();
     await desktop.page.getByRole("option", { name: "Git Worktree" }).click();
-    await desktop.page.getByLabel("基线分支").fill("main");
-    await desktop.page.getByLabel("交付方式").fill("local");
+    await desktop.page.getByRole("combobox", { name: "基线分支", exact: true }).fill("main");
+    await desktop.page.getByRole("switch", { name: "完成后合并到基线分支" }).click();
+    if (evidenceDirectory) {
+      await mkdir(evidenceDirectory, { recursive: true });
+      await desktop.page.screenshot({
+        path: join(evidenceDirectory, "auto-merge-setting-enabled.png"),
+        fullPage: true,
+      });
+    }
     await desktop.page.getByTestId("project-settings-form")
       .getByRole("button", { name: "保存项目", exact: true }).click();
     await expect(desktop.page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
@@ -58,6 +65,12 @@ test("publishes an approved local Git branch and removes only its worktree", asy
     await acceptance.getByRole("button", { name: "批准验收并完成 Issue" }).click();
     await expect(desktop.page.getByRole("status"))
       .toHaveText("结果：FIXED · 修复已验收，Issue 已完成。");
+    if (evidenceDirectory) {
+      await desktop.page.screenshot({
+        path: join(evidenceDirectory, "auto-merge-completed.png"),
+        fullPage: true,
+      });
+    }
 
     const delivered = await git(project.path, "rev-parse", `refs/heads/${branch}`);
     expect(delivered).not.toBe(baseline);
@@ -65,7 +78,9 @@ test("publishes an approved local Git branch and removes only its worktree", asy
       .toContainText(branch);
     expect(await git(project.path, "worktree", "list", "--porcelain"))
       .not.toContain(`branch refs/heads/${branch}`);
-    expect(await git(project.path, "rev-parse", "main")).toBe(baseline);
+    expect(await git(project.path, "rev-parse", "main")).toBe(delivered);
+    expect(await git(project.path, "show", "main:src/fixed.ts"))
+      .toBe("export const fixed = true;");
   } finally {
     await project.cleanup();
   }

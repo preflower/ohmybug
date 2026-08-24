@@ -19,6 +19,7 @@ const MODULE_ID = "workspace-git";
 const currentGitWorkspaceConfigSchema = z.object({
   baseBranch: z.string().trim().min(1),
   pushToRemote: z.boolean(),
+  mergeToBaseBranch: z.boolean().default(false),
   remote: z.string().trim().min(1).optional(),
 }).strict().refine(
   (value) => !value.pushToRemote || Boolean(value.remote),
@@ -37,6 +38,7 @@ const legacyGitWorkspaceConfigSchema = z.object({
 interface GitWorkspaceConfig {
   baseBranch: string;
   pushToRemote: boolean;
+  mergeToBaseBranch: boolean;
   remote?: string;
 }
 
@@ -49,6 +51,7 @@ export interface GitWorkspaceState {
   baseBranch: string;
   baseCommit: string;
   pushToRemote?: boolean;
+  mergeToBaseBranch?: boolean;
   /** Persisted before remote publication became a Boolean capability. */
   delivery?: "local" | "remote";
   remote?: string;
@@ -93,6 +96,13 @@ export function gitWorkspaceFactory(
           required: true,
           defaultValue: false,
         },
+        {
+          key: "mergeToBaseBranch",
+          type: "boolean",
+          label: "完成后合并到基线分支",
+          required: true,
+          defaultValue: false,
+        },
       ],
     },
     inspectProject(projectPath) {
@@ -109,6 +119,12 @@ export function gitWorkspaceFactory(
       const repositoryPath = await runGit(projectPath, ["rev-parse", "--show-toplevel"]);
       if (parsed.pushToRemote) {
         await runGit(repositoryPath, ["remote", "get-url", parsed.remote!]);
+      }
+      if (
+        parsed.mergeToBaseBranch &&
+        !(await gitRefExists(repositoryPath, `refs/heads/${parsed.baseBranch}`))
+      ) {
+        throw new Error("GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH");
       }
       await runGit(repositoryPath, [
         "rev-parse",
@@ -331,6 +347,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       baseBranch: configuration.baseBranch,
       baseCommit,
       pushToRemote: configuration.pushToRemote,
+      mergeToBaseBranch: configuration.mergeToBaseBranch,
       ...(configuration.remote ? { remote: configuration.remote } : {}),
       ...(remoteUrl ? { remoteUrl } : {}),
     };
@@ -382,6 +399,9 @@ class GitWorkspaceProvider implements WorkspaceProvider {
         state.remote!,
         `refs/heads/${state.branch}:refs/heads/${state.branch}`,
       ]);
+    }
+    if (state.mergeToBaseBranch) {
+      await mergeIntoBaseBranch(state, commit);
     }
 
     const branchInfo: BranchInfo = {
@@ -439,6 +459,7 @@ function parseConfiguration(config: Record<string, ConfigValue>): GitWorkspaceCo
     return {
       baseBranch: legacy.data.baseBranch,
       pushToRemote: legacy.data.delivery === "remote",
+      mergeToBaseBranch: false,
       ...(legacy.data.remote ? { remote: legacy.data.remote } : {}),
     };
   }
@@ -455,6 +476,77 @@ function parseConfiguration(config: Record<string, ConfigValue>): GitWorkspaceCo
 
 function shouldPushToRemote(state: GitWorkspaceState): boolean {
   return state.pushToRemote ?? state.delivery === "remote";
+}
+
+async function mergeIntoBaseBranch(
+  state: GitWorkspaceState,
+  commit: string,
+): Promise<void> {
+  const baseRef = `refs/heads/${state.baseBranch}`;
+  if (!(await gitRefExists(state.repositoryPath, baseRef))) {
+    throw new Error("GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH");
+  }
+  if (await tryRunGit(
+    state.repositoryPath,
+    ["merge-base", "--is-ancestor", commit, baseRef],
+  ) !== undefined) {
+    return;
+  }
+
+  const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
+  const checkedOutPath = worktreePathForBranch(listed, baseRef);
+  const temporaryPath = `${state.worktreePath}-baseline`;
+  const mergePath = checkedOutPath ?? temporaryPath;
+  const ownsTemporaryWorktree = checkedOutPath === temporaryPath || checkedOutPath === undefined;
+
+  if (checkedOutPath === undefined) {
+    await runGit(state.repositoryPath, ["worktree", "add", temporaryPath, state.baseBranch]);
+  }
+  try {
+    try {
+      await assertWorktreeAndSubmodulesClean(mergePath);
+    } catch (error) {
+      if (error instanceof Error && error.message === "GIT_WORKTREE_NOT_CLEAN") {
+        throw new Error("GIT_AUTO_MERGE_BASE_DIRTY", { cause: error });
+      }
+      throw error;
+    }
+    try {
+      await runGit(mergePath, ["merge", "--no-edit", commit]);
+    } catch (error) {
+      const conflicts = await runGit(mergePath, ["diff", "--name-only", "--diff-filter=U"])
+        .catch(() => "");
+      await runGit(mergePath, ["merge", "--abort"]).catch(() => undefined);
+      throw new Error(
+        conflicts ? "GIT_AUTO_MERGE_CONFLICT" : "GIT_AUTO_MERGE_FAILED",
+        { cause: error },
+      );
+    }
+  } finally {
+    if (ownsTemporaryWorktree) {
+      await assertWorktreeAndSubmodulesClean(temporaryPath);
+      await runGit(state.repositoryPath, [
+        "worktree",
+        "remove",
+        "--force",
+        temporaryPath,
+      ]);
+    }
+  }
+}
+
+function worktreePathForBranch(list: string, branchRef: string): string | undefined {
+  let worktreePath: string | undefined;
+  for (const field of list.split("\0")) {
+    if (field.startsWith("worktree ")) {
+      worktreePath = field.slice("worktree ".length);
+    } else if (field === `branch ${branchRef}`) {
+      return worktreePath;
+    } else if (!field) {
+      worktreePath = undefined;
+    }
+  }
+  return undefined;
 }
 
 async function assertNoHiddenIndexEntries(worktreePath: string): Promise<void> {

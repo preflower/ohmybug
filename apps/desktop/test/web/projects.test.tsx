@@ -39,6 +39,7 @@ const workspaceProviders: WorkspaceProviderManifest[] = [
     configFields: [
       { key: "baseBranch", type: "string", label: "基线分支", required: true, defaultValue: "main" },
       { key: "pushToRemote", type: "boolean", label: "完成后推送到远程", required: true, defaultValue: false },
+      { key: "mergeToBaseBranch", type: "boolean", label: "完成后合并到基线分支", required: true, defaultValue: false },
     ],
   },
 ];
@@ -234,8 +235,42 @@ describe("Project configuration", () => {
     expect(await screen.findByRole("combobox", { name: "基线分支" })).toHaveValue("main");
     expect(screen.getByRole("switch", { name: "完成后推送到远程" }))
       .toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("switch", { name: "完成后合并到基线分支" }))
+      .not.toBeChecked();
     expect(screen.getByText("当前 Git 仓库未配置远程仓库")).toBeVisible();
     expect(screen.queryByLabelText("远程仓库")).not.toBeInTheDocument();
+  });
+
+  it("saves automatic baseline merge as an explicit opt-in", async () => {
+    const onSave = vi.fn(async () => undefined);
+    render(<ProjectForm
+      inspection={inspection}
+      manifests={manifests}
+      workspaceProviders={workspaceProviders}
+      onSave={onSave}
+    />);
+
+    const trigger = screen.getByRole("combobox", { name: "工作目录方式" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const local = await screen.findByRole("option", { name: "本机目录" });
+    fireEvent.keyDown(local, { key: "ArrowDown" });
+    fireEvent.keyDown(screen.getByRole("option", { name: "Git Worktree" }), { key: "Enter" });
+    const merge = await screen.findByRole("switch", { name: "完成后合并到基线分支" });
+    expect(merge).not.toBeChecked();
+
+    fireEvent.click(merge);
+    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      workspace: {
+        provider: "git",
+        config: {
+          baseBranch: "main",
+          pushToRemote: false,
+          mergeToBaseBranch: true,
+        },
+      },
+    })));
   });
 
   it("prefills a new project from directory inspection without assuming Git", () => {
@@ -323,7 +358,12 @@ describe("Project configuration", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       workspace: {
         provider: "git",
-        config: { baseBranch: "main", pushToRemote: true, remote: "origin" },
+        config: {
+          baseBranch: "main",
+          pushToRemote: true,
+          mergeToBaseBranch: false,
+          remote: "origin",
+        },
       },
     })));
   });
