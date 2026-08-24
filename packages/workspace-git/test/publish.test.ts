@@ -10,6 +10,75 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())));
 
 describe("GitWorkspace publish", () => {
+  it("rejects an embedded repository that is not declared as a submodule", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const before = await git(acquired.projectPath, "rev-parse", "HEAD");
+    const embedded = join(acquired.projectPath, "renamed-acceptance-repository");
+    await mkdir(embedded);
+    await git(embedded, "init", "-b", "main");
+    await git(embedded, "config", "user.name", "Embedded Test");
+    await git(embedded, "config", "user.email", "embedded@ohmybug.local");
+    await writeFile(join(embedded, "README.md"), "temporary repository\n");
+    await git(embedded, "add", "README.md");
+    await git(embedded, "commit", "-m", "temporary repository");
+    await writeFile(join(acquired.projectPath, "fixed.txt"), "fixed\n");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_EMBEDDED_REPOSITORY_NOT_ALLOWED");
+
+    expect(await git(acquired.projectPath, "rev-parse", "HEAD")).toBe(before);
+  });
+
+  it("publishes a properly declared submodule", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const source = join(fixture.root, "declared-source");
+    await mkdir(source);
+    await git(source, "init", "-b", "main");
+    await git(source, "config", "user.name", "Submodule Test");
+    await git(source, "config", "user.email", "submodule@ohmybug.local");
+    await writeFile(join(source, "README.md"), "declared submodule\n");
+    await git(source, "add", "README.md");
+    await git(source, "commit", "-m", "declared submodule");
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    await git(
+      acquired.projectPath,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      source,
+      "vendor/declared",
+    );
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    const branch = await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+
+    expect(branch.name).toBe("ohmybug/omb-1");
+    expect(await git(acquired.projectPath, "status", "--porcelain")).toBe("");
+  });
+
   it("commits only when publish is called and returns one stable local branch", async () => {
     const fixture = await createGitFixture();
     cleanups.push(fixture.cleanup);

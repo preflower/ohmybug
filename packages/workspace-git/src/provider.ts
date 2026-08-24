@@ -359,6 +359,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     const changes = await runGit(state.worktreePath, ["status", "--porcelain"]);
     if (changes) {
       await runGit(state.worktreePath, ["add", "-A"]);
+      await assertNoUndeclaredGitlinks(state.worktreePath);
       await runGit(state.worktreePath, [
         "commit",
         "-m",
@@ -440,6 +441,14 @@ function parseConfiguration(config: Record<string, ConfigValue>): GitWorkspaceCo
 
 function shouldPushToRemote(state: GitWorkspaceState): boolean {
   return state.pushToRemote ?? state.delivery === "remote";
+}
+
+async function assertNoUndeclaredGitlinks(worktreePath: string): Promise<void> {
+  try {
+    await runGit(worktreePath, ["submodule", "status"]);
+  } catch (error) {
+    throw new Error("GIT_EMBEDDED_REPOSITORY_NOT_ALLOWED", { cause: error });
+  }
 }
 
 function assertSavedState(
