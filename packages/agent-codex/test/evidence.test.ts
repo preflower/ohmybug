@@ -2,6 +2,7 @@ import type { Assessment } from "@oh-my-bug/core";
 import { describe, expect, it } from "vitest";
 
 import { CodexAgentAdapter } from "../src/codex-agent-adapter.js";
+import { evidencePrompt } from "../src/prompts.js";
 import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
 const assessment: Assessment = {
@@ -15,6 +16,33 @@ const assessment: Assessment = {
 };
 
 describe("Codex evidence capture", () => {
+  it("tells the Agent that Evidence already has host and network access", () => {
+    const current = issue({
+      status: "EVIDENCE_CAPTURE",
+      assessment,
+      repair: {
+        iteration: 1,
+        deliveryDraft: {
+          summary: "Implemented",
+          repairIteration: 1,
+          implementationCompletedAt: "2026-08-24T08:00:00.000Z",
+        },
+      },
+    });
+    const prompt = evidencePrompt({
+      issue: current,
+      project,
+      assessment,
+      deliveryDraft: current.repair!.deliveryDraft!,
+      evidenceDirectory: "/workspace/evidence",
+    });
+
+    expect(prompt).toContain("CAPABILITY_REQUIRED");
+    expect(prompt).toContain('"HOST_EXECUTION"');
+    expect(prompt).toContain('"NETWORK_ACCESS"');
+    expect(prompt).toContain("already available in this stage");
+  });
+
   it("captures evidence on the same native thread without reimplementing", async () => {
     const client = new FixtureClient([JSON.stringify({
       evidence: [{

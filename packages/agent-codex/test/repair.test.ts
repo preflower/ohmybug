@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Assessment } from "@oh-my-bug/core";
 
 import { CodexAgentAdapter } from "../src/codex-agent-adapter.js";
+import { repairPrompt } from "../src/prompts.js";
 import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
 const assessment: Assessment = {
@@ -16,6 +17,47 @@ const assessment: Assessment = {
 };
 
 describe("Codex repair", () => {
+  it("explains capability requests and current Issue grants", () => {
+    const current = issue({
+      status: "REPAIRING",
+      assessment,
+      repair: { iteration: 1 },
+      capabilityGrants: [{
+        capability: "NETWORK_ACCESS",
+        requestId: "request-network",
+        grantedAt: "2026-08-24T08:00:00.000Z",
+      }],
+    });
+    const prompt = repairPrompt({
+      issue: current,
+      project,
+      assessment,
+      evidenceDirectory: "/private/intake/issue-1/1",
+    });
+
+    expect(prompt).toContain("CAPABILITY_REQUIRED");
+    expect(prompt).toContain("lower-privilege alternative");
+    expect(prompt).toContain('"NETWORK_ACCESS"');
+    expect(prompt).toContain("Do not request a capability that is already available");
+  });
+
+  it("explains a capability grant continuation", () => {
+    const prompt = repairPrompt({
+      issue: issue({ status: "REPAIRING", assessment, repair: { iteration: 1 } }),
+      project,
+      assessment,
+      evidenceDirectory: "/private/intake/issue-1/1",
+      continuation: {
+        reason: "CAPABILITY_GRANTED",
+        requestId: "request-1",
+        capabilities: ["HOST_EXECUTION"],
+      },
+    });
+
+    expect(prompt).toContain("Capability request request-1 was granted");
+    expect(prompt).toContain("existing workspace");
+    expect(prompt).toContain("do not redo completed work");
+  });
   it("allows implementation to finish before evidence is available", async () => {
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-draft", "thread-draft");

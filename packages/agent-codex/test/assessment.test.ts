@@ -4,17 +4,51 @@ import { canonicalHash } from "@oh-my-bug/core";
 
 import { CodexAgentAdapter } from "../src/codex-agent-adapter.js";
 import type { CodexClient } from "../src/codex-client.js";
-import { assessmentOutputSchema } from "../src/output-schemas.js";
+import {
+  assessmentOutputSchema,
+  assessmentResultOutputSchema,
+  evidenceOutputSchema,
+  parseCapabilityRequiredOutput,
+  repairOutputSchema,
+} from "../src/output-schemas.js";
 import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
 describe("Codex assessment", () => {
   it("uses the fixed nullable object shape required by Codex structured outputs", () => {
-    expect([...assessmentOutputSchema.required].sort()).toEqual(
-      Object.keys(assessmentOutputSchema.properties).sort(),
+    expect([...assessmentResultOutputSchema.required].sort()).toEqual(
+      Object.keys(assessmentResultOutputSchema.properties).sort(),
     );
-    expect(assessmentOutputSchema.properties.rootCause.type).toEqual(["string", "null"]);
-    expect(assessmentOutputSchema.properties.solution.type).toEqual(["string", "null"]);
-    expect(assessmentOutputSchema.properties.suspectedDuplicateOf.type).toEqual(["string", "null"]);
+    expect(assessmentResultOutputSchema.properties.rootCause.type).toEqual(["string", "null"]);
+    expect(assessmentResultOutputSchema.properties.solution.type).toEqual(["string", "null"]);
+    expect(assessmentResultOutputSchema.properties.suspectedDuplicateOf.type).toEqual(["string", "null"]);
+  });
+
+  it.each([
+    assessmentOutputSchema,
+    repairOutputSchema,
+    evidenceOutputSchema,
+  ])("accepts the shared capability request branch", (schema) => {
+    const request = {
+      outcome: "CAPABILITY_REQUIRED",
+      capabilities: ["HOST_EXECUTION", "NETWORK_ACCESS"],
+      reason: "Launch Electron acceptance",
+      blockedCommand: "pnpm test:e2e:electron",
+      requestedBy: { type: "SKILL", id: "implement-ui-design" },
+    };
+
+    expect(schema.anyOf).toHaveLength(2);
+    expect(parseCapabilityRequiredOutput(request)).toEqual({
+      capabilities: ["HOST_EXECUTION", "NETWORK_ACCESS"],
+      reason: "Launch Electron acceptance",
+      blockedCommand: "pnpm test:e2e:electron",
+      requestedBy: { type: "SKILL", id: "implement-ui-design" },
+    });
+    expect(() => parseCapabilityRequiredOutput({ ...request, capabilities: ["ROOT"] }))
+      .toThrow("AGENT_CAPABILITY_INVALID");
+    expect(() => parseCapabilityRequiredOutput({ ...request, capabilities: [] }))
+      .toThrow("AGENT_CAPABILITY_REQUIRED");
+    expect(() => parseCapabilityRequiredOutput({ ...request, reason: "   " }))
+      .toThrow("AGENT_CAPABILITY_REASON_REQUIRED");
   });
 
   it("creates only a logical reference, then runs read-only and persists the first native thread", async () => {

@@ -22,7 +22,7 @@ export interface EvidenceOutput {
   evidence: RepairEvidenceOutput[];
 }
 
-export const assessmentOutputSchema = {
+export const assessmentResultOutputSchema = {
   type: "object",
   properties: {
     verdict: { type: "string", enum: ["BUG", "FEATURE", "NOT_A_BUG", "UNCERTAIN"] },
@@ -43,7 +43,7 @@ export const assessmentOutputSchema = {
   additionalProperties: false,
 } as const;
 
-export const repairOutputSchema = {
+export const repairResultOutputSchema = {
   type: "object",
   properties: {
     summary: { type: "string", minLength: 1 },
@@ -67,19 +67,93 @@ export const repairOutputSchema = {
   additionalProperties: false,
 } as const;
 
-export const evidenceOutputSchema = {
+export const evidenceResultOutputSchema = {
   type: "object",
   properties: {
     evidence: {
       type: "array",
       minItems: 1,
       maxItems: 20,
-      items: repairOutputSchema.properties.evidence.items,
+      items: repairResultOutputSchema.properties.evidence.items,
     },
   },
   required: ["evidence"],
   additionalProperties: false,
 } as const;
+
+export const capabilityRequiredOutputSchema = {
+  type: "object",
+  properties: {
+    outcome: { type: "string", enum: ["CAPABILITY_REQUIRED"] },
+    capabilities: {
+      type: "array",
+      minItems: 1,
+      maxItems: 2,
+      uniqueItems: true,
+      items: { type: "string", enum: ["HOST_EXECUTION", "NETWORK_ACCESS"] },
+    },
+    reason: { type: "string", minLength: 1, maxLength: 4_000 },
+    blockedCommand: { type: ["string", "null"], maxLength: 2_000 },
+    requestedBy: {
+      anyOf: [
+        { type: "null" },
+        {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["AGENT", "SKILL"] },
+            id: { type: ["string", "null"], maxLength: 200 },
+          },
+          required: ["type", "id"],
+          additionalProperties: false,
+        },
+      ],
+    },
+  },
+  required: ["outcome", "capabilities", "reason", "blockedCommand", "requestedBy"],
+  additionalProperties: false,
+} as const;
+
+export const assessmentOutputSchema = {
+  anyOf: [assessmentResultOutputSchema, capabilityRequiredOutputSchema],
+} as const;
+
+export const repairOutputSchema = {
+  anyOf: [repairResultOutputSchema, capabilityRequiredOutputSchema],
+} as const;
+
+export const evidenceOutputSchema = {
+  anyOf: [evidenceResultOutputSchema, capabilityRequiredOutputSchema],
+} as const;
+
+export function parseCapabilityRequiredOutput(
+  value: unknown,
+): AgentCapabilityRequest | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.outcome !== "CAPABILITY_REQUIRED") return undefined;
+  const object = strictObject(value, [
+    "outcome",
+    "capabilities",
+    "reason",
+    "blockedCommand",
+    "requestedBy",
+  ]);
+  if (!Array.isArray(object.capabilities) || object.capabilities.length === 0) {
+    throw new Error("AGENT_CAPABILITY_REQUIRED");
+  }
+  const capabilities = [...new Set(object.capabilities.map((entry) => {
+    if (entry !== "HOST_EXECUTION" && entry !== "NETWORK_ACCESS") {
+      throw new Error("AGENT_CAPABILITY_INVALID");
+    }
+    return entry;
+  }))];
+  return {
+    capabilities,
+    reason: boundedString(object.reason, 4_000, "AGENT_CAPABILITY_REASON_REQUIRED"),
+    ...optionalBoundedString(object.blockedCommand, "blockedCommand", 2_000),
+    ...optionalRequester(object.requestedBy),
+  };
+}
 
 export function parseAssessmentOutput(value: unknown): AssessmentOutput {
   const object = strictObject(value, [
@@ -152,3 +226,36 @@ function optionalString(value: unknown, key: string): Record<string, string> {
   if (value === undefined || value === null) return {};
   return { [key]: requiredString(value, `${key.toUpperCase()}_INVALID`) };
 }
+
+function boundedString(value: unknown, maxLength: number, code: string): string {
+  const result = requiredString(value, code);
+  if (result.length > maxLength) throw new Error(code);
+  return result;
+}
+
+function optionalBoundedString(
+  value: unknown,
+  key: string,
+  maxLength: number,
+): Record<string, string> {
+  if (value === undefined || value === null) return {};
+  return { [key]: boundedString(value, maxLength, `${key.toUpperCase()}_INVALID`) };
+}
+
+function optionalRequester(value: unknown): { requestedBy?: AgentCapabilityRequester } {
+  if (value === undefined || value === null) return {};
+  const object = strictObject(value, ["type", "id"]);
+  if (object.type !== "AGENT" && object.type !== "SKILL") {
+    throw new Error("AGENT_CAPABILITY_REQUESTER_INVALID");
+  }
+  return {
+    requestedBy: {
+      type: object.type,
+      ...optionalBoundedString(object.id, "id", 200),
+    },
+  };
+}
+import type {
+  AgentCapabilityRequest,
+  AgentCapabilityRequester,
+} from "@oh-my-bug/core";
