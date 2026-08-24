@@ -42,6 +42,7 @@ const eventLabels: Record<string, string> = {
   AGENT_TURN_COMPLETED: "Codex 已完成工作",
   AGENT_FILES_CHANGED: "文件已更新",
   AGENT_FILES_CHANGE_FAILED: "文件更新失败",
+  AGENT_TEMP_CLEANUP_FAILED: "临时目录清理失败",
   AGENT_ERROR: "Codex 运行失败",
   ISSUE_CANCELED: "任务已取消",
   RUNTIME_INTERRUPTED: "Runtime 已重启，正在恢复任务",

@@ -17,6 +17,55 @@ const assessment: Assessment = {
 };
 
 describe("Codex repair", () => {
+  it("returns a completed Repair result when thread disposal fails", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-cleanup", "thread-cleanup");
+    const cleanupError = Object.assign(new Error("directory not empty"), { code: "ENOTEMPTY" });
+    const reportActivity = vi.fn();
+    const adapter = new CodexAgentAdapter({
+      sessions,
+      client: new FixtureClient([
+        JSON.stringify({ summary: "Implemented", evidence: [] }),
+      ], cleanupError),
+      reportActivity,
+    });
+
+    await expect(adapter.repair(
+      { agent: "codex", sessionId: "logical-cleanup" },
+      {
+        issue: issue({ status: "REPAIRING", assessment, repair: { iteration: 1 } }),
+        project,
+        assessment,
+        evidenceDirectory: "/private/intake/issue-1/1",
+      },
+    )).resolves.toEqual({ summary: "Implemented", evidence: [] });
+    expect(reportActivity).toHaveBeenCalledWith(expect.objectContaining({
+      type: "AGENT_TEMP_CLEANUP_FAILED",
+      stage: "REPAIR",
+      level: "error",
+    }));
+  });
+
+  it("keeps a turn failure primary when thread disposal also fails", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-primary", "thread-primary");
+    const primary = new Error("repair turn failed");
+    const adapter = new CodexAgentAdapter({
+      sessions,
+      client: new FixtureClient([{ error: primary }], new Error("cleanup failed")),
+    });
+
+    await expect(adapter.repair(
+      { agent: "codex", sessionId: "logical-primary" },
+      {
+        issue: issue({ status: "REPAIRING", assessment, repair: { iteration: 1 } }),
+        project,
+        assessment,
+        evidenceDirectory: "/private/intake/issue-1/1",
+      },
+    )).rejects.toBe(primary);
+  });
+
   it("turns a structured capability branch into typed control flow without AGENT_ERROR", async () => {
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-capability", "thread-capability");

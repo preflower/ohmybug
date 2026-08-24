@@ -6,6 +6,48 @@ import { CodexAgentAdapter } from "../src/codex-agent-adapter.js";
 import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
 describe("Codex activity reporting", () => {
+  it("reports cleanup diagnostics without failing a completed turn", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions, "logical-cleanup", "thread-cleanup");
+    const activities: AgentActivityUpdate[] = [];
+    const client = new FixtureClient([{
+      events: [
+        {
+          type: "item.completed",
+          item: {
+            type: "agent_message",
+            text: JSON.stringify({
+              verdict: "NOT_A_BUG",
+              suggestedTitle: "No change needed",
+              reasoning: "Expected behavior",
+              rootCause: null,
+              solution: null,
+              suspectedDuplicateOf: null,
+            }),
+          },
+        },
+        { type: "turn.completed" },
+        { type: "cleanup.failed", message: "ENOTEMPTY: token=private-token" },
+      ],
+    }]);
+    const adapter = new CodexAgentAdapter({
+      client,
+      sessions,
+      reportActivity: (activity) => { activities.push(activity); },
+    });
+
+    await expect(adapter.assess(
+      { agent: "codex", sessionId: "logical-cleanup" },
+      { issue: issue(), project },
+    )).resolves.toMatchObject({ verdict: "NOT_A_BUG" });
+    expect(activities).toContainEqual(expect.objectContaining({
+      type: "AGENT_TEMP_CLEANUP_FAILED",
+      message: "Agent 临时目录清理失败",
+      detail: "ENOTEMPTY: token=[REDACTED]",
+      level: "error",
+    }));
+  });
+
   it("reports useful turn, command, and network failure events with redacted details", async () => {
     const sessions = new MemorySessions();
     await bindSession(sessions);

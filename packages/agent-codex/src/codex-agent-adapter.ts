@@ -301,6 +301,11 @@ export class CodexAgentAdapter implements AgentAdapter {
     } finally {
       try {
         await thread?.dispose();
+      } catch (error) {
+        await this.reportActivity(session.sessionId, stage, {
+          type: "cleanup.failed",
+          message: error instanceof Error ? error.message : "AGENT_TEMP_CLEANUP_FAILED",
+        });
       } finally {
         if (this.active.get(session.sessionId) === active) this.active.delete(session.sessionId);
         finish();
@@ -488,6 +493,16 @@ function publicActivity(
       "error",
     );
   }
+  if (event.type === "cleanup.failed") {
+    return activity(
+      sessionId,
+      stage,
+      "AGENT_TEMP_CLEANUP_FAILED",
+      "Agent 临时目录清理失败",
+      sanitizeDiagnostic(event.message),
+      "error",
+    );
+  }
   if (event.type === "item.updated") return undefined;
   const item = event.item;
   if (item.type === "command_execution") {
@@ -580,7 +595,7 @@ function publicErrorSummary(message: string): string {
   return "Codex 运行失败";
 }
 
-const secretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)\s*[=:]\s*)([^\s"']+)/gi;
+const secretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)\s*[=:]\s*)([^\s"']+)/gi;
 const bearerToken = /(bearer\s+)([^\s"']+)/gi;
 const secretQuery = /([?&](?:api[_-]?key|access[_-]?token|token|password|secret)=)([^&\s]+)/gi;
 

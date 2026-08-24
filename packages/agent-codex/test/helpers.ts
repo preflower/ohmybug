@@ -45,7 +45,10 @@ export class FixtureClient implements CodexClient {
   readonly signals: AbortSignal[] = [];
   private threadSequence = 0;
 
-  constructor(private readonly outputs: Array<string | FixtureTurn>) {}
+  constructor(
+    private readonly outputs: Array<string | FixtureTurn>,
+    private readonly disposeError?: unknown,
+  ) {}
 
   startThread(options: CodexThreadOptions): CodexThread {
     this.starts.push(options);
@@ -61,7 +64,9 @@ export class FixtureClient implements CodexClient {
   private thread(id: string): CodexThread {
     return {
       id,
-      dispose: async () => undefined,
+      dispose: async () => {
+        if (this.disposeError !== undefined) throw this.disposeError;
+      },
       runStreamed: async (prompt: string, options: CodexTurnOptions) => {
         this.prompts.push(prompt);
         if (options.signal) this.signals.push(options.signal);

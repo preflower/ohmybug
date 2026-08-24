@@ -7,6 +7,23 @@ import { describe, expect, it } from "vitest";
 import { AgentActivity } from "../../src/web/issues/agent-activity.js";
 
 describe("Agent activity", () => {
+  it("labels a non-fatal Agent temp cleanup failure in the activity log", () => {
+    render(<AgentActivity active={false} events={[{
+      id: "issue-1:1",
+      issueId: "issue-1",
+      sequence: 1,
+      actor: "AGENT",
+      type: "AGENT_TEMP_CLEANUP_FAILED",
+      occurredAt: "2026-08-24T09:00:05Z",
+      data: { detail: "ENOTEMPTY: directory not empty", level: "error" },
+    }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+
+    expect(screen.getByText("临时目录清理失败")).toBeVisible();
+    expect(screen.getByText("ENOTEMPTY: directory not empty")).toBeVisible();
+  });
+
   it("merges command lifecycle events into one continuous turn log", () => {
     render(<AgentActivity active={false} events={[
       {

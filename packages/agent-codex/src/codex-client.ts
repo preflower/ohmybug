@@ -39,6 +39,7 @@ export type CodexClientEvent =
   | { type: "turn.completed" }
   | { type: "turn.failed"; message: string }
   | { type: "error"; message: string }
+  | { type: "cleanup.failed"; message: string }
   | { type: "item.started" | "item.updated" | "item.completed"; item: CodexClientItem };
 
 export interface CodexThread {
@@ -107,7 +108,12 @@ export class SdkCodexClient implements CodexClient {
         thread,
         threadId,
         privateTemp ? () => new Promise<void>((resolvePromise, rejectPromise) => {
-          rm(privateTemp, { recursive: true, force: true }, (error) => {
+          rm(privateTemp, {
+            recursive: true,
+            force: true,
+            maxRetries: 3,
+            retryDelay: 100,
+          }, (error) => {
             if (error) rejectPromise(error);
             else resolvePromise();
           });
@@ -183,12 +189,13 @@ function toSdkTurnOptions(options: CodexTurnOptions): TurnOptions {
   return { outputSchema: options.outputSchema, signal: options.signal };
 }
 
-async function* normalizeEvents(
+export async function* normalizeEvents(
   events: AsyncIterable<ThreadEvent>,
   resumedThreadId?: string,
   cleanup?: () => Promise<void>
 ): AsyncGenerator<CodexClientEvent> {
-  let cleanupAttempted = false;
+  let streamFailure: { error: unknown } | undefined;
+  let cleanupFailure: unknown;
   try {
     for await (const event of events) {
       if (event.type === "thread.started") yield { type: event.type, threadId: event.thread_id };
@@ -198,11 +205,27 @@ async function* normalizeEvents(
       else yield { type: event.type, item: normalizeItem(event.item) };
     }
   } catch (error) {
-    cleanupAttempted = true;
-    await throwPrimaryAfterCleanup(normalizeNativeThreadError(error, resumedThreadId), cleanup);
+    streamFailure = { error: normalizeNativeThreadError(error, resumedThreadId) };
   } finally {
-    if (!cleanupAttempted) await cleanup?.();
+    try {
+      await cleanup?.();
+    } catch (error) {
+      cleanupFailure = error;
+    }
   }
+  if (streamFailure) {
+    if (cleanupFailure) attachCleanupError(streamFailure.error, cleanupFailure);
+    throw streamFailure.error;
+  }
+  if (cleanupFailure) {
+    yield { type: "cleanup.failed", message: cleanupMessage(cleanupFailure) };
+  }
+}
+
+function cleanupMessage(error: unknown): string {
+  if (!(error instanceof Error)) return "AGENT_TEMP_CLEANUP_FAILED";
+  const code = "code" in error && typeof error.code === "string" ? `${error.code}: ` : "";
+  return `${code}${error.message}`.slice(0, 2_000);
 }
 
 function normalizeNativeThreadError(error: unknown, resumedThreadId?: string): unknown {
