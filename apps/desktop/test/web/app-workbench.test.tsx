@@ -72,7 +72,7 @@ describe("control center workbench", () => {
       id: "issue-background",
       identifier: "CHK-1",
       title: "Background issue",
-      status: "APPROVED",
+      status: "FINALIZING",
       revision: 5,
     };
     const terminal: IssueDto = {
@@ -147,7 +147,7 @@ describe("control center workbench", () => {
     };
     const stale: IssueDto = {
       ...current,
-      status: "APPROVED",
+      status: "FINALIZING",
       revision: 6,
     };
     let backgroundListener: ((events: AgentEventDto[], cursor: number) => void) | undefined;
@@ -180,7 +180,7 @@ describe("control center workbench", () => {
     const backgroundRow = within(list).getByRole("button", { name: /CHK-1/ });
     await act(() => new Promise((resolve) => setTimeout(resolve, 250)));
     expect(within(backgroundRow).getByText("实现中")).toBeVisible();
-    expect(within(backgroundRow).queryByText("发布中 / 待重试")).not.toBeInTheDocument();
+    expect(within(backgroundRow).queryByText("交付处理中")).not.toBeInTheDocument();
   });
 
   it("grants the selected Issue capability request with its revision and request ID", async () => {

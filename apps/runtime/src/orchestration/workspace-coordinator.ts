@@ -158,7 +158,7 @@ export class WorkspaceCoordinator {
     if (
       !issue ||
       issue.revision !== pending.revision ||
-      issue.status !== "APPROVED"
+      issue.status !== "FINALIZING"
     ) return;
     const project = this.dependencies.store.getProject(issue.projectId);
     if (!project) throw new Error("PROJECT_NOT_FOUND");
@@ -197,12 +197,17 @@ export class WorkspaceCoordinator {
       if (
         !latest ||
         latest.revision !== issue.revision ||
-        latest.status !== "APPROVED"
+        latest.status !== "FINALIZING"
       ) return;
+      const failed = transitionIssue(
+        latest,
+        "FINALIZATION_ERRORED",
+        this.dependencies.now(),
+      );
       const message = workspaceFailureMessage(error, "WORKSPACE_PUBLISH_FAILED");
       this.dependencies.persistence.transaction(() => {
         this.dependencies.store.transaction((transaction) => {
-          transaction.updateIssue(latest, latest.revision, null);
+          transaction.updateIssue(failed, latest.revision, null);
           transaction.appendEvent(this.event(issue.id, "WORKSPACE_PUBLISH_FAILED", {
             providerId: binding?.providerId,
             error: message,
@@ -369,7 +374,7 @@ function recoveryOperation(
   issue: Issue,
   pending?: PendingOperation,
 ): PendingOperation | null {
-  if (issue.status === "APPROVED") return "FINALIZE";
+  if (issue.status === "FINALIZING") return "FINALIZE";
   if (pending === "ASSESS" || pending === "REPAIR") return pending;
   if (issue.status === "RECEIVED") return "ASSESS";
   return null;

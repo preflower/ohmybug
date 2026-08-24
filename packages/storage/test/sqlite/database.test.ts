@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 
-import { SqliteRuntimeStore } from "../../src/index.js";
+import { openRuntimeDatabase, SqliteRuntimeStore } from "../../src/index.js";
 import { runtimeSchema } from "../../src/sqlite/schema.js";
 import { createStore, databasePath, input, issue, now, project } from "../helpers.js";
 
@@ -62,6 +62,57 @@ describe("SQLite Runtime database", () => {
     store.transaction((transaction) => transaction.insertIssue(otherIssue, "ASSESS"));
 
     expect(store.listIssues()).toEqual([issue, otherIssue]);
+    store.close();
+  });
+
+  it("migrates active and failed legacy APPROVED rows", () => {
+    const path = databasePath();
+    const legacy = new BetterSqlite3(path);
+    legacy.exec(runtimeSchema);
+    legacy.prepare(
+      `INSERT INTO projects (id, project_key, revision, next_issue_sequence, data_json)
+       VALUES (?, ?, 1, 3, ?)`,
+    ).run(project.id, project.key, JSON.stringify(project));
+    const insert = legacy.prepare(
+      `INSERT INTO issues
+        (id, project_id, identifier, status, revision, pending_operation, data_json)
+       VALUES (?, ?, ?, 'APPROVED', 7, ?, ?)`,
+    );
+    insert.run(
+      "legacy-active",
+      project.id,
+      "OMB-1",
+      "FINALIZE",
+      JSON.stringify({
+        ...issue,
+        id: "legacy-active",
+        status: "APPROVED",
+        revision: 7,
+      }),
+    );
+    insert.run(
+      "legacy-failed",
+      project.id,
+      "OMB-2",
+      null,
+      JSON.stringify({
+        ...issue,
+        id: "legacy-failed",
+        identifier: "OMB-2",
+        status: "APPROVED",
+        revision: 7,
+      }),
+    );
+    legacy.close();
+
+    const database = openRuntimeDatabase(path);
+    const store = new SqliteRuntimeStore(database);
+    expect(store.getIssue("legacy-active")?.status).toBe("FINALIZING");
+    expect(store.getIssue("legacy-failed")?.status).toBe("FINALIZATION_FAILED");
+    expect(store.listPendingOperations()).toEqual([{
+      issue: expect.objectContaining({ id: "legacy-active", revision: 7 }),
+      operation: "FINALIZE",
+    }]);
     store.close();
   });
 });

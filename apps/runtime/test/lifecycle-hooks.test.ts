@@ -83,7 +83,7 @@ describe("Runtime typed lifecycle hooks", () => {
     };
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
 
-    expect(commands.approveDelivery(issue.id)).toMatchObject({ status: "APPROVED" });
+    expect(commands.approveDelivery(issue.id)).toMatchObject({ status: "FINALIZING" });
     expect(calls).toEqual(["broken", "healthy"]);
     expect(store.readEvents(issue.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({

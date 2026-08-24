@@ -10,6 +10,26 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())));
 
 describe("GitWorkspace publish", () => {
+  it("rejects a failed finalization attempt", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+
+    await expect(provider.publish({
+      issue: {
+        ...fixture.issue,
+        projectPath: acquired.projectPath,
+        status: "FINALIZATION_FAILED",
+        resolution: "FIXED",
+      },
+      resourceId: "git:issue-1",
+    })).rejects.toThrow("GIT_WORKSPACE_NOT_FINALIZING");
+  });
+
   it("rejects an embedded repository that is not declared as a submodule", async () => {
     const fixture = await createGitFixture();
     cleanups.push(fixture.cleanup);
@@ -31,7 +51,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -71,7 +91,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -93,7 +113,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -131,7 +151,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -158,7 +178,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     const first = await provider.publish({ issue: approved, resourceId: "git:issue-1" });
@@ -183,7 +203,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     await writeFile(join(acquired.projectPath, "fixed.txt"), "fixed\n");
@@ -217,7 +237,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     await provider.publish({ issue: approved, resourceId: "git:issue-1" });
@@ -243,7 +263,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     await provider.publish({ issue: approved, resourceId: "git:issue-1" });
@@ -266,7 +286,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     await provider.publish({ issue: approved, resourceId: "git:issue-1" });
@@ -294,7 +314,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     await provider.publish({ issue: approved, resourceId: "git:issue-1" });
@@ -343,7 +363,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     await provider.publish({ issue: approved, resourceId: "git:issue-1" });
@@ -383,7 +403,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -415,7 +435,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     await provider.publish({ issue: approved, resourceId: "git:issue-1" });
@@ -481,7 +501,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
     await provider.publish({ issue: approved, resourceId: "git:issue-1" });
@@ -537,7 +557,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -575,7 +595,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -613,7 +633,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -637,7 +657,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -662,7 +682,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -695,7 +715,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -725,7 +745,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -774,7 +794,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -800,7 +820,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 
@@ -826,7 +846,7 @@ describe("GitWorkspace publish", () => {
     const approved = {
       ...fixture.issue,
       projectPath: acquired.projectPath,
-      status: "APPROVED" as const,
+      status: "FINALIZING" as const,
       resolution: "FIXED" as const,
     };
 

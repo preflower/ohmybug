@@ -199,11 +199,40 @@ describe("Runtime human commands", () => {
 
     const approved = commands.approveDelivery(issue.id);
 
-    expect(approved).toMatchObject({ status: "APPROVED", resolution: "FIXED" });
+    expect(approved).toMatchObject({ status: "FINALIZING", resolution: "FIXED" });
     expect(store.listPendingOperations()).toEqual([
       { issue: approved, operation: "FINALIZE" },
     ]);
     expect(store.readEvents(issue.id).map((event) => event.type)).toEqual(["DELIVERY_APPROVED"]);
+  });
+
+  it("retries only a failed Delivery finalization", () => {
+    const { commands, store } = createHarness();
+    const failed = reviewedIssue({
+      id: "issue-finalization-failed",
+      status: "FINALIZATION_FAILED",
+      resolution: "FIXED",
+      repair: { iteration: 1, delivery },
+      revision: 8,
+    });
+    store.transaction((transaction) => {
+      transaction.insertIssue(failed, "FINALIZE");
+      transaction.updateIssue(failed, failed.revision, null);
+    });
+
+    const retrying = commands.approveDelivery(failed.id);
+
+    expect(retrying).toMatchObject({
+      status: "FINALIZING",
+      resolution: "FIXED",
+      revision: 9,
+    });
+    expect(store.listPendingOperations()).toEqual([{
+      issue: retrying,
+      operation: "FINALIZE",
+    }]);
+    expect(store.readEvents(failed.id).map((event) => event.type))
+      .toEqual(["DELIVERY_FINALIZATION_RETRIED"]);
   });
 
   it("persists an approved Feature Delivery as IMPLEMENTED", () => {
@@ -220,7 +249,7 @@ describe("Runtime human commands", () => {
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
 
     expect(commands.approveDelivery(issue.id)).toMatchObject({
-      status: "APPROVED",
+      status: "FINALIZING",
       resolution: "IMPLEMENTED",
     });
   });

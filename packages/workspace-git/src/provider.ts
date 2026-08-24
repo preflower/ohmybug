@@ -372,8 +372,8 @@ class GitWorkspaceProvider implements WorkspaceProvider {
   }): Promise<BranchInfo> {
     const state = this.getSavedState(input.issue, input.resourceId);
     if (state.branchInfo) return state.branchInfo;
-    if (input.issue.status !== "APPROVED") {
-      throw new Error("GIT_WORKSPACE_NOT_APPROVED");
+    if (input.issue.status !== "FINALIZING") {
+      throw new Error("GIT_WORKSPACE_NOT_FINALIZING");
     }
 
     await assertNoHiddenIndexEntries(state.worktreePath);
