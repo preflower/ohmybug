@@ -41,6 +41,44 @@ describe("GitWorkspace publish", () => {
     expect(await git(acquired.projectPath, "rev-parse", "HEAD")).toBe(before);
   });
 
+  it("ignores an unstaged .gitmodules file when validating embedded repositories", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const embedded = join(acquired.projectPath, "mapped-only-in-the-worktree");
+    await mkdir(embedded);
+    await git(embedded, "init", "-b", "main");
+    await git(embedded, "config", "user.name", "Embedded Test");
+    await git(embedded, "config", "user.email", "embedded@ohmybug.local");
+    await writeFile(join(embedded, "README.md"), "temporary repository\n");
+    await git(embedded, "add", "README.md");
+    await git(embedded, "commit", "-m", "temporary repository");
+    await writeFile(
+      join(acquired.projectPath, ".gitmodules"),
+      [
+        '[submodule "mapped-only-in-the-worktree"]',
+        "\tpath = mapped-only-in-the-worktree",
+        `\turl = ${embedded}`,
+        "",
+      ].join("\n"),
+    );
+    const excludePath = await git(acquired.projectPath, "rev-parse", "--git-path", "info/exclude");
+    await writeFile(excludePath, ".gitmodules\n");
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_EMBEDDED_REPOSITORY_NOT_ALLOWED");
+  });
+
   it("publishes a properly declared submodule", async () => {
     const fixture = await createGitFixture();
     cleanups.push(fixture.cleanup);
@@ -191,5 +229,72 @@ describe("GitWorkspace publish", () => {
       .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
 
     await expect(access(acquired.projectPath)).resolves.toBeUndefined();
+  });
+
+  it("preserves untracked files hidden by status.showUntrackedFiles during release", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+    await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+    await git(acquired.projectPath, "config", "status.showUntrackedFiles", "no");
+    await writeFile(join(acquired.projectPath, "hidden-local-note.txt"), "keep me\n");
+
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(access(join(acquired.projectPath, "hidden-local-note.txt")))
+      .resolves.toBeUndefined();
+  });
+
+  it("preserves submodule changes hidden by ignore=all during release", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const source = join(fixture.root, "release-submodule-source");
+    await mkdir(source);
+    await git(source, "init", "-b", "main");
+    await git(source, "config", "user.name", "Submodule Test");
+    await git(source, "config", "user.email", "submodule@ohmybug.local");
+    await writeFile(join(source, "README.md"), "declared submodule\n");
+    await git(source, "add", "README.md");
+    await git(source, "commit", "-m", "declared submodule");
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    await git(
+      acquired.projectPath,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      source,
+      "vendor/declared",
+    );
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+    await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+    await git(acquired.projectPath, "config", "submodule.vendor/declared.ignore", "all");
+    const changedFile = join(acquired.projectPath, "vendor/declared/README.md");
+    await writeFile(changedFile, "keep this submodule change\n");
+
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(access(changedFile)).resolves.toBeUndefined();
   });
 });

@@ -356,7 +356,12 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       throw new Error("GIT_WORKSPACE_NOT_APPROVED");
     }
 
-    const changes = await runGit(state.worktreePath, ["status", "--porcelain"]);
+    const changes = await runGit(state.worktreePath, [
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--ignore-submodules=none",
+    ]);
     if (changes) {
       await runGit(state.worktreePath, ["add", "-A"]);
       await assertNoUndeclaredGitlinks(state.worktreePath);
@@ -394,7 +399,12 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       await runGit(state.repositoryPath, ["worktree", "prune"]);
       return;
     }
-    const changes = await runGit(state.worktreePath, ["status", "--porcelain"]);
+    const changes = await runGit(state.worktreePath, [
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--ignore-submodules=none",
+    ]);
     if (changes) throw new Error("GIT_WORKTREE_NOT_CLEAN");
     await runGit(state.repositoryPath, [
       "worktree",
@@ -452,7 +462,29 @@ function shouldPushToRemote(state: GitWorkspaceState): boolean {
 
 async function assertNoUndeclaredGitlinks(worktreePath: string): Promise<void> {
   try {
-    await runGit(worktreePath, ["submodule", "status"]);
+    const entries = await runGit(worktreePath, ["ls-files", "--stage", "-z"]);
+    const gitlinks = entries.split("\0").flatMap((entry) => {
+      const separator = entry.indexOf("\t");
+      if (separator === -1) return [];
+      const [mode, , stage] = entry.slice(0, separator).split(" ");
+      return mode === "160000" && stage === "0" ? [entry.slice(separator + 1)] : [];
+    });
+    if (gitlinks.length === 0) return;
+
+    const mappings = await tryRunGit(
+      worktreePath,
+      ["config", "--blob", ":.gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
+      [1],
+    );
+    const declaredPaths = new Set(
+      mappings?.split("\n").flatMap((mapping) => {
+        const separator = mapping.search(/\s/);
+        return separator === -1 ? [] : [mapping.slice(separator).trimStart()];
+      }) ?? [],
+    );
+    if (gitlinks.some((path) => !declaredPaths.has(path))) {
+      throw new Error("UNDECLARED_GITLINK");
+    }
   } catch (error) {
     throw new Error("GIT_EMBEDDED_REPOSITORY_NOT_ALLOWED", { cause: error });
   }
