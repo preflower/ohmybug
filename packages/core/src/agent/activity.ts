@@ -1,4 +1,8 @@
-export type AgentActivityStage = "ASSESSMENT" | "REPAIR" | "EVIDENCE";
+export type AgentActivityStage =
+  | "ASSESSMENT"
+  | "REPAIR"
+  | "EVIDENCE"
+  | "FINALIZATION_RECOVERY";
 export type AgentActivityLevel = "info" | "error";
 
 export interface AgentActivityUpdate {

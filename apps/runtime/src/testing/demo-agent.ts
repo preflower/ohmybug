@@ -15,6 +15,8 @@ import {
   type CreateSessionInput,
   type EvidenceCaptureInput,
   type EvidenceCaptureResult,
+  type FinalizationRecoveryInput,
+  type FinalizationRecoveryResult,
   type RepairInput,
   type RepairResult,
 } from "@oh-my-bug/core";
@@ -25,6 +27,7 @@ export interface DemoAgentAdapterOptions extends AgentPluginContext {
   delayMs?: number;
   unavailableOnce?: boolean;
   agentId?: string;
+  finalizationRecoveryResult?: FinalizationRecoveryResult;
 }
 
 interface ActiveTurn {
@@ -96,6 +99,23 @@ export class DemoAgentAdapter implements AgentAdapter {
       await sharp(Buffer.from(demoEvidenceSvg)).png().toFile(join(input.evidenceDirectory, relativePath));
       return {
         evidence: [{ type: "screenshot", label: "Checkout acceptance", relativePath }],
+      };
+    });
+  }
+
+  async recoverFinalization(
+    session: AgentSessionRef,
+    input: FinalizationRecoveryInput,
+  ): Promise<FinalizationRecoveryResult> {
+    this.assertSession(session, input.issue.id);
+    return this.runTurn(session, async (signal) => {
+      await this.prepareNativeSession(session, input.issue.id, input.project.id);
+      await this.wait(signal);
+      return this.options.finalizationRecoveryResult ?? {
+        summary: "The demo Agent did not make an automatic recovery change.",
+        diagnosis: "No deterministic finalization recovery fixture was configured.",
+        disposition: "UNSAFE",
+        affectedPaths: [],
       };
     });
   }
@@ -195,7 +215,10 @@ export class DemoAgentAdapter implements AgentAdapter {
 }
 
 export function demoAgent(
-  options: Pick<DemoAgentAdapterOptions, "agentId" | "delayMs" | "now" | "unavailableOnce"> = {},
+  options: Pick<
+    DemoAgentAdapterOptions,
+    "agentId" | "delayMs" | "now" | "unavailableOnce" | "finalizationRecoveryResult"
+  > = {},
 ): AgentPlugin {
   return {
     id: options.agentId ?? "demo",
