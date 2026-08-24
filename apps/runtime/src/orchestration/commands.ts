@@ -141,7 +141,7 @@ export class RuntimeCommands {
 
   requestReassessment(issueId: string, feedback: string): Issue {
     return this.change(issueId, "REASSESSMENT_REQUESTED", "ASSESS", (issue, now) =>
-      requestAssessmentChanges(issue, feedback, now));
+      requestAssessmentChanges(issue, feedback, now), { detail: feedback.trim() });
   }
 
   rejectDelivery(issueId: string, feedback: string): Issue {
@@ -298,6 +298,7 @@ export class RuntimeCommands {
     eventType: string,
     pendingOperation: PendingOperation | null,
     reduce: (issue: Issue, now: string) => Issue,
+    eventData = {},
   ): Issue {
     this.assertAccepting();
     const now = this.dependencies.now();
@@ -306,7 +307,7 @@ export class RuntimeCommands {
       if (!current) throw new Error("ISSUE_NOT_FOUND");
       const next = reduce(current, now);
       transaction.updateIssue(next, current.revision, pendingOperation);
-      transaction.appendEvent(this.event(issueId, eventType));
+      transaction.appendEvent(this.event(issueId, eventType, eventData));
       return next;
     });
     if (pendingOperation) this.dependencies.wake();
