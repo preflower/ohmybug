@@ -217,7 +217,7 @@ Expected: the branch points to the validated clean commit. A compare-and-swap fa
 Run with approval to update `/Users/starrblink/.oh-my-bug/runtime.sqlite`:
 
 ```bash
-sqlite3 "$OH18_DB" ".bail on
+sqlite3 -bail "$OH18_DB" "
 CREATE TEMP TABLE assert_one(value INTEGER CHECK(value = 1));
 BEGIN IMMEDIATE;
 UPDATE module_resources
