@@ -80,6 +80,7 @@ describe("SQLite-backed Runtime acceptance", () => {
     ))).toBe(true);
 
     await runtime.approveDelivery(assessed.id);
+    await runtime.drain();
     expect(runtime.getIssue(assessed.id)).toMatchObject({
       status: "COMPLETED",
       resolution: "FIXED",
