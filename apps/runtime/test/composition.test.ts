@@ -248,6 +248,7 @@ describe("Runtime composition boundary", () => {
               type: "AGENT_ERROR",
               message: "Codex 网络连接中断",
               detail: "stream disconnected before completion",
+              correlationId: "command-1",
               level: "error",
             });
             throw new Error("NETWORK_FAILURE");
@@ -294,6 +295,7 @@ describe("Runtime composition boundary", () => {
           data: expect.objectContaining({
             message: "Codex 网络连接中断",
             detail: "stream disconnected before completion",
+            correlationId: "command-1",
             level: "error",
           }),
         }),

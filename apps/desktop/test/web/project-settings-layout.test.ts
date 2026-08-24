@@ -35,10 +35,9 @@ describe("project settings layout", () => {
   it("locks sticky metadata and full-width activity detail rules", () => {
     expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*position:\s*sticky;/s);
     expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*top:\s*0;/s);
-    expect(styles).toMatch(/\.activity-event\s*\{[^}]*width:\s*100%;/s);
-    expect(styles).toMatch(/\.activity-detail\s*\{[^}]*width:\s*100%;/s);
-    expect(styles).toMatch(/\.activity-detail pre\s*\{[^}]*box-sizing:\s*border-box;/s);
-    expect(styles).toMatch(/\.activity-detail pre\s*\{[^}]*width:\s*100%;/s);
+    expect(styles).toMatch(/\.activity-turn\s*\{[^}]*width:\s*100%;/s);
+    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*box-sizing:\s*border-box;/s);
+    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*width:\s*100%;/s);
   });
 
   it("keeps a quiet single-row footer inside the right settings column", () => {
