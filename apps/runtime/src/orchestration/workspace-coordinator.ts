@@ -1,14 +1,18 @@
 import {
+  beginFinalizationRecovery,
   transitionIssue,
+  workspaceFinalizationDiagnosticSchema,
   type Issue,
   type PendingOperation,
   type RuntimeProject,
   type RuntimeStore,
+  type WorkspaceFinalizationDiagnostic,
 } from "@oh-my-bug/core";
 import type {
   LifecycleEventMap,
   WorkspaceBinding,
   WorkspacePersistence,
+  WorkspaceProvider,
 } from "@oh-my-bug/module-api";
 
 import type {
@@ -163,12 +167,13 @@ export class WorkspaceCoordinator {
     const project = this.dependencies.store.getProject(issue.projectId);
     if (!project) throw new Error("PROJECT_NOT_FOUND");
     const binding = this.dependencies.persistence.getBinding(issue.id);
+    let provider: WorkspaceProvider | undefined;
 
     try {
       if (!binding || binding.status !== "READY") {
         throw new Error("WORKSPACE_BINDING_NOT_READY");
       }
-      const provider = this.dependencies.registry.create(binding.providerId, {});
+      provider = this.dependencies.registry.create(binding.providerId, {});
       const branch = await provider.publish({
         issue,
         resourceId: binding.resourceId,
@@ -199,22 +204,112 @@ export class WorkspaceCoordinator {
         latest.revision !== issue.revision ||
         latest.status !== "FINALIZING"
       ) return;
-      const failed = transitionIssue(
-        latest,
-        "FINALIZATION_ERRORED",
-        this.dependencies.now(),
+      const diagnostic = finalizationDiagnostic(
+        error,
+        binding?.providerId ?? provider?.id ?? "unknown",
       );
-      const message = workspaceFailureMessage(error, "WORKSPACE_PUBLISH_FAILED");
-      this.dependencies.persistence.transaction(() => {
-        this.dependencies.store.transaction((transaction) => {
-          transaction.updateIssue(failed, latest.revision, null);
-          transaction.appendEvent(this.event(issue.id, "WORKSPACE_PUBLISH_FAILED", {
-            providerId: binding?.providerId,
-            error: message,
-          }));
-        });
-      });
+      if (
+        binding?.status === "READY"
+        && latest.finalizationRecovery?.automaticAttempts !== 1
+        && provider?.prepareFinalizationRecovery
+      ) {
+        const attemptId = this.dependencies.id();
+        try {
+          const context = await provider.prepareFinalizationRecovery({
+            issue: latest,
+            resourceId: binding.resourceId,
+            diagnostic,
+            attemptId,
+          });
+          const recovering = beginFinalizationRecovery(latest, {
+            attemptId,
+            diagnostic,
+            fingerprintRef: context.fingerprintRef,
+          }, this.dependencies.now());
+          this.dependencies.persistence.transaction(() => {
+            this.dependencies.store.transaction((transaction) => {
+              transaction.updateIssue(
+                recovering,
+                latest.revision,
+                "RECOVER_FINALIZATION",
+              );
+              transaction.appendEvent(this.event(issue.id, "WORKSPACE_PUBLISH_FAILED", {
+                providerId: binding.providerId,
+                error: diagnostic.code,
+                diagnostic,
+                automaticRecoveryAvailable: true,
+              }));
+              transaction.appendEvent(this.event(
+                issue.id,
+                "DELIVERY_FINALIZATION_RECOVERY_STARTED",
+                {
+                  attemptId,
+                  fingerprintRef: context.fingerprintRef,
+                  fingerprintSummary: context.fingerprintSummary,
+                },
+              ));
+            });
+          });
+          return;
+        } catch (preparationError) {
+          this.persistFinalizationFailure(
+            latest,
+            binding,
+            diagnostic,
+            "FINALIZATION_RECOVERY_PREPARATION_FAILED",
+            preparationError,
+          );
+          return;
+        }
+      }
+      this.persistFinalizationFailure(
+        latest,
+        binding,
+        diagnostic,
+        latest.finalizationRecovery?.automaticAttempts === 1
+          ? "FINALIZATION_RECOVERY_BUDGET_SPENT"
+          : "FINALIZATION_RECOVERY_UNSUPPORTED",
+      );
     }
+  }
+
+  private persistFinalizationFailure(
+    issue: Issue,
+    binding: WorkspaceBinding | undefined,
+    diagnostic: WorkspaceFinalizationDiagnostic,
+    reason: string,
+    cause?: unknown,
+  ): void {
+    const failed = transitionIssue(
+      issue,
+      "FINALIZATION_ERRORED",
+      this.dependencies.now(),
+    );
+    this.dependencies.persistence.transaction(() => {
+      this.dependencies.store.transaction((transaction) => {
+        transaction.updateIssue(failed, issue.revision, null);
+        transaction.appendEvent(this.event(issue.id, "WORKSPACE_PUBLISH_FAILED", {
+          providerId: binding?.providerId,
+          error: diagnostic.code,
+          diagnostic,
+          automaticRecoveryAvailable: false,
+        }));
+        transaction.appendEvent(this.event(
+          issue.id,
+          "DELIVERY_FINALIZATION_RECOVERY_FAILED",
+          {
+            attemptId: issue.finalizationRecovery?.attemptId,
+            reason,
+            ...(cause ? {
+              error: workspaceFailureMessage(
+                cause,
+                "FINALIZATION_RECOVERY_PREPARATION_FAILED",
+              ),
+            } : {}),
+          },
+        ));
+      });
+    });
   }
 
   private event(issueId: string, type: string, data: Record<string, unknown>) {
@@ -374,6 +469,7 @@ function recoveryOperation(
   issue: Issue,
   pending?: PendingOperation,
 ): PendingOperation | null {
+  if (issue.status === "FINALIZATION_RECOVERY") return "RECOVER_FINALIZATION";
   if (issue.status === "FINALIZING") return "FINALIZE";
   if (pending === "ASSESS" || pending === "REPAIR") return pending;
   if (issue.status === "RECEIVED") return "ASSESS";
@@ -386,4 +482,34 @@ function isTerminal(issue: Issue): boolean {
 
 function workspaceFailureMessage(error: unknown, fallback = "WORKSPACE_PREPARATION_FAILED"): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function finalizationDiagnostic(
+  error: unknown,
+  providerId: string,
+): WorkspaceFinalizationDiagnostic {
+  const candidate = error && typeof error === "object" && "diagnostic" in error
+    ? error.diagnostic
+    : undefined;
+  const parsed = workspaceFinalizationDiagnosticSchema.safeParse(candidate);
+  if (parsed.success) return { ...parsed.data, providerId };
+  const code = safeDiagnosticText(
+    workspaceFailureMessage(error, "WORKSPACE_PUBLISH_FAILED"),
+    200,
+  ) || "WORKSPACE_PUBLISH_FAILED";
+  return {
+    providerId,
+    step: "unknown",
+    code,
+    message: code,
+    relatedPaths: [],
+  };
+}
+
+function safeDiagnosticText(value: string, maxLength: number): string {
+  return value
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .slice(0, maxLength)
+    .trim();
 }

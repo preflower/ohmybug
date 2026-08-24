@@ -76,7 +76,7 @@ const repositoryRelativePathSchema = z.string().trim().min(1).max(1_000).refine(
   "REPOSITORY_RELATIVE_PATH_REQUIRED",
 );
 
-const workspaceFinalizationDiagnosticSchema = z.object({
+export const workspaceFinalizationDiagnosticSchema = z.object({
   providerId: z.string().trim().min(1).max(200),
   step: z.enum(["status", "add", "commit", "push", "merge", "release", "unknown"]),
   code: z.string().trim().min(1).max(200),

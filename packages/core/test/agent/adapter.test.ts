@@ -158,7 +158,7 @@ describe("AgentAdapter", () => {
       },
       evidenceDirectory: "/tmp/evidence/issue-1/1",
     });
-    await adapter.recoverFinalization(ref, {
+    await adapter.recoverFinalization!(ref, {
       issue,
       project,
       diagnostic: {

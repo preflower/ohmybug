@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import { transitionIssue } from "@oh-my-bug/core";
 import { gitWorkspaceFactory } from "@oh-my-bug/workspace-git";
 import { describe, expect, it } from "vitest";
 
 import { RuntimeWorker } from "../src/orchestration/worker.js";
 import { OhMyBugRuntime } from "../src/runtime.js";
 import { FakeAgent } from "./helpers/fakes.js";
-import { assessment, createHarness, eventIds, project } from "./helpers/runtime.js";
+import { assessment, createHarness, eventIds, now, project } from "./helpers/runtime.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -242,6 +243,106 @@ describe("Workspace finalization", () => {
     expect(workspacePersistence.getBinding(created.issue.id)?.status).toBe("RELEASED");
     expect(publishAttempts).toBe(2);
     expect(releases).toBe(1);
+  });
+
+  it("queues exactly one automatic finalization recovery attempt", async () => {
+    const fixture = createHarness();
+    const diagnostic = {
+      providerId: "recoverable",
+      step: "add" as const,
+      code: "GIT_COMMAND_FAILED:add",
+      exitCode: 128,
+      message: "Git could not add a generated directory",
+      stderr: "fatal: adding files failed",
+      relatedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
+    };
+    let publishAttempts = 0;
+    fixture.workspaceRegistry.register({
+      id: "recoverable",
+      manifest: { id: "recoverable", name: "Recoverable", configFields: [] },
+      validate() {},
+      create() {
+        return {
+          id: "recoverable",
+          async acquire({ issue, project: runtimeProject }) {
+            return {
+              projectPath: runtimeProject.path,
+              resourceId: `recoverable:${issue.id}`,
+            };
+          },
+          async publish() {
+            publishAttempts += 1;
+            throw Object.assign(new Error(diagnostic.code), { diagnostic });
+          },
+          async prepareFinalizationRecovery() {
+            return {
+              fingerprintRef: "fingerprint-1",
+              workspaceStatus: "?? .pnpm-store/shared/v11/tmp/_tmp_fixture/",
+              fingerprintSummary: "1 diagnostic root",
+            };
+          },
+          async validateFinalizationRecovery() {
+            return { kind: "UNCHANGED" as const, changedPaths: [] };
+          },
+          async release() {},
+        };
+      },
+    });
+    fixture.workspacePersistence.setProjectConfiguration(project.id, {
+      provider: "recoverable",
+      config: {},
+    });
+    const worker = new RuntimeWorker({
+      store: fixture.store,
+      agents: fixture.agents,
+      evidence: fixture.evidence,
+      workspaces: fixture.workspaces,
+      hooks: fixture.hooks,
+      id: eventIds("finalization-recovery"),
+      now: () => now,
+    });
+    const created = await fixture.commands.submitManual(project.id, {
+      commandId: "finalization-recovery",
+      content: "Checkout fails",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+    await worker.drain();
+    fixture.commands.approveAssessment(created.issue.id, {
+      assessmentRevision: assessment.revision,
+      assessmentContentHash: assessment.contentHash,
+      title: assessment.suggestedTitle,
+    });
+    await worker.drain();
+    fixture.commands.approveDelivery(created.issue.id);
+
+    await worker.drainOne();
+
+    const recovering = fixture.store.getIssue(created.issue.id)!;
+    expect(recovering).toMatchObject({
+      status: "FINALIZATION_RECOVERY",
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: expect.any(String),
+        diagnostic,
+        fingerprintRef: "fingerprint-1",
+      },
+    });
+    expect(fixture.store.listPendingOperations()).toEqual([
+      { issue: recovering, operation: "RECOVER_FINALIZATION" },
+    ]);
+
+    const automaticRetry = transitionIssue(recovering, "RETRY_FINALIZATION", now);
+    fixture.store.transaction((transaction) => {
+      transaction.updateIssue(automaticRetry, recovering.revision, "FINALIZE");
+    });
+    await worker.drainOne();
+
+    expect(fixture.store.getIssue(created.issue.id)).toMatchObject({
+      status: "FINALIZATION_FAILED",
+      finalizationRecovery: { automaticAttempts: 1 },
+    });
+    expect(fixture.store.listPendingOperations()).toEqual([]);
+    expect(publishAttempts).toBe(2);
   });
 
   it("does not release or discard an uncommitted Git worktree on cancellation", async () => {

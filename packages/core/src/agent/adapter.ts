@@ -133,7 +133,7 @@ export interface AgentAdapter {
     session: AgentSessionRef,
     input: EvidenceCaptureInput,
   ): Promise<EvidenceCaptureResult>;
-  recoverFinalization(
+  recoverFinalization?(
     session: AgentSessionRef,
     input: FinalizationRecoveryInput,
   ): Promise<FinalizationRecoveryResult>;
