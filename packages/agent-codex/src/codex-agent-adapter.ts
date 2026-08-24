@@ -9,7 +9,6 @@ import {
   type AgentInterruptionReason,
   type AgentActivityReporter,
   type AgentActivityUpdate,
-  type AgentCapability,
   type AgentCapabilityRequest,
   type AgentPlugin,
   type AgentPluginContext,
@@ -43,10 +42,14 @@ import {
   repairOutputSchema,
 } from "./output-schemas.js";
 import { assessmentPrompt, evidencePrompt, repairPrompt } from "./prompts.js";
+import {
+  effectiveStageCapabilities,
+  type CodexAgentStage,
+} from "./stage-capabilities.js";
 
 export interface CodexActivity {
   sessionId: string;
-  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE";
+  stage: CodexAgentStage;
   event: CodexClientEvent;
 }
 
@@ -90,7 +93,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       "ASSESSMENT",
       {
         workingDirectory: requireProjectPath(input.issue),
-        ...effectiveTurnOptions(input.issue, {
+        ...effectiveTurnOptions(input.issue, "ASSESSMENT", {
           sandboxMode: "read-only",
           networkAccessEnabled: false,
         }),
@@ -123,9 +126,9 @@ export class CodexAgentAdapter implements AgentAdapter {
       "REPAIR",
       {
         workingDirectory: requireProjectPath(input.issue),
-        ...effectiveTurnOptions(input.issue, {
+        ...effectiveTurnOptions(input.issue, "REPAIR", {
           sandboxMode: "workspace-write",
-          networkAccessEnabled: false,
+          networkAccessEnabled: true,
         }),
         approvalPolicy: "never",
       },
@@ -384,7 +387,7 @@ function checkCapabilityRequest(
 ): CapabilityRequestCheck {
   const request = parseCapabilityRequiredOutput(output);
   if (!request) return { kind: "NONE" };
-  const available = effectiveCapabilities(issue, stage);
+  const available = effectiveStageCapabilities(issue, stage);
   const capabilities = request.capabilities.filter(
     (capability) => !available.has(capability),
   );
@@ -393,30 +396,17 @@ function checkCapabilityRequest(
     : { kind: "NEW", request: { ...request, capabilities } };
 }
 
-function effectiveCapabilities(
-  issue: Issue,
-  stage: CodexActivity["stage"],
-): Set<AgentCapability> {
-  const available = new Set(
-    issue.capabilityGrants?.map((grant) => grant.capability),
-  );
-  if (stage === "EVIDENCE") {
-    available.add("HOST_EXECUTION");
-    available.add("NETWORK_ACCESS");
-  }
-  return available;
-}
-
 function effectiveTurnOptions(
   issue: Issue,
+  stage: CodexAgentStage,
   defaults: Pick<CodexThreadOptions, "sandboxMode" | "networkAccessEnabled">,
 ): Pick<CodexThreadOptions, "sandboxMode" | "networkAccessEnabled"> {
-  const grants = effectiveCapabilities(issue, "ASSESSMENT");
+  const available = effectiveStageCapabilities(issue, stage);
   return {
-    sandboxMode: grants.has("HOST_EXECUTION")
+    sandboxMode: available.has("HOST_EXECUTION")
       ? "danger-full-access"
       : defaults.sandboxMode,
-    networkAccessEnabled: grants.has("NETWORK_ACCESS")
+    networkAccessEnabled: available.has("NETWORK_ACCESS")
       ? true
       : defaults.networkAccessEnabled,
   };
