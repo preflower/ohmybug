@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import type { AgentEventDto } from "../api/types.js";
 import { Button } from "../components/ui/button.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip.js";
 
 const activityPageSize = 80;
 
@@ -311,7 +312,10 @@ function CommandLogLine({ line }: { line: CommandLine }) {
 }
 
 function EventLogLine({ line }: { line: EventLine }) {
+  const [detailExpanded, setDetailExpanded] = useState(false);
   const level = line.event.data.level === "error" ? "error" : "info";
+  const reassessmentDetail = line.event.type === "REASSESSMENT_REQUESTED" && line.detail;
+  const detailId = `activity-detail-${line.event.id}`;
   const Icon = level === "error"
     ? CircleAlert
     : line.event.type.includes("FILES")
@@ -325,8 +329,25 @@ function EventLogLine({ line }: { line: EventLine }) {
       <span className="activity-log-actor">{actorLabels[line.event.actor]}</span>
       <p>{line.message}</p>
       <time>{formatTime(line.event.occurredAt)}</time>
+      {reassessmentDetail ? <Tooltip>
+        <TooltipTrigger render={<Button
+          aria-controls={detailId}
+          aria-expanded={detailExpanded}
+          aria-label={detailExpanded ? "收起重新分析说明" : "查看重新分析说明"}
+          className="activity-detail-toggle"
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+          onClick={() => setDetailExpanded((value) => !value)}
+        >
+          <ChevronDown aria-hidden="true" size={12} />
+        </Button>} />
+        <TooltipContent side="left">{detailExpanded ? "收起重新分析说明" : "查看重新分析说明"}</TooltipContent>
+      </Tooltip> : null}
     </div>
-    {line.detail ? <pre aria-label={`${line.message}详情`} className="activity-log-output" tabIndex={0}>{line.detail}</pre> : null}
+    {reassessmentDetail
+      ? detailExpanded ? <pre aria-label={`${line.message}详情`} className="activity-log-output" id={detailId} tabIndex={0}>{line.detail}</pre> : null
+      : line.detail ? <pre aria-label={`${line.message}详情`} className="activity-log-output" tabIndex={0}>{line.detail}</pre> : null}
   </div>;
 }
 

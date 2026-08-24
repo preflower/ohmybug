@@ -342,6 +342,42 @@ describe("Agent activity", () => {
     expect(screen.getAllByText("pnpm test")).toHaveLength(2);
   });
 
+  it("expands and collapses reassessment feedback inside user activity", () => {
+    render(<AgentActivity active events={[
+      {
+        id: "issue-1:1",
+        issueId: "issue-1",
+        sequence: 1,
+        actor: "USER",
+        type: "REASSESSMENT_REQUESTED",
+        occurredAt: "2026-08-24T09:00:00Z",
+        data: { detail: "请检查窄窗口下的活动记录" },
+      },
+    ]} />);
+
+    expect(screen.queryByText("请检查窄窗口下的活动记录")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+
+    expect(screen.getAllByText("已要求重新分析")).toHaveLength(2);
+    expect(screen.getByText("用户")).toBeVisible();
+    const detailToggle = screen.getByRole("button", { name: "查看重新分析说明" });
+    expect(detailToggle).toHaveAttribute("aria-expanded", "false");
+    expect(detailToggle).toHaveAttribute("data-size", "icon-xs");
+    expect(detailToggle).toHaveTextContent("");
+    expect(detailToggle.closest(".activity-log-entry-heading")).not.toBeNull();
+    expect(screen.queryByText("查看说明")).not.toBeInTheDocument();
+    expect(screen.queryByText("请检查窄窗口下的活动记录")).not.toBeInTheDocument();
+
+    fireEvent.click(detailToggle);
+    expect(detailToggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByText("收起说明")).not.toBeInTheDocument();
+    expect(screen.getByText("请检查窄窗口下的活动记录")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "收起重新分析说明" }));
+    expect(detailToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("请检查窄窗口下的活动记录")).not.toBeInTheDocument();
+  });
+
   it("shows a concise failure with diagnostic output in the continuous log", () => {
     render(<AgentActivity active events={[
       {

@@ -43,13 +43,22 @@ describe("Runtime human commands", () => {
     expect(wakes()).toBe(1);
   });
 
-  it("persists reassessment feedback and rejects stale approval", () => {
+  it("persists reassessment feedback in the Issue and user activity event", () => {
     const { commands, store } = createHarness();
     const issue = reviewedIssue();
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
-    expect(commands.requestReassessment(issue.id, "Inspect the router"))
+    expect(commands.requestReassessment(issue.id, "  Inspect the router  "))
       .toMatchObject({ status: "ASSESSING", assessmentFeedback: "Inspect the router" });
 
+    expect(store.readEvents(issue.id)).toContainEqual(expect.objectContaining({
+      actor: "USER",
+      type: "REASSESSMENT_REQUESTED",
+      data: { detail: "Inspect the router" },
+    }));
+  });
+
+  it("rejects stale Assessment approval", () => {
+    const { commands, store } = createHarness();
     const stale = reviewedIssue({ id: "issue-stale", identifier: "OMB-3" });
     store.transaction((transaction) => transaction.insertIssue(stale, "ASSESS"));
     expect(() => commands.approveAssessment(stale.id, {
