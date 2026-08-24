@@ -53,6 +53,7 @@ interface RuntimeFacade {
   approveDelivery(id: string): Promise<ApprovalResult>;
   retryIssue(id: string): Issue;
   rebuildAgentSession(id: string, expectedRevision: number): Promise<Issue>;
+  grantIssueCapabilities(id: string, expectedRevision: number, requestId: string): Issue;
   cancelIssue(id: string): Promise<Issue>;
   stop(): Promise<void>;
 }
@@ -357,6 +358,19 @@ export class RuntimeService implements RuntimeApi {
   async rebuildAgentSession(input: { id: string; expectedRevision: number }): Promise<Issue> {
     this.assertAccepting();
     return this.dependencies.runtime.rebuildAgentSession(input.id, input.expectedRevision);
+  }
+
+  async grantIssueCapabilities(input: {
+    id: string;
+    expectedRevision: number;
+    requestId: string;
+  }): Promise<Issue> {
+    this.assertAccepting();
+    return this.dependencies.runtime.grantIssueCapabilities(
+      input.id,
+      input.expectedRevision,
+      input.requestId,
+    );
   }
 
   async cancelIssue(input: { id: string }): Promise<Issue> {

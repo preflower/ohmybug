@@ -149,6 +149,11 @@ export interface RuntimeApi {
   approveDelivery(input: { id: string }): Promise<ApprovalResult>;
   retryIssue(input: { id: string }): Promise<Issue>;
   rebuildAgentSession(input: { id: string; expectedRevision: number }): Promise<Issue>;
+  grantIssueCapabilities(input: {
+    id: string;
+    expectedRevision: number;
+    requestId: string;
+  }): Promise<Issue>;
   cancelIssue(input: { id: string }): Promise<Issue>;
   issueEvents(input: { id: string; cursor: number }): Promise<IssueEventPage>;
   readEvidence(input: { issueId: string; evidenceId: string }): Promise<EvidencePayload>;

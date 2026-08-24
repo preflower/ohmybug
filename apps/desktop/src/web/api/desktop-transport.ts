@@ -34,6 +34,8 @@ export function createDesktopTransport(bridge: Readonly<DesktopApi>): ProductTra
     cancel: (id) => bridge.cancelIssue(id),
     retry: (id) => bridge.retryIssue(id),
     rebuildSession: (id, expectedRevision) => bridge.rebuildAgentSession(id, expectedRevision),
+    grantIssueCapabilities: (id, expectedRevision, requestId) =>
+      bridge.grantIssueCapabilities(id, expectedRevision, requestId),
     integrationHealth: () => bridge.integrationHealth(),
     openProjectDirectory: () => bridge.openProjectDirectory() as Promise<DirectorySelection>,
     subscribeIssueEvents: (id, cursor, listener) => bridge.subscribeIssueEvents(

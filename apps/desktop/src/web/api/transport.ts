@@ -58,6 +58,11 @@ export interface ProductTransport {
   cancel(id: string): Promise<IssueDto>;
   retry(id: string): Promise<IssueDto>;
   rebuildSession(id: string, expectedRevision: number): Promise<IssueDto>;
+  grantIssueCapabilities(
+    id: string,
+    expectedRevision: number,
+    requestId: string,
+  ): Promise<IssueDto>;
   integrationHealth(): Promise<Record<string, IntegrationHealth>>;
   openProjectDirectory(): Promise<DirectorySelection>;
   subscribeIssueEvents(

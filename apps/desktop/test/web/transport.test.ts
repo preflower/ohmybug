@@ -41,6 +41,10 @@ describe("renderer product transports", () => {
         status: "READY" as const,
         branch: "ohmybug/chk-1",
       })),
+      grantIssueCapabilities: vi.fn(async () => ({
+        id: "issue-1",
+        status: "REPAIRING",
+      })),
       subscribeIssueEvents: vi.fn((_id: string, _cursor: number, listener: (event: unknown) => void) => {
         listener({ issueId: "issue-1", cursor: 2, events: [{ id: "event-2", sequence: 2 }] });
         return unsubscribe;
@@ -75,6 +79,9 @@ describe("renderer product transports", () => {
       branch: "ohmybug/chk-1",
     });
     expect(bridge.getIssueWorkspace).toHaveBeenCalledWith("issue-1");
+    await expect(transport.grantIssueCapabilities("issue-1", 7, "request-1"))
+      .resolves.toMatchObject({ status: "REPAIRING" });
+    expect(bridge.grantIssueCapabilities).toHaveBeenCalledWith("issue-1", 7, "request-1");
     const stop = transport.subscribeIssueEvents("issue-1", 1, listener);
     stop();
     const evidence = await transport.evidenceSource("issue-1", "evidence-1");

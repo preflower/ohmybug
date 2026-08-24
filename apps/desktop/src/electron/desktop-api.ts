@@ -71,6 +71,11 @@ export interface DesktopApi {
     id: string,
     expectedRevision: number,
   ): Promise<RuntimeOperationOutput<"rebuildAgentSession">>;
+  grantIssueCapabilities(
+    id: string,
+    expectedRevision: number,
+    requestId: string,
+  ): Promise<RuntimeOperationOutput<"grantIssueCapabilities">>;
   cancelIssue(id: string): Promise<RuntimeOperationOutput<"cancelIssue">>;
   readEvidence(
     issueId: string,
@@ -128,6 +133,10 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
       id,
       expectedRevision,
     }),
+    grantIssueCapabilities: (id, expectedRevision, requestId) => request(
+      "grantIssueCapabilities",
+      { id, expectedRevision, requestId },
+    ),
     cancelIssue: (id) => request("cancelIssue", { id }),
     readEvidence: (issueId, evidenceId) => request("readEvidence", { issueId, evidenceId }),
     openProjectDirectory: () => ipc.invoke(OPEN_PROJECT_DIRECTORY_CHANNEL),

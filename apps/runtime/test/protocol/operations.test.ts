@@ -30,6 +30,7 @@ describe("Runtime protocol operation registry", () => {
       "approveDelivery",
       "retryIssue",
       "rebuildAgentSession",
+      "grantIssueCapabilities",
       "cancelIssue",
       "issueEvents",
       "readEvidence",
@@ -38,7 +39,22 @@ describe("Runtime protocol operation registry", () => {
     expect(rendererOperationNames).not.toContain("shutdown");
     expect(rendererOperationNames).not.toContain("health");
     expect(rendererOperationNames).toContain("rebuildAgentSession");
+    expect(rendererOperationNames).toContain("grantIssueCapabilities");
     expect(rendererOperationNames).toContain("readEvidence");
+  });
+
+  it("validates optimistic capability grant input", () => {
+    const input = {
+      id: "issue-1",
+      expectedRevision: 7,
+      requestId: "request-1",
+    };
+
+    expect(runtimeOperations.grantIssueCapabilities.input.parse(input)).toEqual(input);
+    expect(() => runtimeOperations.grantIssueCapabilities.input.parse({
+      id: "issue-1",
+      requestId: "request-1",
+    })).toThrow();
   });
 
   it("validates grouped project branch discovery", () => {

@@ -23,7 +23,7 @@ import { RuntimeCommands } from "../../src/orchestration/commands.js";
 import { RuntimeService } from "../../src/service.js";
 import type { ApprovalResult } from "../../src/protocol/types.js";
 import { FakeAgent } from "../helpers/fakes.js";
-import { eventIds, now, reviewedIssue } from "../helpers/runtime.js";
+import { eventIds, now, project, reviewedIssue } from "../helpers/runtime.js";
 
 const cleanup: string[] = [];
 
@@ -100,6 +100,7 @@ async function harness(
     })),
     retryIssue: commands.retryIssue.bind(commands),
     rebuildAgentSession: commands.rebuildAgentSession.bind(commands),
+    grantIssueCapabilities: commands.grantIssueCapabilities.bind(commands),
     cancelIssue: commands.cancelIssue.bind(commands),
     stop: async () => undefined,
   };
@@ -125,6 +126,38 @@ async function harness(
 }
 
 describe("RuntimeService", () => {
+  it("delegates capability grants with revision and request identity", async () => {
+    const { service, store } = await harness();
+    store.registerProject(project);
+    const paused = reviewedIssue({
+      status: "PERMISSION_REQUIRED",
+      revision: 7,
+      repair: { iteration: 1 },
+      pendingCapabilityRequest: {
+        id: "request-1",
+        operation: "REPAIR",
+        stage: "REPAIR",
+        resumeStatus: "REPAIRING",
+        capabilities: ["HOST_EXECUTION"],
+        reason: "Launch Electron acceptance",
+        requestedAt: now,
+      },
+    });
+    store.transaction((transaction) => {
+      transaction.insertIssue(paused, "REPAIR");
+      transaction.updateIssue(paused, paused.revision, null);
+    });
+
+    await expect(service.grantIssueCapabilities({
+      id: paused.id,
+      expectedRevision: paused.revision,
+      requestId: "request-1",
+    })).resolves.toMatchObject({
+      status: "REPAIRING",
+      capabilityGrants: [{ capability: "HOST_EXECUTION" }],
+    });
+  });
+
   it("discovers branches and validates the selected base ref before persistence", async () => {
     const { root, service, workspaceRegistry } = await harness();
     const projectDirectory = join(root, "branch-project");

@@ -98,6 +98,7 @@ export function createBrowserDevelopmentTransport(
     cancel: readOnly,
     retry: readOnly,
     rebuildSession: readOnly,
+    grantIssueCapabilities: readOnly,
     integrationHealth: async () => (await snapshot()).integrationHealth,
     openProjectDirectory: async () => ({ canceled: true }),
     subscribeIssueEvents: (id, cursor, listener) => {

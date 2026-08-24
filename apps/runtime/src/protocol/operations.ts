@@ -209,6 +209,16 @@ export const runtimeOperations = {
     renderer: true,
     invoke: (service, input) => service.rebuildAgentSession(input),
   }),
+  grantIssueCapabilities: operation({
+    input: z.object({
+      id: identifierSchema,
+      expectedRevision: z.number().int().positive(),
+      requestId: identifierSchema,
+    }).strict(),
+    output: outputSchemas.issue,
+    renderer: true,
+    invoke: (service, input) => service.grantIssueCapabilities(input),
+  }),
   cancelIssue: operation({
     input: projectIdSchema,
     output: outputSchemas.issue,

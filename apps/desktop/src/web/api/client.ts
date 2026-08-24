@@ -37,6 +37,7 @@ const unavailableTransport: ProductTransport = {
   cancel: unavailable,
   retry: unavailable,
   rebuildSession: unavailable,
+  grantIssueCapabilities: unavailable,
   integrationHealth: unavailable,
   openProjectDirectory: unavailable,
   subscribeIssueEvents: () => () => undefined,
