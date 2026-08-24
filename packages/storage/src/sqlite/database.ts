@@ -47,12 +47,33 @@ function migrateIntegrationInputsToProjectScope(database: RuntimeDatabase): void
   })();
 }
 
+function migrateDeliveryFinalizationStatuses(database: RuntimeDatabase): void {
+  database.prepare(
+    `UPDATE issues
+     SET status = CASE
+           WHEN pending_operation = 'FINALIZE' THEN 'FINALIZING'
+           ELSE 'FINALIZATION_FAILED'
+         END,
+         data_json = json_set(
+           data_json,
+           '$.status',
+           CASE
+             WHEN pending_operation = 'FINALIZE' THEN 'FINALIZING'
+             ELSE 'FINALIZATION_FAILED'
+           END
+         )
+     WHERE status = 'APPROVED'
+        OR json_extract(data_json, '$.status') = 'APPROVED'`,
+  ).run();
+}
+
 export function openRuntimeDatabase(path: string): RuntimeDatabase {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const database = new BetterSqlite3(path);
   database.pragma("foreign_keys = ON");
   if (path !== ":memory:") database.pragma("journal_mode = WAL");
   database.exec(runtimeSchema);
+  migrateDeliveryFinalizationStatuses(database);
   migrateIntegrationInputsToProjectScope(database);
   database.prepare(
     `UPDATE issues
