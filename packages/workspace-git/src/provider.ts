@@ -471,27 +471,27 @@ async function assertInitializedSubmodulesClean(
   visited.add(await realpath(worktreePath));
   for (const gitlink of await getIndexGitlinks(worktreePath)) {
     const submodulePath = join(worktreePath, gitlink);
+    if (!(await gitlinkDirectoryExists(submodulePath))) continue;
     if (await pathExists(join(submodulePath, ".git"))) {
       await assertWorktreeAndSubmodulesClean(submodulePath, visited);
-    } else {
-      await assertUninitializedGitlinkEmpty(submodulePath);
+    } else if ((await readdir(submodulePath)).length > 0) {
+      throw new Error("GIT_WORKTREE_NOT_CLEAN");
     }
   }
 }
 
-async function assertUninitializedGitlinkEmpty(path: string): Promise<void> {
+async function gitlinkDirectoryExists(path: string): Promise<boolean> {
   let stats;
   try {
     stats = await lstat(path);
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      return;
+      return false;
     }
     throw error;
   }
-  if (!stats.isDirectory() || (await readdir(path)).length > 0) {
-    throw new Error("GIT_WORKTREE_NOT_CLEAN");
-  }
+  if (!stats.isDirectory()) throw new Error("GIT_WORKTREE_NOT_CLEAN");
+  return true;
 }
 
 async function assertWorktreeAndSubmodulesClean(

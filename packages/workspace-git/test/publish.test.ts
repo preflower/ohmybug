@@ -586,6 +586,44 @@ describe("GitWorkspace publish", () => {
 
     await expect(lstat(uninitialized)).resolves.toBeDefined();
   });
+
+  it("preserves a symlink to a repository at an uninitialized submodule path", async () => {
+    const fixture = await createGitFixture();
+    cleanups.push(fixture.cleanup);
+    const source = join(fixture.root, "linked-submodule-source");
+    await createCommittedRepository(source);
+    await git(
+      fixture.repository,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      source,
+      "vendor/uninitialized-link",
+    );
+    await git(fixture.repository, "commit", "-am", "add uninitialized submodule");
+    const provider = gitWorkspaceFactory({
+      state: fixture.state,
+      worktreeRoot: fixture.worktreeRoot,
+    }).create({ baseBranch: "main", pushToRemote: false });
+    const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+    const uninitialized = join(acquired.projectPath, "vendor/uninitialized-link");
+    await rm(uninitialized, { recursive: true, force: true });
+    await symlink(source, uninitialized);
+    const approved = {
+      ...fixture.issue,
+      projectPath: acquired.projectPath,
+      status: "APPROVED" as const,
+      resolution: "FIXED" as const,
+    };
+
+    await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+    await expect(provider.release({ issue: approved, resourceId: "git:issue-1" }))
+      .rejects.toThrow("GIT_WORKTREE_NOT_CLEAN");
+
+    await expect(lstat(uninitialized)).resolves.toBeDefined();
+  });
 });
 
 async function createCommittedRepository(path: string): Promise<void> {
