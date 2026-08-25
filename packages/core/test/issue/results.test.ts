@@ -13,6 +13,7 @@ import {
   recordImplementationDraft,
   recordFinalizationRecoveryResult,
   recordRepairFailure,
+  retryFinalizationAsRepair,
   grantCapabilityRequest,
   recordCapabilityRequest,
   replaceAgentSession,
@@ -337,6 +338,34 @@ describe("Issue workflow results", () => {
     expect(stale).not.toHaveProperty("lastFailure");
     expect(() => recordBaseIntegrationStale(issueAt("REPAIRING"), "base", now))
       .toThrow(/Illegal Issue transition/);
+  });
+
+  it("retries legacy finalization failure through fresh Repair validation", () => {
+    const failed: Issue = {
+      ...issueAt("FINALIZATION_FAILED"),
+      assessment,
+      agentSession: { agent: "codex", sessionId: "logical-1" },
+      repair: {
+        iteration: 4,
+        deliveryDraft: { ...draft, integration: integrationSnapshot },
+        delivery,
+      },
+      resolution: "FIXED",
+      finalizationRecovery: { automaticAttempts: 1 },
+      lastFailure: { stage: "FINALIZATION_RECOVERY", code: "LEGACY" },
+    };
+    const retried = retryFinalizationAsRepair(failed, now);
+    expect(retried).toMatchObject({
+      status: "REPAIRING",
+      assessment,
+      agentSession: failed.agentSession,
+      repair: { iteration: 5, feedback: expect.any(String) },
+    });
+    expect(retried.repair).not.toHaveProperty("delivery");
+    expect(retried.repair).not.toHaveProperty("deliveryDraft");
+    expect(retried).not.toHaveProperty("resolution");
+    expect(retried).not.toHaveProperty("finalizationRecovery");
+    expect(retried).not.toHaveProperty("lastFailure");
   });
 
   it.each([

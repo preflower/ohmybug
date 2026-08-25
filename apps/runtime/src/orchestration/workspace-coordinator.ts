@@ -1,5 +1,4 @@
 import {
-  beginFinalizationRecovery,
   recordBaseIntegrationStale,
   recordFinalizationRecoveryResult,
   transitionIssue,
@@ -277,88 +276,7 @@ export class WorkspaceCoordinator {
         error,
         binding?.providerId ?? provider?.id ?? "unknown",
       );
-      if (
-        binding?.status === "READY"
-        && latest.finalizationRecovery?.automaticAttempts !== 1
-        && provider?.prepareFinalizationRecovery
-      ) {
-        const attemptId = this.dependencies.id();
-        try {
-          const context = await provider.prepareFinalizationRecovery({
-            issue: latest,
-            resourceId: binding.resourceId,
-            diagnostic,
-            attemptId,
-          });
-          const recovering = beginFinalizationRecovery(latest, {
-            attemptId,
-            diagnostic,
-            fingerprintRef: context.fingerprintRef,
-            context: {
-              recoveryKind: context.recoveryKind,
-              ...(context.merge ? { merge: context.merge } : {}),
-            },
-          }, this.dependencies.now());
-          this.dependencies.persistence.transaction(() => {
-            this.dependencies.store.transaction((transaction) => {
-              transaction.updateIssue(
-                recovering,
-                latest.revision,
-                "RECOVER_FINALIZATION",
-              );
-              transaction.appendEvent(this.event(issue.id, "WORKSPACE_PUBLISH_FAILED", {
-                providerId: binding.providerId,
-                error: diagnostic.code,
-                diagnostic,
-                automaticRecoveryAvailable: true,
-              }));
-              transaction.appendEvent(this.event(
-                issue.id,
-                "DELIVERY_FINALIZATION_RECOVERY_STARTED",
-                {
-                  attemptId,
-                  fingerprintRef: context.fingerprintRef,
-                  fingerprintSummary: context.fingerprintSummary,
-                  workspaceStatus: context.workspaceStatus,
-                  recoveryKind: context.recoveryKind,
-                  ...(context.merge ? { merge: context.merge } : {}),
-                },
-              ));
-              if (context.recoveryKind === "MERGE_CONFLICT" && context.merge) {
-                transaction.appendEvent(this.event(
-                  issue.id,
-                  "DELIVERY_FINALIZATION_MERGE_PREPARED",
-                  {
-                    attemptId,
-                    baseCommit: context.merge.baseCommit,
-                    issueCommit: context.merge.issueCommit,
-                    conflictCount: context.merge.conflictPaths.length,
-                    conflictPaths: context.merge.conflictPaths,
-                  },
-                ));
-              }
-            });
-          });
-          return;
-        } catch (preparationError) {
-          this.persistFinalizationFailure(
-            latest,
-            binding,
-            diagnostic,
-            "FINALIZATION_RECOVERY_PREPARATION_FAILED",
-            preparationError,
-          );
-          return;
-        }
-      }
-      this.persistFinalizationFailure(
-        latest,
-        binding,
-        diagnostic,
-        latest.finalizationRecovery?.automaticAttempts === 1
-          ? "FINALIZATION_RECOVERY_BUDGET_SPENT"
-          : "FINALIZATION_RECOVERY_UNSUPPORTED",
-      );
+      this.persistPublicationFailure(latest, binding, diagnostic);
     }
   }
 
@@ -502,12 +420,10 @@ export class WorkspaceCoordinator {
     });
   }
 
-  private persistFinalizationFailure(
+  private persistPublicationFailure(
     issue: Issue,
     binding: WorkspaceBinding | undefined,
     diagnostic: WorkspaceFinalizationDiagnostic,
-    reason: string,
-    cause?: unknown,
   ): void {
     const failed = {
       ...transitionIssue(
@@ -515,11 +431,12 @@ export class WorkspaceCoordinator {
         "FINALIZATION_ERRORED",
         this.dependencies.now(),
       ),
-      finalizationRecovery: {
-        ...(issue.finalizationRecovery ?? { automaticAttempts: 0 as const }),
-        diagnostic,
+      lastFailure: {
+        stage: "FINALIZATION_RECOVERY" as const,
+        code: diagnostic.code,
       },
     };
+    delete failed.finalizationRecovery;
     this.dependencies.persistence.transaction(() => {
       this.dependencies.store.transaction((transaction) => {
         transaction.updateIssue(failed, issue.revision, null);
@@ -529,20 +446,6 @@ export class WorkspaceCoordinator {
           diagnostic,
           automaticRecoveryAvailable: false,
         }));
-        transaction.appendEvent(this.event(
-          issue.id,
-          "DELIVERY_FINALIZATION_RECOVERY_FAILED",
-          {
-            attemptId: issue.finalizationRecovery?.attemptId,
-            reason,
-            ...(cause ? {
-              error: workspaceFailureMessage(
-                cause,
-                "FINALIZATION_RECOVERY_PREPARATION_FAILED",
-              ),
-            } : {}),
-          },
-        ));
       });
     });
   }

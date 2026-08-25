@@ -1,5 +1,6 @@
 import {
   AgentCapabilityRequiredError,
+  beginFinalizationRecovery,
   type AgentAdapter,
   type FinalizationRecoveryResult,
   type WorkspaceFinalizationDiagnostic,
@@ -296,8 +297,57 @@ async function recoveryHarness(
     title: assessment.suggestedTitle,
   });
   await worker.drain();
-  fixture.commands.approveDelivery(created.issue.id);
-  await worker.drainOne();
+  const finalizing = fixture.commands.approveDelivery(created.issue.id);
+  const context = options?.context ?? {
+    fingerprintRef: "fingerprint-1",
+    workspaceStatus: "?? .pnpm-store/shared/v11/tmp/_tmp_fixture/",
+    fingerprintSummary: "1 diagnostic root",
+    recoveryKind: "GENERATED_ARTIFACT_CLEANUP" as const,
+  };
+  const attemptId = "legacy-recovery-attempt";
+  const recovering = beginFinalizationRecovery(finalizing, {
+    attemptId,
+    diagnostic,
+    fingerprintRef: context.fingerprintRef,
+    context: {
+      recoveryKind: context.recoveryKind,
+      ...(context.merge ? { merge: context.merge } : {}),
+    },
+  }, now);
+  fixture.store.transaction((transaction) => {
+    transaction.updateIssue(recovering, finalizing.revision, "RECOVER_FINALIZATION");
+    transaction.appendEvent({
+      id: `legacy-started-${created.issue.id}`,
+      issueId: created.issue.id,
+      type: "DELIVERY_FINALIZATION_RECOVERY_STARTED",
+      actor: "SYSTEM",
+      data: {
+        attemptId,
+        fingerprintRef: context.fingerprintRef,
+        fingerprintSummary: context.fingerprintSummary,
+        workspaceStatus: context.workspaceStatus,
+        recoveryKind: context.recoveryKind,
+        ...(context.merge ? { merge: context.merge } : {}),
+      },
+      occurredAt: now,
+    });
+    if (context.merge) {
+      transaction.appendEvent({
+        id: `legacy-merge-${created.issue.id}`,
+        issueId: created.issue.id,
+        type: "DELIVERY_FINALIZATION_MERGE_PREPARED",
+        actor: "SYSTEM",
+        data: {
+          attemptId,
+          baseCommit: context.merge.baseCommit,
+          issueCommit: context.merge.issueCommit,
+          conflictCount: context.merge.conflictPaths.length,
+          conflictPaths: context.merge.conflictPaths,
+        },
+        occurredAt: now,
+      });
+    }
+  });
   expect(fixture.store.getIssue(created.issue.id)?.status).toBe("FINALIZATION_RECOVERY");
   return { fixture, issueId: created.issue.id, worker, recoveryInputs };
 }

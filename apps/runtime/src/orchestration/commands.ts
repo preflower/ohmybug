@@ -5,6 +5,7 @@ import {
   retryEvidence,
   submitReview as submitCoreReview,
   transitionIssue,
+  retryFinalizationAsRepair,
   type IntegrationAdapter,
   type IntegrationInput,
   type IntakeResult,
@@ -181,9 +182,9 @@ export class RuntimeCommands {
     if (current.status === "FINALIZATION_FAILED") {
       return this.change(
         issueId,
-        "DELIVERY_FINALIZATION_RETRIED",
-        "FINALIZE",
-        (issue, now) => transitionIssue(issue, "RETRY_FINALIZATION", now),
+        "DELIVERY_FINALIZATION_REPAIR_REQUESTED",
+        "REPAIR",
+        retryFinalizationAsRepair,
       );
     }
 

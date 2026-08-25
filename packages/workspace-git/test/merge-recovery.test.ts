@@ -149,40 +149,11 @@ describe("Git merge recovery diagnostics", () => {
   });
 
   it("prepares an idempotent provider-owned conflict in the Issue Worktree", async () => {
-    const fixture = await createGitFixture();
+    const fixture = await createPreparedConflict();
     try {
-      const provider = gitWorkspaceFactory({
-        state: fixture.state,
-        worktreeRoot: fixture.worktreeRoot,
-      }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
-      const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
-      await writeFile(join(acquired.projectPath, "README.md"), "issue change\n");
-      await writeFile(join(fixture.repository, "README.md"), "base change\n");
-      await git(fixture.repository, "add", "README.md");
-      await git(fixture.repository, "commit", "-m", "advance base");
       const baseCommit = await git(fixture.repository, "rev-parse", "main");
-      const approved = {
-        ...fixture.issue,
-        projectPath: acquired.projectPath,
-        status: "FINALIZING" as const,
-        resolution: "FIXED" as const,
-      };
-      let failure: WorkspaceFinalizationError;
-      try {
-        await provider.publish({ issue: approved, resourceId: "git:issue-1" });
-        throw new Error("EXPECTED_MERGE_CONFLICT");
-      } catch (error) {
-        if (!(error instanceof WorkspaceFinalizationError)) throw error;
-        failure = error;
-      }
-      const issueCommit = await git(acquired.projectPath, "rev-parse", "HEAD");
-
-      const context = await provider.prepareFinalizationRecovery?.({
-        issue: approved,
-        resourceId: "git:issue-1",
-        diagnostic: failure.diagnostic,
-        attemptId: "recovery-21",
-      });
+      const issueCommit = await git(fixture.acquired.projectPath, "rev-parse", "HEAD");
+      const context = fixture.context;
 
       expect(context).toMatchObject({
         recoveryKind: "MERGE_CONFLICT",
@@ -196,13 +167,13 @@ describe("Git merge recovery diagnostics", () => {
           mergePrepared: true,
         },
       });
-      expect(await git(acquired.projectPath, "rev-parse", "HEAD")).toBe(issueCommit);
-      expect(await git(acquired.projectPath, "rev-parse", "MERGE_HEAD")).toBe(baseCommit);
+      expect(await git(fixture.acquired.projectPath, "rev-parse", "HEAD")).toBe(issueCommit);
+      expect(await git(fixture.acquired.projectPath, "rev-parse", "MERGE_HEAD")).toBe(baseCommit);
       expect(await git(fixture.repository, "status", "--porcelain")).toBe("");
-      expect(await provider.prepareFinalizationRecovery?.({
-        issue: approved,
+      expect(await fixture.provider.prepareFinalizationRecovery?.({
+        issue: fixture.approved,
         resourceId: "git:issue-1",
-        diagnostic: failure.diagnostic,
+        diagnostic: legacyMergeDiagnostic(),
         attemptId: "recovery-21",
       })).toEqual(context);
     } finally {
@@ -1059,6 +1030,17 @@ async function createPreparedConflict(options: {
     );
   }
   await writeFile(join(acquired.projectPath, "README.md"), "issue change\n");
+  await git(acquired.projectPath, "add", "README.md");
+  await git(acquired.projectPath, "commit", "-m", "legacy accepted issue change");
+  const issueCommit = await git(acquired.projectPath, "rev-parse", "HEAD");
+  if (options.pushToRemote) {
+    await git(
+      acquired.projectPath,
+      "push",
+      "delivery",
+      "refs/heads/ohmybug/omb-1:refs/heads/ohmybug/omb-1",
+    );
+  }
   await writeFile(join(fixture.repository, "README.md"), "base change\n");
   await git(fixture.repository, "add", "README.md");
   await git(fixture.repository, "commit", "-m", "advance base");
@@ -1094,19 +1076,33 @@ async function createPreparedConflict(options: {
     status: "FINALIZING" as const,
     resolution: "FIXED" as const,
   };
-  let failure: WorkspaceFinalizationError;
-  try {
-    await provider.publish({ issue: approved, resourceId: "git:issue-1" });
-    throw new Error("EXPECTED_MERGE_CONFLICT");
-  } catch (error) {
-    if (!(error instanceof WorkspaceFinalizationError)) throw error;
-    failure = error;
-  }
+  const baseCommit = await git(fixture.repository, "rev-parse", "main");
+  const saved = fixture.state.get<Record<string, unknown>>("workspace-git", "git:issue-1");
+  if (!saved) throw new Error("GIT_WORKSPACE_STATE_REQUIRED");
+  fixture.state.set("workspace-git", "git:issue-1", {
+    ...saved,
+    lastMergeFailure: {
+      baseCommit,
+      issueCommit,
+      conflictPaths: ["README.md"],
+      mergeMessages: ["CONFLICT (content): Merge conflict in README.md"],
+    },
+  });
   const context = await provider.prepareFinalizationRecovery!({
     issue: approved,
     resourceId: "git:issue-1",
-    diagnostic: failure.diagnostic,
+    diagnostic: legacyMergeDiagnostic(),
     attemptId: "recovery-21",
   });
   return { ...fixture, provider, acquired, approved, context, movedBase };
+}
+
+function legacyMergeDiagnostic(): WorkspaceFinalizationError["diagnostic"] {
+  return {
+    providerId: "git",
+    step: "merge",
+    code: "GIT_AUTO_MERGE_CONFLICT",
+    message: "Automatic merge found a content conflict",
+    relatedPaths: ["README.md"],
+  };
 }

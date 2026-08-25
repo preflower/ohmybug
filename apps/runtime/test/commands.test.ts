@@ -209,7 +209,7 @@ describe("Runtime human commands", () => {
     expect(store.readEvents(issue.id).map((event) => event.type)).toEqual(["REVIEW_SUBMITTED"]);
   });
 
-  it("retries only a failed Delivery finalization", () => {
+  it("retries a failed Delivery finalization through fresh Repair", () => {
     const { commands, store } = createHarness();
     const failed = reviewedIssue({
       id: "issue-finalization-failed",
@@ -226,16 +226,18 @@ describe("Runtime human commands", () => {
     const retrying = commands.approveDelivery(failed.id);
 
     expect(retrying).toMatchObject({
-      status: "FINALIZING",
-      resolution: "FIXED",
+      status: "REPAIRING",
+      repair: { iteration: 2, feedback: expect.any(String) },
       revision: 9,
     });
+    expect(retrying).not.toHaveProperty("resolution");
+    expect(retrying.repair).not.toHaveProperty("delivery");
     expect(store.listPendingOperations()).toEqual([{
       issue: retrying,
-      operation: "FINALIZE",
+      operation: "REPAIR",
     }]);
     expect(store.readEvents(failed.id).map((event) => event.type))
-      .toEqual(["DELIVERY_FINALIZATION_RETRIED"]);
+      .toEqual(["DELIVERY_FINALIZATION_REPAIR_REQUESTED"]);
   });
 
   it("rejects duplicate delivery actions while finalization recovery is active", () => {

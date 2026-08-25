@@ -498,3 +498,17 @@ export function recordBaseIntegrationStale(
   delete next.lastFailure;
   return next;
 }
+
+export function retryFinalizationAsRepair(issue: Issue, now: string): Issue {
+  const next: Issue = {
+    ...transitionIssue(issue, "RETRY_FINALIZATION_REPAIR", now),
+    repair: {
+      iteration: (issue.repair?.iteration ?? 0) + 1,
+      feedback: "Final publication failed. Revalidate the latest baseline, integration, verification, and evidence before publishing again.",
+    },
+  };
+  delete next.resolution;
+  delete next.finalizationRecovery;
+  delete next.lastFailure;
+  return next;
+}

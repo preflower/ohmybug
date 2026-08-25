@@ -89,9 +89,8 @@ describe("Issue workflow", () => {
     const failed = transitionIssue(finalizing, "FINALIZATION_ERRORED", now);
 
     expect(failed.status).toBe("FINALIZATION_FAILED");
-    expect(transitionIssue(failed, "RETRY_FINALIZATION", now)).toMatchObject({
-      status: "FINALIZING",
-      finalizationRecovery: { automaticAttempts: 0 },
+    expect(transitionIssue(failed, "RETRY_FINALIZATION_REPAIR", now)).toMatchObject({
+      status: "REPAIRING",
     });
     expect(transitionIssue(finalizing, "COMPLETE_DELIVERY", now)).toMatchObject({
       status: "COMPLETED",
