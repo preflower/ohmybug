@@ -14,15 +14,20 @@ test("right-aligns the New Issue icon in the real desktop application", async ({
     await desktop.page.getByLabel("项目标识").fill(`S${suffix}`);
     await desktop.page.getByRole("tab", { name: "命令与验收" }).click();
     await desktop.page.getByLabel("测试命令").fill("node --test");
-    await desktop.page.getByRole("button", { name: "保存项目", exact: true }).click();
+    await desktop.page.getByRole("button", { name: "保存更改", exact: true }).click();
     await expect(desktop.page.getByText("所有更改已保存", { exact: true })).toBeVisible();
 
+    const expandedWidth = await desktop.page.evaluate(() => window.innerWidth);
+    expect(expandedWidth).toBeGreaterThan(980);
+
     const button = desktop.page.getByRole("button", { name: "新建 Issue" });
+    await expect(button.locator("span", { hasText: "新建 Issue" })).toBeVisible();
     const geometry = await button.evaluate((element) => {
       const iconBounds = element.querySelector("svg")!.getBoundingClientRect();
       const buttonBounds = element.getBoundingClientRect();
       return { rightGap: buttonBounds.right - iconBounds.right };
     });
+    expect(geometry.rightGap).toBeGreaterThanOrEqual(0);
     expect(geometry.rightGap).toBeLessThanOrEqual(12);
 
     const evidenceDir = process.env.OH_MY_BUG_EVIDENCE_DIR

@@ -75,6 +75,7 @@ Run:
 pnpm --filter @oh-my-bug/desktop test
 pnpm --filter @oh-my-bug/desktop typecheck
 pnpm build:web
+pnpm package
 env -u OMB_RENDERER_URL -u OMB_VITE_DEV OH_MY_BUG_EVIDENCE_DIR="$PWD/.oh-my-bug-tmp-evidence-ULqFs4" pnpm exec playwright test -c apps/desktop/playwright.config.ts sidebar-layout.spec.ts
 ```
 
