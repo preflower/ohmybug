@@ -1,6 +1,7 @@
 import {
   confirmedTitle,
   type Issue,
+  type RepairResult,
   type ReviewJson,
   type ReviewChoice,
   type ReviewRequest,
@@ -85,6 +86,44 @@ export function deliveryReview(issue: Issue, id: string, now: string): ReviewReq
       feedbackRequired: true,
       continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
     }],
+    requestedAt: now,
+  };
+}
+
+export function businessMergeReview(
+  issue: Issue,
+  result: Extract<RepairResult, { kind: "BUSINESS_DECISION_REQUIRED" }>,
+  id: string,
+  now: string,
+): ReviewRequest {
+  if (issue.status !== "REPAIRING" || !issue.repair) {
+    throw new Error("BUSINESS_REVIEW_CONTEXT_REQUIRED");
+  }
+  return {
+    id,
+    kind: "business-merge-conflict",
+    requestedFrom: "REPAIRING",
+    payload: {
+      summary: result.summary,
+      baseCommit: result.decision.baseCommit,
+      issueCommit: result.decision.issueCommit,
+      conflictPaths: result.decision.conflictPaths,
+      baseIntent: result.decision.baseIntent,
+      issueIntent: result.decision.issueIntent,
+      incompatibility: result.decision.incompatibility,
+      recommendation: result.decision.recommendation,
+      rationale: result.decision.rationale,
+      choices: result.decision.choices.map((choice) => ({
+        id: choice.id,
+        label: choice.label,
+        description: choice.description,
+      })),
+    },
+    choices: result.decision.choices.map((choice) => ({
+      id: choice.id,
+      label: choice.label,
+      continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+    })),
     requestedAt: now,
   };
 }

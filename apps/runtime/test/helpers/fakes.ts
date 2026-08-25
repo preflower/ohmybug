@@ -34,9 +34,11 @@ export const delivery = {
   summary: "支付页已恢复",
   evidence: [{ type: "screenshot" as const, label: "支付页", evidenceId }],
 };
-export const repairResult: RepairResult = {
+export const repairResult: Extract<RepairResult, { kind: "DELIVERY_READY" }> = {
+  kind: "DELIVERY_READY",
   summary: delivery.summary,
   evidence: [{ type: "screenshot", label: "支付页", relativePath: "proof.png" }],
+  verification: [{ command: "pnpm test", outcome: "PASSED", summary: "Passed" }],
 };
 
 export class FakeAgent implements AgentAdapter {

@@ -4,6 +4,7 @@ import {
   transitionIssue,
   workspaceFinalizationDiagnosticSchema,
   type Issue,
+  type RepairResult,
   type PendingOperation,
   type RuntimeProject,
   type RuntimeStore,
@@ -16,6 +17,8 @@ import type {
   WorkspaceFinalizationRecoveryValidation,
   WorkspacePersistence,
   WorkspaceProvider,
+  WorkspaceRepairObservation,
+  WorkspaceRepairValidation,
 } from "@oh-my-bug/module-api";
 
 import type {
@@ -35,6 +38,45 @@ export interface WorkspaceCoordinatorDependencies {
 
 export class WorkspaceCoordinator {
   constructor(private readonly dependencies: WorkspaceCoordinatorDependencies) {}
+
+  async observeRepair(issue: Issue): Promise<WorkspaceRepairObservation> {
+    const { binding, provider } = this.readyProvider(issue);
+    return provider.observeRepair
+      ? provider.observeRepair({ issue, resourceId: binding.resourceId })
+      : { required: false };
+  }
+
+  async validateRepair(
+    issue: Issue,
+    observation: WorkspaceRepairObservation,
+    result: RepairResult,
+    runtimeIntakeDirectory?: string,
+  ): Promise<WorkspaceRepairValidation> {
+    const { binding, provider } = this.readyProvider(issue);
+    if (!provider.validateRepair) {
+      if (result.kind !== "DELIVERY_READY") {
+        throw new Error("WORKSPACE_REPAIR_VALIDATION_UNSUPPORTED");
+      }
+      const description = await provider.describe?.({
+        issue,
+        resourceId: binding.resourceId,
+      });
+      return {
+        kind: "DELIVERY_READY",
+        branch: {
+          name: description?.branch ?? binding.resourceId,
+          commit: result.integration?.issueCommit ?? `workspace-revision:${issue.revision}`,
+        },
+      };
+    }
+    return provider.validateRepair({
+      issue,
+      resourceId: binding.resourceId,
+      observation,
+      result,
+      ...(runtimeIntakeDirectory ? { runtimeIntakeDirectory } : {}),
+    });
+  }
 
   async prepare(pending: Issue): Promise<void> {
     const issue = this.dependencies.store.getIssue(pending.id);
@@ -489,6 +531,33 @@ export class WorkspaceCoordinator {
       actor: "SYSTEM" as const,
       data,
       occurredAt: this.dependencies.now(),
+    };
+  }
+
+  private readyProvider(issue: Issue): {
+    binding: WorkspaceBinding;
+    provider: WorkspaceProvider;
+  } {
+    const binding = this.dependencies.persistence.getBinding(issue.id);
+    if (!binding && issue.projectPath && this.dependencies.registry.has("local")) {
+      return {
+        binding: {
+          issueId: issue.id,
+          providerId: "local",
+          resourceId: `local:${issue.id}`,
+          status: "READY",
+          createdAt: issue.createdAt,
+          updatedAt: issue.updatedAt,
+        },
+        provider: this.dependencies.registry.create("local", {}),
+      };
+    }
+    if (!binding || binding.status !== "READY") {
+      throw new Error("WORKSPACE_BINDING_NOT_READY");
+    }
+    return {
+      binding,
+      provider: this.dependencies.registry.create(binding.providerId, {}),
     };
   }
 

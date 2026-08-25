@@ -104,7 +104,12 @@ describe("SQLite-backed review and recovery acceptance", () => {
     const projectRoot = join(dirname(databasePath), "project");
     mkdirSync(projectRoot);
     const agent = new CapabilityRequestAgent();
-    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [],
+    };
     const options = runtimeOptions(databasePath, agent);
     const runtime = createRuntime(options);
     runtime.registerProject({ ...project, path: projectRoot });
@@ -254,7 +259,7 @@ describe("SQLite-backed review and recovery acceptance", () => {
     agent.repair = async (session, input) => {
       const result = await repair(session, input);
       attempt += 1;
-      return attempt === 1
+      return attempt === 1 && result.kind === "DELIVERY_READY"
         ? { ...result, evidence: [{ ...result.evidence[0]!, relativePath: "missing.png" }] }
         : result;
     };

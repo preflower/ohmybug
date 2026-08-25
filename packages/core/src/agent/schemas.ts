@@ -69,6 +69,15 @@ export const repairConflictResolutionSchema = z.object({
   resolution: boundedText,
 }).strict();
 
+export const deliveryIntegrationSnapshotSchema = z.object({
+  baseBranch: z.string().trim().min(1).max(200),
+  baseCommit: commitSchema,
+  issueBranch: z.string().trim().min(1).max(200),
+  issueCommit: commitSchema,
+  conflicts: z.array(repairConflictResolutionSchema).max(100),
+  verification: z.array(repairVerificationSchema).min(1).max(100),
+}).strict();
+
 const repairDeliveryReadySchema = z.object({
   kind: z.literal("DELIVERY_READY"),
   summary: boundedText,

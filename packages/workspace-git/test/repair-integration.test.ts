@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { RepairResult } from "@oh-my-bug/core";
@@ -186,6 +186,46 @@ describe("Git Repair integration", () => {
       resourceId: acquired.resourceId,
       observation,
       result: delivery(observation.baseCommit!, head),
+    })).rejects.toThrow("GIT_REPAIR_GENERATED_ARTIFACTS_PRESENT");
+  });
+
+  it("ignores only the validated Runtime evidence intake during Repair validation", async () => {
+    const { provider, acquired, issue } = await setup();
+    const repairing = { ...issue, repair: { iteration: 1 } };
+    const observation = await provider.observeRepair!({
+      issue: repairing,
+      resourceId: acquired.resourceId,
+    });
+    const head = await git(acquired.projectPath, "rev-parse", "HEAD");
+    const intake = await mkdtemp(join(
+      acquired.projectPath,
+      ".oh-my-bug-tmp-evidence-",
+    ));
+    await writeFile(
+      join(intake, ".oh-my-bug-evidence-intake.json"),
+      JSON.stringify({ issueId: repairing.id, repairIteration: 1 }),
+    );
+    await writeFile(join(intake, "proof.png"), "runtime-owned evidence\n");
+
+    await expect(provider.validateRepair?.({
+      issue: repairing,
+      resourceId: acquired.resourceId,
+      observation,
+      result: delivery(observation.baseCommit!, head),
+      runtimeIntakeDirectory: intake,
+    })).resolves.toMatchObject({ kind: "DELIVERY_READY" });
+
+    await mkdir(join(acquired.projectPath, ".oh-my-bug-tmp-forged"));
+    await writeFile(
+      join(acquired.projectPath, ".oh-my-bug-tmp-forged", "artifact.txt"),
+      "agent artifact\n",
+    );
+    await expect(provider.validateRepair?.({
+      issue: repairing,
+      resourceId: acquired.resourceId,
+      observation,
+      result: delivery(observation.baseCommit!, head),
+      runtimeIntakeDirectory: intake,
     })).rejects.toThrow("GIT_REPAIR_GENERATED_ARTIFACTS_PRESENT");
   });
 

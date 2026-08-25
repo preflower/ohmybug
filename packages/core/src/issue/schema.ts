@@ -4,6 +4,7 @@ import {
   agentSessionRefSchema,
   assessmentSchema,
   deliverySchema,
+  deliveryIntegrationSnapshotSchema,
 } from "../agent/schemas.js";
 import { integrationInputSchema } from "../integration/input.js";
 import type { Issue, ReviewJson } from "./types.js";
@@ -217,6 +218,7 @@ export const issueSchema: z.ZodType<Issue> = z
           summary: z.string().trim().min(1),
           repairIteration: z.number().int().positive(),
           implementationCompletedAt: z.iso.datetime(),
+          integration: deliveryIntegrationSnapshotSchema.optional(),
         }).strict().optional(),
         delivery: deliverySchema.optional(),
       })

@@ -37,6 +37,16 @@ export interface DeliveryDraft {
   summary: string;
   repairIteration: number;
   implementationCompletedAt: string;
+  integration?: DeliveryIntegrationSnapshot;
+}
+
+export interface DeliveryIntegrationSnapshot {
+  baseBranch: string;
+  baseCommit: string;
+  issueBranch: string;
+  issueCommit: string;
+  conflicts: RepairConflictResolution[];
+  verification: RepairVerification[];
 }
 
 export interface RepairEvidencePath {

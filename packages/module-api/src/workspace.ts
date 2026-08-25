@@ -124,6 +124,7 @@ export interface WorkspaceProvider {
     resourceId: string;
     observation: WorkspaceRepairObservation;
     result: RepairResult;
+    runtimeIntakeDirectory?: string;
   }): Promise<WorkspaceRepairValidation>;
   publish(input: {
     issue: Issue;

@@ -1,7 +1,7 @@
-import { access, lstat, readdir, realpath } from "node:fs/promises";
-import { join } from "node:path";
+import { access, lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
-import type { RepairResult } from "@oh-my-bug/core";
+import type { Issue, RepairResult } from "@oh-my-bug/core";
 import type {
   WorkspaceRepairObservation,
   WorkspaceRepairValidation,
@@ -37,8 +37,10 @@ export async function observeGitRepair(
 
 export async function validateGitRepair(input: {
   state: GitRepairWorkspaceState;
+  issue: Issue;
   observation: WorkspaceRepairObservation;
   result: RepairResult;
+  runtimeIntakeDirectory?: string;
 }): Promise<WorkspaceRepairValidation> {
   const { state, observation, result } = input;
   const branch = await currentBranch(state.worktreePath);
@@ -85,7 +87,14 @@ export async function validateGitRepair(input: {
     );
     if (ancestor === undefined) throw new Error("GIT_REPAIR_BASE_NOT_ANCESTOR");
   }
-  await assertRepairWorktreeSafe(state.worktreePath);
+  const ignoredRuntimeRoots = input.runtimeIntakeDirectory
+    ? [await validatedRuntimeIntakeRoot(
+        state.worktreePath,
+        input.runtimeIntakeDirectory,
+        input.issue,
+      )]
+    : [];
+  await assertRepairWorktreeSafe(state.worktreePath, ignoredRuntimeRoots);
   return {
     kind: "DELIVERY_READY",
     branch: { name: state.branch, commit: head },
@@ -141,9 +150,12 @@ async function assertNoForeignOperationState(
   }
 }
 
-async function assertRepairWorktreeSafe(worktreePath: string): Promise<void> {
+async function assertRepairWorktreeSafe(
+  worktreePath: string,
+  ignoredRuntimeRoots: string[],
+): Promise<void> {
   try {
-    await assertPublicationPreflight(worktreePath);
+    await assertPublicationPreflight(worktreePath, ignoredRuntimeRoots);
   } catch (error) {
     if (error instanceof Error && error.message === "GIT_GENERATED_ARTIFACTS_PRESENT") {
       throw new Error("GIT_REPAIR_GENERATED_ARTIFACTS_PRESENT", { cause: error });
@@ -159,11 +171,46 @@ async function assertRepairWorktreeSafe(worktreePath: string): Promise<void> {
       "--porcelain",
       "--untracked-files=all",
       "--ignore-submodules=none",
+      "--",
+      ".",
+      ...ignoredRuntimeRoots.map((root) => `:(exclude,literal)${root}`),
     ]);
     if (changes) throw new Error("GIT_WORKTREE_NOT_CLEAN");
   } catch (error) {
     throw new Error("GIT_REPAIR_WORKTREE_DIRTY", { cause: error });
   }
+}
+
+async function validatedRuntimeIntakeRoot(
+  worktreePath: string,
+  intakeDirectory: string,
+  issue: Issue,
+): Promise<string> {
+  const [workspace, intake, info] = await Promise.all([
+    realpath(worktreePath),
+    realpath(intakeDirectory),
+    lstat(intakeDirectory),
+  ]).catch((error: unknown) => {
+    throw new Error("GIT_REPAIR_RUNTIME_INTAKE_INVALID", { cause: error });
+  });
+  const root = basename(intake);
+  if (
+    dirname(intake) !== workspace ||
+    !root.startsWith(".oh-my-bug-tmp-evidence-") ||
+    !info.isDirectory() ||
+    info.isSymbolicLink()
+  ) throw new Error("GIT_REPAIR_RUNTIME_INTAKE_INVALID");
+  const marker = await readFile(
+    join(intake, ".oh-my-bug-evidence-intake.json"),
+    "utf8",
+  ).catch((error: unknown) => {
+    throw new Error("GIT_REPAIR_RUNTIME_INTAKE_INVALID", { cause: error });
+  });
+  if (marker !== JSON.stringify({
+    issueId: issue.id,
+    repairIteration: issue.repair?.iteration,
+  })) throw new Error("GIT_REPAIR_RUNTIME_INTAKE_INVALID");
+  return root;
 }
 
 export async function assertNoHiddenIndexEntries(worktreePath: string): Promise<void> {

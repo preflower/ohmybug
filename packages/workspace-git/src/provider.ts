@@ -417,11 +417,16 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     resourceId: string;
     observation: WorkspaceRepairObservation;
     result: RepairResult;
+    runtimeIntakeDirectory?: string;
   }) {
     return validateGitRepair({
       state: this.getSavedState(input.issue, input.resourceId),
+      issue: input.issue,
       observation: input.observation,
       result: input.result,
+      ...(input.runtimeIntakeDirectory
+        ? { runtimeIntakeDirectory: input.runtimeIntakeDirectory }
+        : {}),
     });
   }
 

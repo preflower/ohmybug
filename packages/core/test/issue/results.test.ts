@@ -46,6 +46,22 @@ const draft = {
   repairIteration: 2,
   implementationCompletedAt: now,
 };
+const integrationSnapshot = {
+  baseBranch: "main",
+  baseCommit: "a".repeat(40),
+  issueBranch: "ohmybug/omb-19",
+  issueCommit: "b".repeat(40),
+  conflicts: [{
+    path: "src/payment/router.ts",
+    classification: "TEXTUAL" as const,
+    resolution: "Preserved both imports",
+  }],
+  verification: [{
+    command: "pnpm test",
+    outcome: "PASSED" as const,
+    summary: "Passed",
+  }],
+};
 
 function issueAt(status: IssueStatus): Issue {
   return {
@@ -357,6 +373,30 @@ describe("Issue workflow results", () => {
         deliveryDraft: draft,
       },
     });
+  });
+
+  it("binds a validated integration snapshot to the delivery draft", () => {
+    const drafted = recordImplementationDraft(
+      { ...issueAt("REPAIRING"), repair: { iteration: 2 } },
+      delivery.summary,
+      now,
+      integrationSnapshot,
+    );
+    expect(drafted.repair?.deliveryDraft?.integration).toEqual(integrationSnapshot);
+
+    const rejected = recordEvidenceRejection({
+      ...drafted,
+      status: "EVIDENCE_CHECK",
+      repair: { ...drafted.repair!, delivery },
+    }, "Capture again", now);
+    expect(rejected.repair?.deliveryDraft?.integration).toEqual(integrationSnapshot);
+
+    const nextIteration = recordImplementationDraft({
+      ...drafted,
+      status: "REPAIRING",
+      repair: { ...drafted.repair!, iteration: 3 },
+    }, "New implementation", now);
+    expect(nextIteration.repair?.deliveryDraft?.integration).toBeUndefined();
   });
 
   it("records reviewable evidence and repair failures", () => {

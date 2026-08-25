@@ -3,6 +3,7 @@ import { isAbsolute, relative } from "node:path";
 
 import {
   deliverySchema,
+  reviewJsonSchema,
   isAgentCapabilityRequiredError,
   isAgentTurnInterruptedError,
   recordCapabilityRequest,
@@ -30,7 +31,10 @@ import {
   type RepairEvidencePath,
   type RuntimeStore,
 } from "@oh-my-bug/core";
-import type { LifecycleEventMap } from "@oh-my-bug/module-api";
+import type {
+  LifecycleEventMap,
+  WorkspaceRepairObservation,
+} from "@oh-my-bug/module-api";
 
 import type { AgentRegistry } from "../agents/registry.js";
 import {
@@ -43,7 +47,11 @@ import type {
 } from "../modules/lifecycle-hooks.js";
 import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
 import { publicCapabilityRequest } from "./capability-request.js";
-import { assessmentReview, deliveryReview } from "./reviews.js";
+import {
+  assessmentReview,
+  businessMergeReview,
+  deliveryReview,
+} from "./reviews.js";
 
 export interface RuntimeWorkerDependencies {
   store: RuntimeStore;
@@ -52,7 +60,12 @@ export interface RuntimeWorkerDependencies {
   capture?: EvidenceCaptureProvider;
   workspaces: Pick<
     WorkspaceCoordinator,
-    "prepare" | "finalize" | "recover" | "validateFinalizationRecovery"
+    | "prepare"
+    | "finalize"
+    | "recover"
+    | "observeRepair"
+    | "validateRepair"
+    | "validateFinalizationRecovery"
   >;
   hooks?: RuntimeLifecycleHooks;
   id: () => string;
@@ -325,6 +338,22 @@ export class RuntimeWorker {
     });
     const projectPath = requireProjectPath(claimed);
     this.emitLifecycle("repair.before", { issue: claimed, project });
+    let observation: WorkspaceRepairObservation;
+    let integration: Parameters<AgentAdapter["repair"]>[1]["integration"];
+    try {
+      observation = await this.dependencies.workspaces.observeRepair(claimed);
+      integration = repairIntegrationInput(observation);
+    } catch (error) {
+      const failed = recordRepairFailure(
+        claimed,
+        repairFailureCode(error),
+        this.dependencies.now(),
+      );
+      if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+        this.emitLifecycle("repair.after", { issue: failed, project });
+      }
+      return;
+    }
     let intake: Awaited<ReturnType<EvidenceStore["prepareIntake"]>>;
     try {
       intake = await this.dependencies.evidence.prepareIntake(
@@ -354,6 +383,7 @@ export class RuntimeWorker {
           previousDelivery: claimed.repair?.delivery,
           feedback: claimed.repair?.feedback,
           continuation,
+          ...(integration ? { integration } : {}),
         });
       } catch (error) {
         if (this.pauseForCapability(
@@ -375,7 +405,80 @@ export class RuntimeWorker {
         return;
       }
 
-      const drafted = recordImplementationDraft(claimed, result.summary, this.dependencies.now());
+      let validation: Awaited<ReturnType<WorkspaceCoordinator["validateRepair"]>>;
+      try {
+        validation = await this.dependencies.workspaces.validateRepair(
+          claimed,
+          observation,
+          result,
+          intake.directory,
+        );
+      } catch (error) {
+        const failed = recordRepairFailure(
+          claimed,
+          repairFailureCode(error),
+          this.dependencies.now(),
+        );
+        if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+          this.emitLifecycle("repair.after", { issue: failed, project });
+        }
+        return;
+      }
+
+      if (result.kind === "BUSINESS_DECISION_REQUIRED") {
+        if (validation.kind !== "BUSINESS_DECISION_REQUIRED") {
+          const failed = recordRepairFailure(
+            claimed,
+            "WORKSPACE_REPAIR_VALIDATION_MISMATCH",
+            this.dependencies.now(),
+          );
+          if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+            this.emitLifecycle("repair.after", { issue: failed, project });
+          }
+          return;
+        }
+        const now = this.dependencies.now();
+        const reviewed = requestReview(
+          claimed,
+          businessMergeReview(claimed, result, this.dependencies.id(), now),
+          now,
+        );
+        if (this.completeReview(
+          claimed,
+          reviewed,
+          "REPAIR_BUSINESS_DECISION_REQUIRED",
+        )) {
+          this.emitLifecycle("repair.after", { issue: reviewed, project });
+        }
+        return;
+      }
+      if (validation.kind !== "DELIVERY_READY") {
+        const failed = recordRepairFailure(
+          claimed,
+          "WORKSPACE_REPAIR_VALIDATION_MISMATCH",
+          this.dependencies.now(),
+        );
+        if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+          this.emitLifecycle("repair.after", { issue: failed, project });
+        }
+        return;
+      }
+      const integrationSnapshot = observation.required && result.integration
+        ? {
+            baseBranch: integration!.baseBranch,
+            baseCommit: result.integration.baseCommit,
+            issueBranch: validation.branch.name,
+            issueCommit: validation.branch.commit,
+            conflicts: result.integration.conflicts,
+            verification: result.verification,
+          }
+        : undefined;
+      const drafted = recordImplementationDraft(
+        claimed,
+        result.summary,
+        this.dependencies.now(),
+        integrationSnapshot,
+      );
       if (result.evidence.length === 0) {
         if (this.complete(claimed, drafted, "IMPLEMENTATION_READY", "CAPTURE_EVIDENCE")) {
           this.emitLifecycle("repair.after", { issue: drafted, project });
@@ -704,6 +807,32 @@ export class RuntimeWorker {
         };
       }
     }
+    const reviewed = events.findLast((event) =>
+      event.type === "REVIEW_SUBMITTED" &&
+      event.data.operation === operation &&
+      event.data.revision === issue.revision);
+    if (
+      reviewed &&
+      typeof reviewed.data.requestId === "string" &&
+      typeof reviewed.data.kind === "string" &&
+      typeof reviewed.data.choiceId === "string"
+    ) {
+      const response = reviewed.data.response === undefined
+        ? undefined
+        : reviewJsonSchema.safeParse(reviewed.data.response);
+      if (response === undefined || response.success) {
+        return {
+          reason: "REVIEW_SUBMITTED",
+          requestId: reviewed.data.requestId,
+          kind: reviewed.data.kind,
+          choiceId: reviewed.data.choiceId,
+          ...(typeof reviewed.data.feedback === "string"
+            ? { feedback: reviewed.data.feedback }
+            : {}),
+          ...(response?.success ? { data: response.data } : {}),
+        };
+      }
+    }
     const interrupted = events.findLast((event) =>
       event.type === "RUNTIME_INTERRUPTED" &&
       event.data.operation === operation &&
@@ -973,9 +1102,29 @@ const REPAIR_OUTPUT_FAILURE_CODES = new Set([
 ]);
 
 function repairFailureCode(error: unknown): string {
-  return error instanceof Error && REPAIR_OUTPUT_FAILURE_CODES.has(error.message)
-    ? error.message
-    : agentFailureCode(error);
+  if (!(error instanceof Error)) return agentFailureCode(error);
+  if (
+    REPAIR_OUTPUT_FAILURE_CODES.has(error.message) ||
+    /^GIT_REPAIR_[A-Z_]+$/.test(error.message) ||
+    /^WORKSPACE_REPAIR_[A-Z_]+$/.test(error.message)
+  ) return error.message;
+  return agentFailureCode(error);
+}
+
+function repairIntegrationInput(
+  observation: WorkspaceRepairObservation,
+): Parameters<AgentAdapter["repair"]>[1]["integration"] {
+  if (!observation.required) return undefined;
+  if (
+    !observation.baseBranch ||
+    !observation.baseCommit ||
+    !observation.issueBranch
+  ) throw new Error("WORKSPACE_REPAIR_OBSERVATION_INVALID");
+  return {
+    baseBranch: observation.baseBranch,
+    observedBaseCommit: observation.baseCommit,
+    issueBranch: observation.issueBranch,
+  };
 }
 
 function publicEvidenceFailure(error: unknown): string {

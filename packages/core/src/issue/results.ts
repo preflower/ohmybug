@@ -11,6 +11,7 @@ import type {
   AgentSessionRef,
   Assessment,
   Delivery,
+  DeliveryIntegrationSnapshot,
   FinalizationRecoveryResult,
 } from "../agent/types.js";
 import type {
@@ -345,6 +346,7 @@ export function recordImplementationDraft(
   issue: Issue,
   summaryInput: string,
   now: string,
+  integration?: DeliveryIntegrationSnapshot,
 ): Issue {
   const summary = required(summaryInput, "DELIVERY_SUMMARY_REQUIRED");
   const iteration = issue.repair?.iteration ?? 1;
@@ -358,6 +360,7 @@ export function recordImplementationDraft(
         summary,
         repairIteration: iteration,
         implementationCompletedAt: now,
+        ...(integration ? { integration } : {}),
       },
     },
     lastFailure: undefined,

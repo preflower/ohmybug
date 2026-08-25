@@ -40,6 +40,90 @@ describe("Runtime recovery", () => {
     expect(store.readEvents(paused.id)).toEqual([]);
   });
 
+  it("preserves a pending business review and reconstructs its submitted Repair continuation", () => {
+    const { store } = createHarness();
+    const reviewRequired = {
+      id: "business-review-pending",
+      projectId: project.id,
+      projectPath: project.path,
+      identifier: "OMB-BUSINESS-PENDING",
+      title: "Business conflict",
+      titleSource: "user" as const,
+      status: "REVIEW_REQUIRED" as const,
+      inputs: [],
+      agentSession: { agent: "fake", sessionId: "session-business" },
+      assessment,
+      repair: { iteration: 3 },
+      review: {
+        id: "review-business",
+        kind: "business-merge-conflict",
+        requestedFrom: "REPAIRING" as const,
+        payload: { conflictPaths: ["src/payment.ts"] },
+        choices: [{
+          id: "keep-base",
+          label: "保留基线行为",
+          continuation: { operation: "REPAIR" as const, resumeStatus: "REPAIRING" as const },
+        }],
+        requestedAt: now,
+      },
+      revision: 9,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => {
+      transaction.insertIssue(reviewRequired, "REPAIR");
+      transaction.updateIssue(reviewRequired, reviewRequired.revision, null);
+    });
+
+    reconcileInterruptedIssues({ store, id: eventIds("pending-review"), now: () => now });
+
+    expect(store.getIssue(reviewRequired.id)).toEqual(reviewRequired);
+    expect(store.listPendingOperations()).toEqual([]);
+
+    const resumed = {
+      ...reviewRequired,
+      id: "business-review-submitted",
+      identifier: "OMB-BUSINESS-SUBMITTED",
+      status: "REPAIRING" as const,
+      review: undefined,
+      revision: 10,
+    };
+    store.transaction((transaction) => {
+      transaction.insertIssue(resumed, "REPAIR");
+      transaction.updateIssue(resumed, resumed.revision, null);
+      transaction.appendEvent({
+        id: "business-review-submitted-event",
+        issueId: resumed.id,
+        type: "REVIEW_SUBMITTED",
+        actor: "USER",
+        data: {
+          requestId: "review-business",
+          kind: "business-merge-conflict",
+          choiceId: "keep-base",
+          operation: "REPAIR",
+          revision: resumed.revision,
+        },
+        occurredAt: now,
+      });
+    });
+    const dependencies = {
+      store,
+      id: eventIds("submitted-review"),
+      now: () => now,
+    };
+
+    reconcileInterruptedIssues(dependencies);
+    reconcileInterruptedIssues(dependencies);
+
+    expect(store.getIssue(resumed.id)).toEqual(resumed);
+    expect(store.listPendingOperations()).toEqual([{
+      issue: resumed,
+      operation: "REPAIR",
+    }]);
+    expect(store.readEvents(resumed.id).map((event) => event.type))
+      .toEqual(["REVIEW_SUBMITTED"]);
+  });
+
   it("migrates legacy evidence failures once and preserves their delivery as a draft", () => {
     const { store } = createHarness();
     const legacy = {

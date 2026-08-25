@@ -38,7 +38,12 @@ describe("independent evidence capture acceptance", () => {
       copyFixtures(projectRoot);
       const configured = await captureProject(mode, projectRoot);
       const agent = new FakeAgent();
-      agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+      agent.nextRepairResult = {
+        kind: "DELIVERY_READY",
+        summary: "Implemented",
+        evidence: [],
+        verification: [],
+      };
       const runtime = createRuntime({
         databasePath: join(root, "runtime.sqlite"),
         agent,
@@ -72,7 +77,12 @@ describe("independent evidence capture acceptance", () => {
     mkdirSync(projectRoot);
     const configured = await captureProject("browser", projectRoot);
     const agent = new FakeAgent();
-    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [],
+    };
     const provider = new RestartCaptureProvider();
     let sequence = 0;
     const options = {
@@ -118,7 +128,12 @@ describe("independent evidence capture acceptance", () => {
     mkdirSync(projectRoot);
     const configured = await captureProject("browser", projectRoot);
     const agent = new FakeAgent();
-    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [],
+    };
     const provider = new FakeEvidenceCaptureProvider();
     provider.error = new EvidenceCaptureError(
       "EVIDENCE_TARGET_UNREACHABLE",
