@@ -46,9 +46,14 @@ const issueStatusLabels: Record<IssueDto["status"], string> = {
 
 export function IssueStatusBadge({
   status,
-  label = issueStatusLabels[status],
+  recoveryKind,
+  label = status === "FINALIZATION_RECOVERY"
+    && (recoveryKind === "MERGE_CONFLICT" || recoveryKind === "MERGE_ENVIRONMENT")
+    ? "AI 正在修复合并"
+    : issueStatusLabels[status],
 }: {
   status: IssueDto["status"];
+  recoveryKind?: "GENERATED_ARTIFACT_CLEANUP" | "MERGE_CONFLICT" | "MERGE_ENVIRONMENT";
   label?: string;
 }) {
   return <Badge variant={statusVariants[status]}>{label}</Badge>;

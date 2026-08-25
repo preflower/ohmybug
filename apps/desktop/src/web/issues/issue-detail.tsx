@@ -137,7 +137,10 @@ export function IssueDetail({
         <div className="issue-title-meta">
           <span className="eyebrow">{issue.identifier}</span>
           <div className="issue-title-actions">
-            <IssueStatusBadge status={issue.status} />
+            <IssueStatusBadge
+              status={issue.status}
+              recoveryKind={issue.finalizationRecovery?.context?.recoveryKind}
+            />
           </div>
         </div>
         <h2>{issue.title}</h2>
@@ -163,16 +166,30 @@ export function IssueDetail({
           <div className="finalization-recovery-heading">
             <Wrench aria-hidden="true" size={15} />
             <div>
-              <strong>AI 正在修复交付阻塞</strong>
+              <strong>{issue.finalizationRecovery.context?.recoveryKind === "MERGE_CONFLICT"
+                ? "AI 正在解析合并问题"
+                : issue.finalizationRecovery.context?.recoveryKind === "MERGE_ENVIRONMENT"
+                  ? "AI 正在诊断合并环境"
+                  : "AI 正在修复交付阻塞"}</strong>
               <span>第 {issue.finalizationRecovery.automaticAttempts}/1 次自动恢复</span>
             </div>
           </div>
+          {issue.finalizationRecovery.context?.merge ? (
+            <div className="finalization-recovery-diagnostic">
+              <p>基线分支：{issue.finalizationRecovery.context.merge.baseBranch}</p>
+              {issue.finalizationRecovery.context.merge.conflictPaths.map((path) => (
+                <code key={path}>{path}</code>
+              ))}
+            </div>
+          ) : null}
           {issue.finalizationRecovery.diagnostic ? (
             <div className="finalization-recovery-diagnostic">
               <p>{issue.finalizationRecovery.diagnostic.message}</p>
-              {issue.finalizationRecovery.diagnostic.relatedPaths.map((path) => (
+              {!issue.finalizationRecovery.context?.merge
+                ? issue.finalizationRecovery.diagnostic.relatedPaths.map((path) => (
                 <code key={path}>{path}</code>
-              ))}
+                ))
+                : null}
             </div>
           ) : null}
         </section>

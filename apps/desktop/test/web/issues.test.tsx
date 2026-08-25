@@ -445,6 +445,51 @@ describe("Issue detail", () => {
     expect(screen.getByRole("button", { name: "取消 Agent 运行" })).toBeVisible();
   });
 
+  it("shows merge-aware recovery copy and conflict context", () => {
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "FINALIZATION_RECOVERY",
+        resolution: "FIXED",
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-merge",
+          fingerprintRef: "fingerprint-merge",
+          diagnostic: {
+            providerId: "git",
+            step: "merge",
+            code: "GIT_AUTO_MERGE_CONFLICT",
+            message: "自动合并发现内容冲突",
+            relatedPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+          },
+          context: {
+            recoveryKind: "MERGE_CONFLICT",
+            merge: {
+              kind: "MERGE_CONFLICT",
+              baseBranch: "main",
+              baseCommit: "a".repeat(40),
+              issueBranch: "ohmybug/ohmybug-21",
+              issueCommit: "b".repeat(40),
+              conflictPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+              mergeMessages: ["content conflict"],
+              mergePrepared: true,
+            },
+          },
+        },
+      }}
+      onCancel={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("AI 正在修复合并")).toBeVisible();
+    const recovery = screen.getByRole("status", { name: "自动交付恢复" });
+    expect(within(recovery).getByText("AI 正在解析合并问题")).toBeVisible();
+    expect(within(recovery).getByText("基线分支：main")).toBeVisible();
+    expect(within(recovery).getByText("apps/desktop/src/web/issues/issue-detail.tsx"))
+      .toBeVisible();
+    expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
+  });
+
   it("retries only a failed finalization", async () => {
     const onApproveDelivery = vi.fn(async () => undefined);
     render(<IssueDetail
