@@ -91,7 +91,7 @@ async function registerProject(desktop: DesktopHarness, repository: string, key:
   await desktop.page.getByRole("button", { name: "打开项目目录" }).click();
   await desktop.page.getByLabel("项目名称").fill(`${key} project`);
   await desktop.page.getByLabel("项目标识").fill(key);
-  await desktop.page.getByRole("button", { name: "保存项目" }).click();
+  await desktop.page.getByRole("button", { name: "保存更改" }).click();
   await expect(desktop.page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
 }
 

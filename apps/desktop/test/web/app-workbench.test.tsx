@@ -682,7 +682,7 @@ describe("control center workbench", () => {
     expect(screen.queryByRole("button", { name: "返回项目列表" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "保存项目（顶部）" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "保存项目" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "保存更改" })).toBeVisible();
   });
 
   it("shows a persisted branch with a Worktree tag and hides the row without a branch", async () => {

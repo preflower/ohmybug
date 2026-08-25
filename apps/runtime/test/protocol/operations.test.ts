@@ -13,6 +13,7 @@ describe("Runtime protocol operation registry", () => {
       "inspectProject",
       "inspectProjectBranches",
       "getProject",
+      "saveProjectSettings",
       "createProject",
       "updateProject",
       "setIntegrationSecrets",
@@ -118,5 +119,38 @@ describe("Runtime protocol operation registry", () => {
         acceptanceUrl: "https://example.com/payment",
       },
     })).toThrow(/ACCEPTANCE_URL_MUST_BE_LOCALHOST/);
+  });
+
+  it("validates one project-settings save with grouped secret patches", () => {
+    const create = {
+      mode: "create",
+      project: {
+        path: "/repo",
+        key: "OMB",
+        integrations: {
+          dingtalk: { enabled: true, config: { conversationIds: ["cid-1"] } },
+        },
+      },
+      secretPatches: {
+        dingtalk: { clientId: "client-id", clientSecret: "client-secret" },
+      },
+    } as const;
+    const update = {
+      ...create,
+      mode: "update",
+      id: "project-1",
+      expectedRevision: 3,
+    } as const;
+
+    expect(runtimeOperations.saveProjectSettings.input.parse(create)).toEqual(create);
+    expect(runtimeOperations.saveProjectSettings.input.parse(update)).toEqual(update);
+    expect(() => runtimeOperations.saveProjectSettings.input.parse({
+      ...update,
+      expectedRevision: 0,
+    })).toThrow();
+    expect(() => runtimeOperations.saveProjectSettings.input.parse({
+      ...create,
+      extra: true,
+    })).toThrow();
   });
 });

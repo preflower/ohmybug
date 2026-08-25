@@ -27,6 +27,16 @@ function installRuntimeProtocolFixture() {
     agent?: { plugin: string };
     integrations?: Record<string, { enabled: boolean; config: Record<string, ConfigValue> }>;
   }
+  type SecretPatches = Record<string, Record<string, string | null>>;
+  type SaveProjectSettingsInput =
+    | { mode: "create"; project: ProjectMutation; secretPatches: SecretPatches }
+    | {
+      mode: "update";
+      id: string;
+      expectedRevision: number;
+      project: ProjectMutation;
+      secretPatches: SecretPatches;
+    };
   interface FixtureProject extends Omit<ProjectMutation, "expectedRevision" | "integrations"> {
     id: string;
     integrations: Record<string, FixtureIntegration>;
@@ -59,7 +69,7 @@ function installRuntimeProtocolFixture() {
   const now = () => new Date().toISOString();
   const manifests = [
     {
-      id: "sentry", name: "Sentry",
+      id: "sentry", name: "Sentry", icon: "sentry",
       configFields: [
         { key: "organization", type: "string", label: "Organization", required: true },
         { key: "project", type: "string", label: "Project", required: true },
@@ -69,16 +79,28 @@ function installRuntimeProtocolFixture() {
       secretFields: [{ key: "token", label: "Auth token", required: true }],
     },
     {
-      id: "dingtalk", name: "DingTalk",
+      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从指定群聊接收消息并创建 Issue。",
+      sections: [
+        { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
+        { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
+        { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
+      ],
       configFields: [
-        { key: "conversationIds", type: "string[]", label: "Conversation IDs", required: true },
-        { key: "mention", type: "string", label: "Mention", required: true },
-        { key: "messageRule", type: "string", label: "Message rule", required: false },
-        { key: "threadKeyField", type: "string", label: "Thread key field", required: false },
+        {
+          key: "conversationIds",
+          type: "string[]",
+          label: "群聊 ID",
+          description: "仅处理来自这些群聊且 @ 机器人的消息。",
+          required: true,
+          section: "rules",
+          addLabel: "添加群聊",
+        },
+        { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
+        { key: "threadKeyField", type: "string", label: "消息归并字段", required: false, section: "advanced" },
       ],
       secretFields: [
-        { key: "clientId", label: "Client ID", required: true },
-        { key: "clientSecret", label: "Client secret", required: true },
+        { key: "clientId", label: "Client ID", required: true, section: "credentials" },
+        { key: "clientSecret", label: "Client Secret", required: true, section: "credentials" },
       ],
     },
   ];
@@ -120,6 +142,28 @@ function installRuntimeProtocolFixture() {
       workspaces: { local: { available: true } },
     }),
     getProject: async (id: string) => clone(read().projects.find((project) => project.id === id)),
+    saveProjectSettings: async (input: SaveProjectSettingsInput) => {
+      const state = read();
+      const current = input.mode === "update"
+        ? state.projects.find((project) => project.id === input.id)
+        : undefined;
+      if (input.mode === "update" && !current) throw new Error("PROJECT_NOT_FOUND");
+      if (input.mode === "update" && current?.revision !== input.expectedRevision) {
+        throw new Error("STALE_PROJECT_REVISION");
+      }
+      const project = projectDto(input.project, current);
+      for (const [pluginId, patch] of Object.entries(input.secretPatches)) {
+        const integration = project.integrations[pluginId];
+        if (!integration) throw new Error("PROJECT_INTEGRATION_NOT_FOUND");
+        for (const [key, value] of Object.entries(patch)) {
+          integration.secretConfigured[key] = value !== null;
+        }
+      }
+      if (input.mode === "create") state.projects.push(project);
+      else state.projects[state.projects.findIndex((candidate) => candidate.id === input.id)] = project;
+      write(state);
+      return clone(project);
+    },
     createProject: async (input: ProjectMutation) => {
       const state = read();
       const project = projectDto(input);
@@ -150,7 +194,11 @@ function installRuntimeProtocolFixture() {
       write(state);
       return clone(project);
     },
-    integrationHealth: async () => ({}),
+    integrationHealth: async () => Object.fromEntries(read().projects.flatMap((project) =>
+      Object.entries(project.integrations).flatMap(([pluginId, integration]) => integration.enabled
+        ? [[`${project.id}:${pluginId}`, { state: "connected" }]]
+        : []),
+    )),
     listIssues: async (projectId?: string) => clone(read().issues.filter((candidate) => !projectId || candidate.projectId === projectId)),
     getIssue: async (id: string) => clone(requireIssue(id)),
     getIssueWorkspace: async () => null,

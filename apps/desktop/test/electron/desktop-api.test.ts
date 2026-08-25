@@ -20,7 +20,7 @@ describe("preload desktop API", () => {
       "confirmNotABug", "createProject", "getIssue", "getIssueWorkspace", "getProject", "listIntegrationPlugins",
       "inspectProject", "inspectProjectBranches", "listIssues", "listProjects", "listWorkspaceProviders", "onRuntimeState", "openProjectDirectory",
       "readEvidence", "rebuildAgentSession", "rejectDelivery", "requestReassessment", "retryIssue",
-      "grantIssueCapabilities", "onTrayNavigation", "setIntegrationSecrets", "submitManual", "subscribeIssueEvents", "integrationHealth", "updateProject"
+      "grantIssueCapabilities", "onTrayNavigation", "saveProjectSettings", "setIntegrationSecrets", "submitManual", "subscribeIssueEvents", "integrationHealth", "updateProject"
     ].sort());
     expect("invoke" in api).toBe(false);
     expect("filesystem" in api).toBe(false);
@@ -41,6 +41,11 @@ describe("preload desktop API", () => {
     await api.openProjectDirectory();
     await api.getIssueWorkspace("issue-1");
     await api.grantIssueCapabilities("issue-1", 7, "request-1");
+    await api.saveProjectSettings({
+      mode: "create",
+      project: { path: "/work/checkout", key: "CHK" },
+      secretPatches: {},
+    });
 
     expect(ipc.invoke).toHaveBeenNthCalledWith(1, "oh-my-bug:request", {
       operation: "listProjects",
@@ -62,6 +67,14 @@ describe("preload desktop API", () => {
     expect(ipc.invoke).toHaveBeenNthCalledWith(6, "oh-my-bug:request", {
       operation: "grantIssueCapabilities",
       payload: { id: "issue-1", expectedRevision: 7, requestId: "request-1" },
+    });
+    expect(ipc.invoke).toHaveBeenNthCalledWith(7, "oh-my-bug:request", {
+      operation: "saveProjectSettings",
+      payload: {
+        mode: "create",
+        project: { path: "/work/checkout", key: "CHK" },
+        secretPatches: {},
+      },
     });
   });
 

@@ -80,6 +80,7 @@ export function createBrowserDevelopmentTransport(
     },
     createProject: readOnly,
     updateProject: readOnly,
+    saveProjectSettings: readOnly,
     saveIntegrationSecrets: readOnly,
     issues: async () => (await snapshot()).issues,
     issue: async (id) => {

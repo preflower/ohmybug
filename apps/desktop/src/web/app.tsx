@@ -17,7 +17,7 @@ import type { TrayNavigationTarget } from "../electron/desktop-api.js";
 import { isTerminalIssueStatus } from "../shared/issue-status.js";
 import { api } from "./api/client.js";
 import type { DirectorySelection, ProductTransport } from "./api/transport.js";
-import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, IssueWorkspaceInfoDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
+import type { BranchInfoDto, IntegrationHealth, IntegrationPluginManifest, IssueDto, IssueWorkspaceInfoDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip.js";
@@ -99,7 +99,7 @@ function AppContent() {
   const [loaded, setLoaded] = useState(false);
   const [newIssueOpen, setNewIssueOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
-  const [health, setHealth] = useState<Record<string, { state: string; lastError?: string; nextRetryAt?: string }>>({});
+  const [health, setHealth] = useState<Record<string, IntegrationHealth>>({});
   const [error, setError] = useState("");
   const traySelection = useRef<string | undefined>(undefined);
   const canCreateIssue = loaded && projects.length > 0;
@@ -292,15 +292,13 @@ function AppContent() {
     setProjectEditor(saved);
   };
 
-  const saveProject = async (value: ProjectFormValue) => {
-    const saved = value.id ? await api.updateProject(value.id, value) : await api.createProject(value);
+  const saveProject = async (
+    value: ProjectFormValue,
+    secretPatches: Record<string, Record<string, string | null>>,
+  ) => {
+    const saved = await api.saveProjectSettings(value, secretPatches);
     rememberProject(saved);
-    return saved;
-  };
-
-  const saveProjectSecrets = async (projectId: string, pluginId: string, patch: Record<string, string | null>) => {
-    const saved = await api.saveIntegrationSecrets(projectId, pluginId, patch);
-    rememberProject(saved);
+    void api.integrationHealth().then(setHealth).catch(() => undefined);
     return saved;
   };
 
@@ -349,6 +347,7 @@ function AppContent() {
             editor={projectEditor}
             inspection={projectInspection}
             manifests={manifests}
+            health={health}
             workspaceProviders={workspaceProviders}
             projects={projects}
             onEdit={(editor) => { setProjectInspection(undefined); setProjectEditor(editor); }}
@@ -357,7 +356,6 @@ function AppContent() {
             onManualProject={() => { setProjectInspection(undefined); setProjectEditor("new"); }}
             onRefreshWorkspaceBranches={(path, providerId) => api.projectBranches(path, providerId, true)}
             onSave={saveProject}
-            onSaveSecrets={saveProjectSecrets}
           />
         ) : <SettingsWorkspace health={health} />}
       </main>
@@ -519,10 +517,11 @@ function Welcome() {
   return <div className="welcome"><div className="welcome-kicker"><Sparkles aria-hidden="true" size={14} />本地 AI 改动实现</div><h2>从 Integration Input 到可验证交付</h2><p>Agent 负责分析与实现；Runtime 负责编排、会话、证据与两次明确确认。</p><div className="flow-preview">{flow.map(([title, description, gate], index) => <div className="flow-step" key={title}><span className="flow-step-number">0{index + 1}</span><div><strong>{title}</strong><span>{description}</span></div><span className="gate-chip">{gate}</span></div>)}</div></div>;
 }
 
-function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, inspection, onEdit, onOpenProjectDirectory, onSelectProjectDirectory, onManualProject, onRefreshWorkspaceBranches, onSave, onSaveSecrets }: {
+function ProjectsWorkspace({ projects, manifests, workspaceProviders, health, editor, inspection, onEdit, onOpenProjectDirectory, onSelectProjectDirectory, onManualProject, onRefreshWorkspaceBranches, onSave }: {
   projects: ProjectDto[];
   manifests: IntegrationPluginManifest[];
   workspaceProviders: WorkspaceProviderManifest[];
+  health: Record<string, IntegrationHealth>;
   editor?: ProjectDto | "new";
   inspection?: ProjectInspection;
   onEdit: (project: ProjectDto | "new" | undefined) => void;
@@ -533,8 +532,10 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, in
     path: string,
     providerId: string,
   ) => ReturnType<ProductTransport["projectBranches"]>;
-  onSave: (project: ProjectFormValue) => Promise<ProjectDto | void>;
-  onSaveSecrets: (projectId: string, pluginId: string, patch: Record<string, string | null>) => Promise<ProjectDto>;
+  onSave: (
+    project: ProjectFormValue,
+    secretPatches: Record<string, Record<string, string | null>>,
+  ) => Promise<ProjectDto | void>;
 }) {
   const previousEditor = useRef(editor);
   const [formSession, setFormSession] = useState(0);
@@ -551,12 +552,12 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, editor, in
 
   if (editor) {
     const initial = editor === "new" ? undefined : editor;
-    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={`${formSession}:${inspection?.path ?? "pending"}`} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onRefreshWorkspaceBranches={onRefreshWorkspaceBranches} onSave={onSave} onSaveSecrets={onSaveSecrets} /></div></section>;
+    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={`${formSession}:${inspection?.path ?? "pending"}`} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} health={health} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onRefreshWorkspaceBranches={onRefreshWorkspaceBranches} onSave={onSave} /></div></section>;
   }
   return <section className="projects-page">{projects.length ? <ProjectList manifests={manifests} projects={projects} onEdit={onEdit} /> : <div className="page-empty"><FolderKanban size={24} /><h2>打开第一个本机项目</h2><p>选择一个本机目录，然后确认 Agent 与可插拔集成配置。</p><div className="onboarding-actions"><Button type="button" onClick={() => void onOpenProjectDirectory()}>打开项目目录</Button><Button type="button" variant="secondary" onClick={onManualProject}>高级：手动输入路径</Button></div></div>}</section>;
 }
 
-function SettingsWorkspace({ health }: { health: Record<string, { state: string; lastError?: string; nextRetryAt?: string }> }) {
+function SettingsWorkspace({ health }: { health: Record<string, IntegrationHealth> }) {
   const entries = Object.entries(health);
   return (
     <section className="settings-page">
@@ -566,7 +567,7 @@ function SettingsWorkspace({ health }: { health: Record<string, { state: string;
           <ul className="health-list">
             {entries.map(([id, value]) => (
               <li key={id}>
-                <span className={`state-dot ${value.state === "backoff" || value.state === "disconnected" ? "state-dot-error" : ""}`} />
+                <span className={`state-dot ${value.state === "backoff" ? "state-dot-error" : ""}`} />
                 <code>{id}</code>
                 <strong>{value.state}</strong>
                 {value.lastError ? <span>{value.lastError}</span> : null}
