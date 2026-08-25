@@ -86,8 +86,21 @@ export async function copyRuntimeAssets(root = projectRoot): Promise<void> {
   }
   await rm(resolve(root, ".vite/build/apps/runtime"), { recursive: true, force: true });
   await rm(resolve(root, ".vite/build/packages"), { recursive: true, force: true });
+  await copyDesktopAssets(root);
   await verifyRuntimeResources();
   await verifyElectronBuild(root);
+}
+
+export async function copyDesktopAssets(root = projectRoot): Promise<void> {
+  const source = resolve(root, "apps/desktop/assets/icons");
+  const destination = resolve(root, ".vite/build/apps/desktop/assets/icons");
+  await mkdir(destination, { recursive: true });
+  for (const name of [
+    "oh-my-bug-trayTemplate.png",
+    "oh-my-bug-trayTemplate@2x.png",
+  ]) {
+    await copyFile(resolve(source, name), resolve(destination, name));
+  }
 }
 
 function compiledExports(value: unknown): unknown {

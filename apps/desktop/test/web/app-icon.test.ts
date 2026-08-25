@@ -73,4 +73,58 @@ describe("application icon", () => {
     expect(html.indexOf("oh-my-bug-theme")).toBeGreaterThan(-1);
     expect(html.indexOf("oh-my-bug-theme")).toBeLessThan(html.indexOf("/src/web/main.tsx"));
   });
+
+  it("ships standard and Retina monochrome macOS tray template images", async () => {
+    for (const [name, size] of [
+      ["oh-my-bug-trayTemplate.png", 18],
+      ["oh-my-bug-trayTemplate@2x.png", 36],
+    ] as const) {
+      const path = resolve(desktopRoot, "assets/icons", name);
+      expect(existsSync(path)).toBe(true);
+      const { data, info } = await sharp(path)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      expect({ width: info.width, height: info.height, channels: info.channels }).toEqual({
+        width: size,
+        height: size,
+        channels: 4,
+      });
+
+      const cornerOffsets = [
+        3,
+        (size - 1) * 4 + 3,
+        ((size - 1) * size) * 4 + 3,
+        (size * size - 1) * 4 + 3,
+      ];
+      for (const offset of cornerOffsets) expect(data[offset]).toBe(0);
+
+      let minX = size;
+      let minY = size;
+      let maxX = -1;
+      let maxY = -1;
+      let visiblePixels = 0;
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          const offset = (y * size + x) * 4;
+          const alpha = data[offset + 3]!;
+          if (alpha <= 32) continue;
+          visiblePixels += 1;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+          expect(Math.max(data[offset]!, data[offset + 1]!, data[offset + 2]!)).toBeLessThan(32);
+        }
+      }
+      const padding = size / 18;
+      expect(visiblePixels).toBeGreaterThan(0);
+      expect(minX).toBeGreaterThanOrEqual(padding);
+      expect(minY).toBeGreaterThanOrEqual(padding);
+      expect(maxX).toBeLessThan(size - padding);
+      expect(maxY).toBeLessThan(size - padding);
+      expect(maxX - minX + 1).toBeGreaterThanOrEqual(Math.floor(size * 0.7));
+      expect(maxY - minY + 1).toBeGreaterThanOrEqual(Math.floor(size * 0.7));
+    }
+  });
 });

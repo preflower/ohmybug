@@ -9,6 +9,8 @@ export const desktopBuildLayout = Object.freeze({
   main: ".vite/build/apps/desktop/src/electron/main.js",
   preload: ".vite/build/apps/desktop/src/electron/preload.cjs",
   renderer: ".vite/renderer/index.html",
+  trayIcon: ".vite/build/apps/desktop/assets/icons/oh-my-bug-trayTemplate.png",
+  trayIcon2x: ".vite/build/apps/desktop/assets/icons/oh-my-bug-trayTemplate@2x.png",
   runtimeEntry: ".vite/build/node_modules/@oh-my-bug/runtime/src/entry.js",
   runtimeProtocol: ".vite/build/node_modules/@oh-my-bug/runtime/src/protocol/index.js",
   core: ".vite/build/node_modules/@oh-my-bug/core/src/index.js",

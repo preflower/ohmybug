@@ -27,7 +27,9 @@ describe("Electron packaging", () => {
       main: ".vite/build/apps/desktop/src/electron/main.js",
       preload: ".vite/build/apps/desktop/src/electron/preload.cjs",
       runtimeEntry: ".vite/build/node_modules/@oh-my-bug/runtime/src/entry.js",
-      renderer: ".vite/renderer/index.html"
+      renderer: ".vite/renderer/index.html",
+      trayIcon: ".vite/build/apps/desktop/assets/icons/oh-my-bug-trayTemplate.png",
+      trayIcon2x: ".vite/build/apps/desktop/assets/icons/oh-my-bug-trayTemplate@2x.png",
     });
     expect(Object.values(desktopBuildLayout).join(" ")).not.toContain("localhost");
     const mainUrl = pathToFileURL(resolve(repositoryRoot, desktopBuildLayout.main));
