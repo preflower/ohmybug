@@ -84,13 +84,22 @@ function installRuntimeProtocolFixture() {
       secretFields: [{ key: "token", label: "Auth token", required: true }],
     },
     {
-      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从指定群聊接收消息并创建 Issue。",
+      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从群聊接收 @ 机器人的消息并创建 Issue。",
       sections: [
         { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
-        { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
+        { id: "rules", label: "接收规则" },
         { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
       ],
       configFields: [
+        {
+          key: "conversationFilterEnabled",
+          type: "boolean",
+          label: "群聊过滤",
+          description: "开启后仅处理指定群聊；关闭时处理任意群聊中 @ 机器人的消息。",
+          required: false,
+          defaultValue: false,
+          section: "rules",
+        },
         {
           key: "conversationIds",
           type: "string[]",
@@ -99,6 +108,7 @@ function installRuntimeProtocolFixture() {
           required: true,
           section: "rules",
           addLabel: "添加群聊",
+          visibleWhen: { key: "conversationFilterEnabled", equals: true },
         },
         { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
         { key: "threadKeyField", type: "string", label: "消息归并字段", required: false, section: "advanced" },

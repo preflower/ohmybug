@@ -3203,13 +3203,15 @@ a:focus-visible {
 }
 
 .integration-section-collapsed > summary {
-  display: flex;
+  display: grid;
   min-height: 64px;
-  align-items: center;
+  grid-template-columns: 7px minmax(0, 1fr);
+  align-items: start;
   gap: 12px;
   cursor: pointer;
   list-style: none;
   outline: none;
+  padding-block: 12px;
 }
 
 .integration-section-collapsed > summary::-webkit-details-marker {
@@ -3219,7 +3221,7 @@ a:focus-visible {
 .integration-section-collapsed > summary::before {
   width: 7px;
   height: 7px;
-  flex: 0 0 7px;
+  margin-top: 8px;
   border-right: 1.5px solid var(--text-secondary);
   border-bottom: 1.5px solid var(--text-secondary);
   content: "";
@@ -3264,26 +3266,6 @@ a:focus-visible {
   border-radius: 6px 0 0 6px;
   font-family: var(--font-mono);
   font-weight: 400;
-}
-
-.project-save-alert {
-  border-color: rgb(214 95 107 / 30%);
-  background: rgb(214 95 107 / 9%);
-  color: var(--danger);
-  font-size: 11px;
-}
-
-.project-save-alert {
-  position: absolute;
-  z-index: 3;
-  right: clamp(24px, 3.5vw, 36px);
-  bottom: 62px;
-  left: clamp(24px, 3.5vw, 36px);
-}
-
-.project-save-alert [data-slot="alert-description"] {
-  color: inherit;
-  font-size: inherit;
 }
 
 .issue-title-block > .resolution-summary {
@@ -3546,8 +3528,7 @@ a:focus-visible {
   }
 
   .form-grid,
-  .settings-page,
-  .credential-row {
+  .settings-page {
     grid-template-columns: 1fr;
   }
 
@@ -3570,14 +3551,15 @@ a:focus-visible {
   }
 
   .project-settings-tabs {
-    height: auto;
+    height: 100%;
     min-height: 0;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .project-editor-page {
     display: block;
-    overflow: auto;
+    overflow: hidden;
   }
 
   .project-settings-nav {
@@ -3609,18 +3591,17 @@ a:focus-visible {
   }
 
   .project-settings-main {
-    grid-template-rows: auto auto;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .project-settings-content {
-    overflow: visible;
+    overflow: auto;
     padding: 18px 16px 24px;
   }
 
   .project-settings-actions {
-    position: sticky;
-    z-index: 4;
-    bottom: 0;
+    position: static;
     padding: 12px 16px;
   }
 
@@ -3628,6 +3609,10 @@ a:focus-visible {
     gap: 12px;
   }
 
+}
+
+@media (max-width: 520px) {
+  .credential-row,
   .integration-section-fields > label:not(.secret-field),
   .integration-section-fields > fieldset,
   .secret-field {

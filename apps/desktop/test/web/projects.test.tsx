@@ -131,7 +131,7 @@ describe("Project configuration", () => {
     expect(screen.getByRole("heading", { name: "应用凭证" })).toBeVisible();
     expect(screen.getByText("凭证仅保存在这台电脑的系统钥匙串中。")).toBeVisible();
     expect(screen.getAllByText("已配置")).toHaveLength(2);
-    expect(screen.getByRole("checkbox", { name: "群聊过滤" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "群聊过滤" })).toBeChecked();
     expect(screen.getByRole("button", { name: "添加群聊" })).toBeVisible();
     expect(screen.queryByLabelText("Client ID")).not.toBeInTheDocument();
     expect(screen.getByText("高级设置").closest("details")).not.toHaveAttribute("open");
@@ -167,9 +167,9 @@ describe("Project configuration", () => {
       config={{ conversationFilterEnabled: false, conversationIds: ["cid-a"] }}
     />);
 
-    expect(screen.getByRole("checkbox", { name: "群聊过滤" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "群聊过滤" })).not.toBeChecked();
     expect(screen.queryByRole("button", { name: "添加群聊" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("checkbox", { name: "群聊过滤" }));
+    fireEvent.click(screen.getByRole("switch", { name: "群聊过滤" }));
     expect(onConfigChange).toHaveBeenCalledWith("conversationFilterEnabled", true);
 
     rerender(<IntegrationFields
@@ -211,7 +211,7 @@ describe("Project configuration", () => {
     />);
 
     selectTab("DingTalk");
-    expect(screen.getByRole("checkbox", { name: "群聊过滤" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "群聊过滤" })).toBeChecked();
     expect(screen.getByLabelText("群聊 ID 1")).toHaveValue("legacy-group");
   });
 
@@ -503,7 +503,7 @@ describe("Project configuration", () => {
     expect(screen.getByLabelText("Workspace slug")).toHaveValue("acme");
     expect(screen.getByLabelText("Channels 1")).toHaveValue("alerts");
     expect(screen.getByLabelText("Batch size")).toHaveValue(50);
-    expect(screen.getByRole("checkbox", { name: "Include archived" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Include archived" })).toBeChecked();
     expect(screen.getByText("已配置")).toBeVisible();
     expect(screen.getByRole("button", { name: "替换 API token" })).toBeVisible();
     expect(screen.queryByLabelText("API token")).not.toBeInTheDocument();

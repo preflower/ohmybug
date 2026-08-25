@@ -6,8 +6,8 @@ import type {
 import { Trash2 } from "lucide-react";
 
 import { Button } from "../components/ui/button.js";
-import { Checkbox } from "../components/ui/checkbox.js";
 import { Input } from "../components/ui/input.js";
+import { Switch } from "../components/ui/switch.js";
 import { isConfigFieldVisible } from "./config-field-visibility.js";
 
 interface ConfigFieldsProps {
@@ -26,7 +26,7 @@ export function ConfigFields({ fields, config, idPrefix = "config", inspection, 
     const describedBy = [description, stateReason].filter(Boolean).join(" ") || undefined;
     if (field.type === "boolean") {
       return <div className="switch-field" data-config-key={field.key} key={field.key}>
-        <label className="switch-row"><Checkbox aria-describedby={describedBy} checked={Boolean(config[field.key] ?? field.defaultValue ?? false)} disabled={state ? !state.enabled : false} onCheckedChange={(checked) => onChange(field.key, Boolean(checked))} />{field.label}</label>
+        <label className="switch-row"><Switch aria-describedby={describedBy} checked={Boolean(config[field.key] ?? field.defaultValue ?? false)} disabled={state ? !state.enabled : false} onCheckedChange={(checked) => onChange(field.key, Boolean(checked))} />{field.label}</label>
         {field.description ? <small id={description}>{field.description}</small> : null}
         {state?.reason ? <small id={stateReason}>{state.reason}</small> : null}
       </div>;

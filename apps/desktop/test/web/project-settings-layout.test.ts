@@ -58,4 +58,25 @@ describe("project settings layout", () => {
   it("does not apply a DingTalk-specific scale", () => {
     expect(styles).not.toMatch(/\[data-brand-icon="dingtalk"\]\s*\{/s);
   });
+
+  it("aligns the advanced disclosure indicator with the title line", () => {
+    expect(styles).toMatch(/\.integration-section-collapsed > summary\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*7px minmax\(0,\s*1fr\);/s);
+    expect(styles).toMatch(/\.integration-section-collapsed > summary::before\s*\{[^}]*margin-top:\s*8px;/s);
+  });
+
+  it("keeps the narrow settings workspace full-height until the phone breakpoint", () => {
+    const narrowStart = styles.lastIndexOf("@media (max-width: 760px)");
+    const narrowEnd = styles.indexOf("@media (max-width: 520px)", narrowStart);
+    const narrow = styles.slice(narrowStart, narrowEnd);
+    const phoneStart = styles.lastIndexOf("@media (max-width: 520px)");
+    const phone = styles.slice(phoneStart);
+
+    expect(narrow).toMatch(/\.project-settings-tabs\s*\{[^}]*height:\s*100%;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
+    expect(narrow).toMatch(/\.project-settings-main\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\) auto;/s);
+    expect(narrow).toMatch(/\.project-settings-content\s*\{[^}]*overflow:\s*auto;/s);
+    expect(narrow).toMatch(/\.project-settings-actions\s*\{[^}]*position:\s*static;/s);
+    expect(narrow).not.toContain(".integration-section-fields > fieldset,");
+    expect(phoneStart).toBeGreaterThan(narrowStart);
+    expect(phone).toContain(".integration-section-fields > fieldset,");
+  });
 });
