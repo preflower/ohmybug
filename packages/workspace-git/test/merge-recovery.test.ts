@@ -371,6 +371,13 @@ describe("Git merge recovery diagnostics", () => {
         kind: "UNCHANGED",
         changedPaths: [],
       });
+      await writeFile(join(fixture.repository, "advanced-after-dirty.txt"), "advance base\n");
+      await git(fixture.repository, "add", "advanced-after-dirty.txt");
+      await git(fixture.repository, "commit", "-m", "advance base after dirty recovery");
+      await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "FINALIZATION_RECOVERY_REPOSITORY_STATE_CHANGED",
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -402,22 +409,33 @@ describe("Git merge recovery diagnostics", () => {
         attemptId: "recovery-missing-base",
       });
       await git(fixture.repository, "branch", "main", baseCommit);
-
-      await expect(provider.validateFinalizationRecovery!({
+      const validationInput = {
         issue: {
           ...issue,
-          status: "FINALIZATION_RECOVERY",
-          finalizationRecovery: { automaticAttempts: 1, diagnostic },
+          status: "FINALIZATION_RECOVERY" as const,
+          finalizationRecovery: { automaticAttempts: 1 as const, diagnostic },
         },
         resourceId: "git:issue-1",
         fingerprintRef: context.fingerprintRef,
         result: {
           summary: "The expected local base ref was restored",
           diagnosis: "Only refs/heads/main changed",
-          disposition: "RECOVERED",
+          disposition: "RECOVERED" as const,
           affectedPaths: [],
         },
-      })).resolves.toEqual({ kind: "UNCHANGED", changedPaths: [] });
+      };
+      await git(fixture.repository, "switch", "main");
+      const dirtyBasePath = join(fixture.repository, "local-after-restore.txt");
+      await writeFile(dirtyBasePath, "dirty restored base\n");
+      await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_AUTO_MERGE_BASE_DIRTY",
+      });
+      await rm(dirtyBasePath);
+      await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toEqual({
+        kind: "UNCHANGED",
+        changedPaths: [],
+      });
     } finally {
       await fixture.cleanup();
     }

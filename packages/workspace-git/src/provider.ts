@@ -629,11 +629,14 @@ class GitWorkspaceProvider implements WorkspaceProvider {
         reason: "FINALIZATION_RECOVERY_FINGERPRINT_NOT_FOUND",
       };
     }
+    const diagnosticCode = input.issue.finalizationRecovery?.diagnostic?.code;
     const validation = await validateGitFinalizationRecovery({
       worktreePath: state.worktreePath,
       fingerprint,
       ...(recovery?.kind === "MERGE_ENVIRONMENT"
         && recovery.repositoryStateWithoutBaseHash
+        && diagnosticCode === "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH"
+        && recovery.merge.baseCommit === undefined
         ? {
             allowedRepositoryStateChange: {
               excludedRefs: [`refs/heads/${state.baseBranch}`],
@@ -647,7 +650,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     }
     const unresolvedReason = await unresolvedMergeEnvironmentReason(
       state,
-      input.issue.finalizationRecovery?.diagnostic?.code,
+      diagnosticCode,
     );
     if (unresolvedReason) {
       return { kind: "UNSAFE", changedPaths: validation.changedPaths, reason: unresolvedReason };
@@ -894,6 +897,15 @@ async function automaticMergePreflightReason(
   const baseRef = `refs/heads/${state.baseBranch}`;
   try {
     await assertGitSupportsAutomaticMerge(state.repositoryPath);
+    const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
+    const checkedOutPath = worktreePathForBranch(listed, baseRef);
+    if (checkedOutPath) {
+      try {
+        await assertWorktreeAndSubmodulesClean(checkedOutPath);
+      } catch {
+        return "GIT_AUTO_MERGE_BASE_DIRTY";
+      }
+    }
     const [baseCommit, issueCommit] = await Promise.all([
       runGit(state.repositoryPath, ["rev-parse", baseRef]),
       runGit(state.worktreePath, ["rev-parse", "HEAD"]),
