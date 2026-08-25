@@ -835,14 +835,7 @@ async function mergeIntoBaseBranch(
     );
     if (checkedOutPath !== undefined) {
       try {
-        await assertWorktreeAndSubmodulesClean(checkedOutPath);
-        await assertNoIgnoredMergeCollisions(
-          state.repositoryPath,
-          checkedOutPath,
-          baseCommit,
-          resultCommit,
-        );
-        await assertNoInitializedGitlinkUpdates(
+        await assertBaseCheckoutMergeSafe(
           state.repositoryPath,
           checkedOutPath,
           baseCommit,
@@ -857,7 +850,7 @@ async function mergeIntoBaseBranch(
       try {
         await runGit(checkedOutPath, ["merge", "--ff-only", resultCommit]);
       } catch (error) {
-        throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
+        throw new Error("GIT_AUTO_MERGE_BASE_DIRTY", { cause: error });
       }
       return;
     }
@@ -1036,6 +1029,53 @@ function gitErrorExitCode(error: unknown): number | undefined {
   return typeof processError.code === "number" ? processError.code : undefined;
 }
 
+async function assertBaseCheckoutMergeSafe(
+  repositoryPath: string,
+  worktreePath: string,
+  baseCommit: string,
+  resultObject: string,
+): Promise<void> {
+  await assertNoHiddenIndexEntries(worktreePath);
+  await assertInitializedSubmodulesClean(worktreePath);
+
+  const [mergePaths, trackedOutput, untrackedOutput] = await Promise.all([
+    getChangedPaths(repositoryPath, baseCommit, resultObject),
+    runGit(worktreePath, ["diff", "--name-only", "--no-renames", "-z", "HEAD"]),
+    runGit(worktreePath, ["ls-files", "--others", "--exclude-standard", "-z"]),
+  ]);
+  const localPaths = [
+    ...parseNulPaths(trackedOutput),
+    ...parseNulPaths(untrackedOutput),
+  ];
+  if (localPaths.some((localPath) =>
+    mergePaths.some((mergePath) => gitPathsOverlap(localPath, mergePath)))) {
+    throw new Error("GIT_WORKTREE_NOT_CLEAN");
+  }
+
+  await assertNoIgnoredMergeCollisions(
+    repositoryPath,
+    worktreePath,
+    baseCommit,
+    resultObject,
+  );
+  await assertNoInitializedGitlinkUpdates(
+    repositoryPath,
+    worktreePath,
+    baseCommit,
+    resultObject,
+  );
+}
+
+function parseNulPaths(output: string): string[] {
+  return output.split("\0").filter(Boolean);
+}
+
+function gitPathsOverlap(left: string, right: string): boolean {
+  return left === right
+    || left.startsWith(`${right}/`)
+    || right.startsWith(`${left}/`);
+}
+
 async function assertNoIgnoredMergeCollisions(
   repositoryPath: string,
   worktreePath: string,
@@ -1086,8 +1126,15 @@ async function getChangedPaths(
   before: string,
   after: string,
 ): Promise<string[]> {
-  const output = await runGit(repositoryPath, ["diff", "--name-only", "-z", before, after]);
-  return output.split("\0").filter(Boolean);
+  const output = await runGit(repositoryPath, [
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "-z",
+    before,
+    after,
+  ]);
+  return parseNulPaths(output);
 }
 
 async function getCommitGitlinks(
