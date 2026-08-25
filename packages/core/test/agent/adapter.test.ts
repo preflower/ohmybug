@@ -5,6 +5,7 @@ import {
   AgentTurnInterruptedError,
   isAgentCapabilityRequiredError,
   isAgentTurnInterruptedError,
+  validateRepairResult,
   type AgentContinuation,
   type AgentInterruptionReason,
   AgentAdapter,
@@ -13,6 +14,7 @@ import {
   Issue,
   ProjectContext,
   RepairResult,
+  FinalizationRecoveryResult,
 } from "../../src/index.js";
 
 const issue = {
@@ -60,6 +62,54 @@ describe("AgentAdapter", () => {
     expect(continuation.reason).toBe("CAPABILITY_GRANTED");
   });
 
+  it("carries a generic review response back to the same Agent session", () => {
+    const continuation: AgentContinuation = {
+      reason: "REVIEW_SUBMITTED",
+      requestId: "review-19",
+      kind: "business-merge-conflict",
+      choiceId: "use-issue",
+      feedback: "Preserve the Issue behavior",
+      data: { source: "human" },
+    };
+
+    expect(continuation).toMatchObject({
+      reason: "REVIEW_SUBMITTED",
+      requestId: "review-19",
+      choiceId: "use-issue",
+    });
+  });
+
+  it("requires integrated metadata only for an observed Git base", () => {
+    const result = {
+      kind: "DELIVERY_READY" as const,
+      summary: "Implemented",
+      evidence: [],
+      verification: [{ command: "pnpm test", outcome: "PASSED" as const, summary: "Passed" }],
+    };
+    const repairInput = {
+      issue,
+      project,
+      assessment: {
+        revision: 1,
+        contentHash: "a".repeat(64),
+        verdict: "BUG" as const,
+        suggestedTitle: "Payment page",
+        reasoning: "Route missing",
+      },
+      evidenceDirectory: "/tmp/evidence",
+    };
+
+    expect(validateRepairResult(repairInput, result)).toEqual(result);
+    expect(() => validateRepairResult({
+      ...repairInput,
+      integration: {
+        baseBranch: "main",
+        observedBaseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/omb-19",
+      },
+    }, result)).toThrow("REPAIR_INTEGRATION_RESULT_REQUIRED");
+  });
+
   it.each(["RUNTIME_STOPPING", "USER_CANCELED"] as const)(
     "preserves the typed %s interruption reason",
     (reason) => {
@@ -78,7 +128,7 @@ describe("AgentAdapter", () => {
 
   it("exposes session, assessment, repair, evidence, and cancellation capabilities", () => {
     expectTypeOf<keyof AgentAdapter>().toEqualTypeOf<
-      "createSession" | "assess" | "repair" | "captureEvidence" | "cancel"
+      "createSession" | "assess" | "repair" | "captureEvidence" | "recoverFinalization" | "cancel"
     >();
   });
 
@@ -97,6 +147,7 @@ describe("AgentAdapter", () => {
       reasoning: "可复现",
     };
     const repair: RepairResult = {
+      kind: "DELIVERY_READY",
       summary: "恢复支付页",
       evidence: [
         {
@@ -105,6 +156,17 @@ describe("AgentAdapter", () => {
           relativePath: "proof.png",
         },
       ],
+      verification: [{
+        command: "pnpm test",
+        outcome: "PASSED",
+        summary: "Tests passed",
+      }],
+    };
+    const recovery: FinalizationRecoveryResult = {
+      summary: "Removed generated cache",
+      diagnosis: "An empty nested repository blocked git add",
+      disposition: "RECOVERED",
+      affectedPaths: [".pnpm-store/tmp/repository"],
     };
 
     const adapter: AgentAdapter = {
@@ -122,6 +184,10 @@ describe("AgentAdapter", () => {
       async captureEvidence(ref) {
         usedSessions.push(ref.sessionId);
         return { evidence: repair.evidence };
+      },
+      async recoverFinalization(ref) {
+        usedSessions.push(ref.sessionId);
+        return recovery;
       },
       async cancel(ref, reason) {
         cancellations.push({ sessionId: ref.sessionId, reason });
@@ -141,15 +207,34 @@ describe("AgentAdapter", () => {
       project,
       assessment,
       deliveryDraft: {
-        summary: repair.summary,
+        summary: repair.kind === "DELIVERY_READY" ? repair.summary : "unreachable",
         repairIteration: 1,
         implementationCompletedAt: "2026-08-20T06:15:00.000Z",
       },
       evidenceDirectory: "/tmp/evidence/issue-1/1",
     });
+    await adapter.recoverFinalization!(ref, {
+      issue,
+      project,
+      diagnostic: {
+        providerId: "git",
+        step: "add",
+        code: "GIT_COMMAND_FAILED:add",
+        message: "Git add failed",
+        relatedPaths: [".pnpm-store/tmp/repository"],
+      },
+      workspaceStatus: "?? .pnpm-store/tmp/repository/",
+      fingerprintSummary: "1 tracked change, 1 diagnostic root",
+      recoveryKind: "GENERATED_ARTIFACT_CLEANUP",
+    });
     await adapter.cancel(ref, "USER_CANCELED");
 
-    expect(usedSessions).toEqual(["session-1", "session-1", "session-1"]);
+    expect(usedSessions).toEqual([
+      "session-1",
+      "session-1",
+      "session-1",
+      "session-1",
+    ]);
     expect(cancellations).toEqual([{
       sessionId: "session-1",
       reason: "USER_CANCELED",

@@ -16,13 +16,15 @@ cancel
 
 ## Assessment
 
-Assessment 包含 revision、规范化 content hash、`BUG | NOT_A_BUG | UNCERTAIN`、reasoning，以及可选 root cause、solution 和疑似重复 Issue。三种 verdict 都先进入 `ASSESSMENT_REVIEW`，只有人工确认后才能修复或关闭。
+Assessment 包含 revision、规范化 content hash、`BUG | FEATURE | NOT_A_BUG | UNCERTAIN`、reasoning，以及可选 root cause、solution 和疑似重复 Issue。所有 verdict 都生成 `REVIEW_REQUIRED` 下的 `assessment` 请求，只有人工选择有限选项后才能实现、重分析或关闭。
 
 ## Repair 与证据
 
-批准 Bug Assessment 后，Runtime 将 Issue、Project 上下文、Assessment、反馈、前次 Delivery 和一个受控证据目录交给 Agent。Agent 返回 summary 与截图/录屏的相对路径；Storage 负责路径约束、内容寻址、媒体解码和 `evidenceId`。失败证据会回到同一会话的下一次 Repair。
+批准 Bug 或 Feature Assessment 后，Runtime 将 Issue、Project 上下文、Assessment、反馈、前次 Delivery 和一个受控证据目录交给 Agent。Git 项目配置为合入基线时，输入还包含当前不可变的基线 commit 和 Issue 分支；Agent 必须在隔离 worktree 中完成实现、合入基线、处理可兼容冲突、提交并运行验证。若两边要求的可观察业务行为不能同时成立，Agent 返回有限业务选项，Runtime 以 `business-merge-conflict` 审核暂停并在用户选择后沿用同一会话、同一 Repair iteration 继续。
 
-人工拒绝 Delivery 会带反馈继续 Repair；批准则立即完成为 `FIXED` 或 `IMPLEMENTED`。Agent 的交付边界是包含截图或录屏的 Delivery。
+Agent 返回 summary、集成快照、验证结果与截图/录屏的相对路径；Storage 负责路径约束、内容寻址、媒体解码和 `evidenceId`。失败证据会回到同一会话的下一次 Repair。Git Provider 只发布已验证且包含所观察基线的 commit，并只允许受保护的 fast-forward；发布前基线漂移会重新进入 Repair，而不是在主工作目录内临时解冲突。
+
+人工拒绝 Delivery 会带反馈继续 Repair；批准后先执行受保护发布，成功才完成为 `FIXED` 或 `IMPLEMENTED`。Agent 的交付边界是包含截图或录屏的 Delivery。
 
 ## 会话
 

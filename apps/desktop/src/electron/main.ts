@@ -8,6 +8,7 @@ import {
   shell,
   Tray,
   utilityProcess,
+  type NativeImage,
   type UtilityProcess
 } from "electron";
 import { homedir } from "node:os";
@@ -15,8 +16,15 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { registerDesktopIpc } from "./main-ipc.js";
-import { RUNTIME_STATE_CHANNEL } from "./desktop-api.js";
+import {
+  RUNTIME_STATE_CHANNEL,
+  TRAY_NAVIGATION_CHANNEL,
+  type TrayNavigationTarget,
+} from "./desktop-api.js";
 import { buildUtilityProcessEnvironment } from "./e2e-agent-handshake.js";
+import { installTrayMenuEvents, TrayMenuController } from "./tray-menu-controller.js";
+import type { TrayTaskIndicator } from "./tray-task-model.js";
+import { TrayNavigationQueue } from "./tray-navigation.js";
 import { UtilitySupervisor, type UtilityRuntimeState } from "./utility-supervisor.js";
 import { installWindowLifecycle } from "./window-lifecycle.js";
 import { createWindowOptions, installWindowSecurity, resolveRendererUrl } from "./window-security.js";
@@ -30,6 +38,17 @@ let ipcRegistration: { dispose(): void } | undefined;
 let quitting = false;
 let shutdownComplete = false;
 let runtimeState: UtilityRuntimeState = "starting";
+const trayNavigation = new TrayNavigationQueue((target) => {
+  const window = mainWindow;
+  if (window && !window.isDestroyed()) {
+    window.webContents.send(TRAY_NAVIGATION_CHANNEL, target);
+  }
+});
+const trayStatusIconNames: Record<TrayTaskIndicator, string> = {
+  failure: "tray-status-failure.png",
+  review: "tray-status-review.png",
+  processing: "tray-status-processing.png",
+};
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -86,6 +105,7 @@ async function startDesktop(): Promise<void> {
 }
 
 function createMainWindow(): void {
+  trayNavigation.setReady(false);
   const preloadPath = fileURLToPath(new URL("./preload.cjs", import.meta.url));
   const rendererUrl = resolveRendererUrl({
     configuredUrl: process.env.OMB_RENDERER_URL,
@@ -113,22 +133,48 @@ function createMainWindow(): void {
   });
   window.webContents.once("did-finish-load", () => {
     window.webContents.send(RUNTIME_STATE_CHANNEL, runtimeState);
+    trayNavigation.setReady(true);
   });
   void window.loadURL(rendererUrl);
 }
 
 function createTray(): void {
   if (tray) return;
-  const image = nativeImage.createFromNamedImage("NSStatusAvailable");
+  const image = nativeImage.createFromPath(fileURLToPath(
+    new URL("../../assets/icons/oh-my-bug-trayTemplate.png", import.meta.url),
+  ));
+  if (image.isEmpty()) throw new Error("TRAY_ICON_MISSING");
   image.setTemplateImage(true);
-  tray = new Tray(image);
-  tray.setToolTip("Oh My Bug");
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "打开 Oh My Bug", click: () => showMainWindow() },
-    { type: "separator" },
-    { label: "退出", click: () => void quitApplication() }
-  ]));
-  tray.on("click", () => showMainWindow());
+  const currentTray = new Tray(image);
+  tray = currentTray;
+  currentTray.setToolTip("Oh My Bug");
+  const taskIcons = loadTrayStatusIcons();
+  const menu = new TrayMenuController({
+    loadIssues: () => supervisor!.client().request("listIssues", {}),
+    resolveTaskIcon: (indicator) => taskIcons[indicator],
+    buildMenu: (template) => Menu.buildFromTemplate(template),
+    popUp: (nativeMenu) => currentTray.popUpContextMenu(nativeMenu),
+    openIssue: (issueId) => openIssues({ issueId }),
+    openAll: () => openIssues({}),
+    quit: () => { void quitApplication(); },
+  });
+  installTrayMenuEvents(currentTray, menu);
+}
+
+function loadTrayStatusIcons(): Partial<Record<TrayTaskIndicator, NativeImage>> {
+  const icons: Partial<Record<TrayTaskIndicator, NativeImage>> = {};
+  for (const indicator of Object.keys(trayStatusIconNames) as TrayTaskIndicator[]) {
+    const image = nativeImage.createFromPath(fileURLToPath(
+      new URL(`../../assets/icons/${trayStatusIconNames[indicator]}`, import.meta.url),
+    ));
+    if (!image.isEmpty()) icons[indicator] = image;
+  }
+  return icons;
+}
+
+function openIssues(target: TrayNavigationTarget): void {
+  showMainWindow();
+  trayNavigation.request(target);
 }
 
 function showMainWindow(): void {

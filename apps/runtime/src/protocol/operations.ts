@@ -21,7 +21,9 @@ import {
   outputSchemas,
   productProjectSchema,
   projectInspectionSchema,
+  reviewSubmissionSchema,
   runtimeHealthSchema,
+  saveProjectSettingsInputSchema,
   updateProjectInputSchema,
   workspaceBranchDiscoverySchema,
 } from "./schema-definitions.js";
@@ -96,6 +98,12 @@ export const runtimeOperations = {
     renderer: true,
     invoke: (service, input) => service.getProject(input),
   }),
+  saveProjectSettings: operation({
+    input: saveProjectSettingsInputSchema,
+    output: productProjectSchema,
+    renderer: true,
+    invoke: (service, input) => service.saveProjectSettings(input),
+  }),
   createProject: operation({
     input: createProjectInputSchema,
     output: productProjectSchema,
@@ -147,6 +155,12 @@ export const runtimeOperations = {
     output: outputSchemas.issue,
     renderer: true,
     invoke: (service, input) => service.submitManual(input),
+  }),
+  submitReview: operation({
+    input: z.object({ id: identifierSchema, input: reviewSubmissionSchema }).strict(),
+    output: outputSchemas.issue,
+    renderer: true,
+    invoke: (service, input) => service.submitReview(input),
   }),
   approveAssessment: operation({
     input: z.object({ id: identifierSchema, input: approveAssessmentInputSchema }).strict(),

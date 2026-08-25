@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   integrationInputSchema,
   issueSchema,
+  parsePersistedIssue,
   runtimeProjectSchema,
   type AgentSessionRecord,
   type IntegrationInput,
@@ -41,7 +42,7 @@ export interface SqliteRuntimeStoreOptions {
 }
 
 function parseIssue(row: JsonRow | undefined): Issue | undefined {
-  return row ? issueSchema.parse(JSON.parse(row.data_json)) : undefined;
+  return row ? parsePersistedIssue(JSON.parse(row.data_json)) : undefined;
 }
 
 function inputValues(issue: Issue, input: IntegrationInput): unknown[] {
@@ -155,7 +156,7 @@ export class SqliteRuntimeStore implements RuntimeStore, RuntimeTransaction {
     const rows = (projectId
       ? this.database.prepare("SELECT data_json FROM issues WHERE project_id = ? ORDER BY identifier").all(projectId)
       : this.database.prepare("SELECT data_json FROM issues ORDER BY project_id, identifier").all()) as JsonRow[];
-    return rows.map((row) => issueSchema.parse(JSON.parse(row.data_json)));
+    return rows.map((row) => parsePersistedIssue(JSON.parse(row.data_json)));
   }
 
   listPendingOperations(): Array<{ issue: Issue; operation: PendingOperation }> {
@@ -164,7 +165,7 @@ export class SqliteRuntimeStore implements RuntimeStore, RuntimeTransaction {
        WHERE pending_operation IS NOT NULL ORDER BY project_id, identifier`,
     ).all() as PendingRow[];
     return rows.map((row) => ({
-      issue: issueSchema.parse(JSON.parse(row.data_json)),
+      issue: parsePersistedIssue(JSON.parse(row.data_json)),
       operation: row.pending_operation,
     }));
   }

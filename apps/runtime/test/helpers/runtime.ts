@@ -1,9 +1,10 @@
-import type {
-  AgentAdapter,
-  AgentPlugin,
-  Assessment,
-  Issue,
-  RuntimeProject,
+import {
+  requestReview,
+  type AgentAdapter,
+  type AgentPlugin,
+  type Assessment,
+  type Issue,
+  type RuntimeProject,
 } from "@oh-my-bug/core";
 import { ManualIntegrationAdapter } from "@oh-my-bug/integration-manual";
 import { localWorkspaceFactory } from "@oh-my-bug/workspace-local";
@@ -18,6 +19,7 @@ import { AgentRegistry } from "../../src/agents/registry.js";
 import { RuntimeLifecycleHooks } from "../../src/modules/lifecycle-hooks.js";
 import { WorkspaceRegistry } from "../../src/modules/workspace-registry.js";
 import { RuntimeCommands } from "../../src/orchestration/commands.js";
+import { assessmentReview, deliveryReview } from "../../src/orchestration/reviews.js";
 import { WorkspaceCoordinator } from "../../src/orchestration/workspace-coordinator.js";
 import {
   fakeAssessment,
@@ -90,13 +92,13 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
 }
 
 export function reviewedIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
+  const source: Issue = {
     id: "issue-reviewed",
     projectId: project.id,
     identifier: "OMB-2",
     title: "支付页打不开",
     titleSource: "integration",
-    status: "ASSESSMENT_REVIEW",
+    status: "ASSESSING",
     inputs: [],
     assessment,
     revision: 3,
@@ -104,4 +106,29 @@ export function reviewedIssue(overrides: Partial<Issue> = {}): Issue {
     updatedAt: now,
     ...overrides,
   };
+  if (overrides.status && overrides.status !== "REVIEW_REQUIRED") {
+    return source;
+  }
+  if (overrides.repair?.delivery) {
+    const evidenceSource = {
+      ...source,
+      status: "EVIDENCE_CHECK" as const,
+      revision: source.revision - 1,
+    };
+    return requestReview(
+      evidenceSource,
+      deliveryReview(evidenceSource, `review:${source.id}:delivery`, now),
+      now,
+    );
+  }
+  const assessmentSource = {
+    ...source,
+    status: "ASSESSING" as const,
+    revision: source.revision - 1,
+  };
+  return requestReview(
+    assessmentSource,
+    assessmentReview(assessmentSource, `review:${source.id}:assessment`, now),
+    now,
+  );
 }

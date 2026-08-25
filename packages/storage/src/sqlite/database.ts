@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import BetterSqlite3 from "better-sqlite3";
+import { parsePersistedIssue } from "@oh-my-bug/core";
 
 import { runtimeSchema } from "./schema.js";
 
@@ -67,13 +68,45 @@ function migrateDeliveryFinalizationStatuses(database: RuntimeDatabase): void {
   ).run();
 }
 
+function migrateFinalizationRecoveryBudget(database: RuntimeDatabase): void {
+  database.prepare(
+    `UPDATE issues
+     SET data_json = json_set(
+       data_json,
+       '$.finalizationRecovery',
+       json_object('automaticAttempts', 0)
+     )
+     WHERE status IN ('FINALIZING', 'FINALIZATION_FAILED')
+       AND json_type(data_json, '$.finalizationRecovery') IS NULL`,
+  ).run();
+}
+
+function migrateUnifiedReviewStatuses(database: RuntimeDatabase): void {
+  const rows = database.prepare(
+    `SELECT id, data_json FROM issues
+     WHERE status IN ('ASSESSMENT_REVIEW', 'ACCEPTANCE_REVIEW')`,
+  ).all() as Array<{ id: string; data_json: string }>;
+  if (rows.length === 0) return;
+  const update = database.prepare(
+    `UPDATE issues SET status = ?, revision = ?, data_json = ? WHERE id = ?`,
+  );
+  database.transaction(() => {
+    for (const row of rows) {
+      const issue = parsePersistedIssue(JSON.parse(row.data_json));
+      update.run(issue.status, issue.revision, JSON.stringify(issue), row.id);
+    }
+  })();
+}
+
 export function openRuntimeDatabase(path: string): RuntimeDatabase {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const database = new BetterSqlite3(path);
   database.pragma("foreign_keys = ON");
   if (path !== ":memory:") database.pragma("journal_mode = WAL");
   database.exec(runtimeSchema);
+  migrateUnifiedReviewStatuses(database);
   migrateDeliveryFinalizationStatuses(database);
+  migrateFinalizationRecoveryBudget(database);
   migrateIntegrationInputsToProjectScope(database);
   database.prepare(
     `UPDATE issues

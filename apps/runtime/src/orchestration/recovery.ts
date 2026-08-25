@@ -28,6 +28,15 @@ export function reconcileInterruptedIssues(dependencies: RecoveryDependencies): 
   );
   for (const issue of dependencies.store.listIssues()) {
     if (pendingIds.has(issue.id)) continue;
+    const submittedReview = submittedReviewOperation(dependencies.store, issue);
+    if (submittedReview) {
+      dependencies.store.transaction((transaction) => {
+        const current = dependencies.store.getIssue(issue.id);
+        if (!current || current.revision !== issue.revision) return;
+        transaction.updateIssue(current, current.revision, submittedReview);
+      });
+      continue;
+    }
     const operation = interruptedOperation(issue);
     if (!operation) continue;
     dependencies.store.transaction((transaction) => {
@@ -59,6 +68,18 @@ export function reconcileInterruptedIssues(dependencies: RecoveryDependencies): 
       });
     });
   }
+}
+
+function submittedReviewOperation(
+  store: RuntimeStore,
+  issue: Issue,
+): PendingOperation | undefined {
+  if (issue.status !== "REPAIRING") return undefined;
+  const submitted = store.readEvents(issue.id).findLast((event) =>
+    event.type === "REVIEW_SUBMITTED" &&
+    event.data.operation === "REPAIR" &&
+    event.data.revision === issue.revision);
+  return submitted ? "REPAIR" : undefined;
 }
 
 const LEGACY_EVIDENCE_FAILURE_CODES = new Set<string>([
@@ -152,6 +173,12 @@ function migrateLegacyFailure(
 }
 
 export function interruptedOperation(issue: Issue): PendingOperation | undefined {
+  if (
+    issue.status === "FINALIZATION_RECOVERY"
+    && issue.finalizationRecovery?.automaticAttempts === 1
+    && issue.finalizationRecovery.attemptId
+    && issue.finalizationRecovery.fingerprintRef
+  ) return "RECOVER_FINALIZATION";
   if (issue.status === "ASSESSING") return "ASSESS";
   if (issue.status === "REPAIRING") return "REPAIR";
   if (issue.status === "EVIDENCE_CAPTURE" && issue.repair?.deliveryDraft) {

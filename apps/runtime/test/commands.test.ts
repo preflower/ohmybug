@@ -114,8 +114,11 @@ describe("Runtime human commands", () => {
 
     expect(store.readEvents(issue.id)).toContainEqual(expect.objectContaining({
       actor: "USER",
-      type: "REASSESSMENT_REQUESTED",
-      data: { detail: "Inspect the router" },
+      type: "REVIEW_SUBMITTED",
+      data: expect.objectContaining({
+        choiceId: "reassess",
+        feedback: "Inspect the router",
+      }),
     }));
   });
 
@@ -190,7 +193,7 @@ describe("Runtime human commands", () => {
     const { commands, store } = createHarness();
     const issue = reviewedIssue({
       id: "issue-delivery",
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       agentSession: { agent: "fake", sessionId: "session-1" },
       repair: { iteration: 1, delivery },
       revision: 7,
@@ -203,10 +206,10 @@ describe("Runtime human commands", () => {
     expect(store.listPendingOperations()).toEqual([
       { issue: approved, operation: "FINALIZE" },
     ]);
-    expect(store.readEvents(issue.id).map((event) => event.type)).toEqual(["DELIVERY_APPROVED"]);
+    expect(store.readEvents(issue.id).map((event) => event.type)).toEqual(["REVIEW_SUBMITTED"]);
   });
 
-  it("retries only a failed Delivery finalization", () => {
+  it("retries a failed Delivery finalization through fresh Repair", () => {
     const { commands, store } = createHarness();
     const failed = reviewedIssue({
       id: "issue-finalization-failed",
@@ -223,16 +226,43 @@ describe("Runtime human commands", () => {
     const retrying = commands.approveDelivery(failed.id);
 
     expect(retrying).toMatchObject({
-      status: "FINALIZING",
-      resolution: "FIXED",
+      status: "REPAIRING",
+      repair: { iteration: 2, feedback: expect.any(String) },
       revision: 9,
     });
+    expect(retrying).not.toHaveProperty("resolution");
+    expect(retrying.repair).not.toHaveProperty("delivery");
     expect(store.listPendingOperations()).toEqual([{
       issue: retrying,
-      operation: "FINALIZE",
+      operation: "REPAIR",
     }]);
     expect(store.readEvents(failed.id).map((event) => event.type))
-      .toEqual(["DELIVERY_FINALIZATION_RETRIED"]);
+      .toEqual(["DELIVERY_FINALIZATION_REPAIR_REQUESTED"]);
+  });
+
+  it("rejects duplicate delivery actions while finalization recovery is active", () => {
+    const { commands, store } = createHarness();
+    const recovering = reviewedIssue({
+      id: "issue-finalization-recovering",
+      status: "FINALIZATION_RECOVERY",
+      resolution: "FIXED",
+      repair: { iteration: 1, delivery },
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: "attempt-1",
+        fingerprintRef: "fingerprint-1",
+      },
+      revision: 9,
+    });
+    store.transaction((transaction) => transaction.insertIssue(
+      recovering,
+      "RECOVER_FINALIZATION",
+    ));
+
+    expect(() => commands.approveDelivery(recovering.id)).toThrow();
+    expect(() => commands.retryIssue(recovering.id)).toThrow("RETRY_NOT_AVAILABLE");
+    expect(store.listPendingOperations().map((pending) => pending.operation))
+      .toEqual(["RECOVER_FINALIZATION"]);
   });
 
   it("persists an approved Feature Delivery as IMPLEMENTED", () => {
@@ -240,7 +270,7 @@ describe("Runtime human commands", () => {
     const feature = { ...assessment, verdict: "FEATURE" as const, rootCause: undefined };
     const issue = reviewedIssue({
       id: "issue-feature-delivery",
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       assessment: feature,
       agentSession: { agent: "fake", sessionId: "session-feature" },
       repair: { iteration: 1, delivery },

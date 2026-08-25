@@ -20,6 +20,7 @@ export type WorkspaceBranchDiscoveryDto = RuntimeOperationOutput<"inspectProject
 export type AgentEventDto = RuntimeOperationOutput<"issueEvents">["items"][number];
 export type IntegrationHealth = RuntimeOperationOutput<"integrationHealth">[string];
 export type ApproveAssessmentInput = RuntimeOperationInput<"approveAssessment">["input"];
+export type ReviewSubmissionInput = RuntimeOperationInput<"submitReview">["input"];
 export type {
   AssessmentReference,
   ConfigValue,

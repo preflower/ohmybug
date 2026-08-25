@@ -13,6 +13,7 @@ describe("Runtime protocol operation registry", () => {
       "inspectProject",
       "inspectProjectBranches",
       "getProject",
+      "saveProjectSettings",
       "createProject",
       "updateProject",
       "setIntegrationSecrets",
@@ -21,6 +22,7 @@ describe("Runtime protocol operation registry", () => {
       "getIssue",
       "getIssueWorkspace",
       "submitManual",
+      "submitReview",
       "approveAssessment",
       "approveBugAssessment",
       "confirmNotABug",
@@ -41,6 +43,24 @@ describe("Runtime protocol operation registry", () => {
     expect(rendererOperationNames).toContain("rebuildAgentSession");
     expect(rendererOperationNames).toContain("grantIssueCapabilities");
     expect(rendererOperationNames).toContain("readEvidence");
+  });
+
+  it("validates optimistic generic review submission", () => {
+    const input = {
+      id: "issue-1",
+      input: {
+        expectedRevision: 7,
+        requestId: "review-1",
+        choiceId: "continue",
+        feedback: "Preserve both compatible changes",
+      },
+    };
+
+    expect(runtimeOperations.submitReview.input.parse(input)).toEqual(input);
+    expect(() => runtimeOperations.submitReview.input.parse({
+      id: "issue-1",
+      input: { requestId: "review-1", choiceId: "continue" },
+    })).toThrow();
   });
 
   it("validates optimistic capability grant input", () => {
@@ -118,5 +138,38 @@ describe("Runtime protocol operation registry", () => {
         acceptanceUrl: "https://example.com/payment",
       },
     })).toThrow(/ACCEPTANCE_URL_MUST_BE_LOCALHOST/);
+  });
+
+  it("validates one project-settings save with grouped secret patches", () => {
+    const create = {
+      mode: "create",
+      project: {
+        path: "/repo",
+        key: "OMB",
+        integrations: {
+          dingtalk: { enabled: true, config: { conversationIds: ["cid-1"] } },
+        },
+      },
+      secretPatches: {
+        dingtalk: { clientId: "client-id", clientSecret: "client-secret" },
+      },
+    } as const;
+    const update = {
+      ...create,
+      mode: "update",
+      id: "project-1",
+      expectedRevision: 3,
+    } as const;
+
+    expect(runtimeOperations.saveProjectSettings.input.parse(create)).toEqual(create);
+    expect(runtimeOperations.saveProjectSettings.input.parse(update)).toEqual(update);
+    expect(() => runtimeOperations.saveProjectSettings.input.parse({
+      ...update,
+      expectedRevision: 0,
+    })).toThrow();
+    expect(() => runtimeOperations.saveProjectSettings.input.parse({
+      ...create,
+      extra: true,
+    })).toThrow();
   });
 });

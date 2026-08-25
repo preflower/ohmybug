@@ -15,7 +15,7 @@ test("creates an Issue with Enter while preserving Shift+Enter for newlines", as
     await desktop.page.getByLabel("项目名称").fill(`Enter Shortcut ${suffix}`);
     await desktop.page.getByLabel("项目标识").fill(`E${suffix}`);
     await desktop.page.getByTestId("project-settings-form")
-      .getByRole("button", { name: "保存项目", exact: true }).click();
+      .getByRole("button", { name: "保存更改", exact: true }).click();
     await expect(desktop.page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
 
     await desktop.page.getByRole("button", { name: "新建 Issue" }).click();
@@ -43,7 +43,7 @@ test("creates an Issue with Enter while preserving Shift+Enter for newlines", as
 
     await contentField.press("Enter");
     await expect(dialog).toHaveCount(0);
-    await expect(desktop.page.getByRole("region", { name: "评估结果操作" })).toBeVisible();
+    await expect(desktop.page.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
     await desktop.page.screenshot({ path: resolve(artifactDir, "new-issue-enter-created.png"), fullPage: true });
   } finally {
     await project.cleanup();

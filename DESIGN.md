@@ -255,7 +255,7 @@ Panels in the main document should normally be flat. Avoid nested cards, glowing
 ## Shapes
 
 - Small controls, rows, and chips: 4–6px radius.
-- Assessment, Delivery, and approval panels: 8px radius.
+- Assessment, Delivery, and review panels: 8px radius.
 - Dialogs and large evidence previews: 10–12px radius.
 - Pills are reserved for small statuses and segmented controls.
 - Primary buttons are never pills.
@@ -311,25 +311,13 @@ Screenshots use a two-column grid when space permits and preserve aspect ratio. 
 
 Events use small semantic icons, timestamps, concise summaries, and expandable detail. Streamed command output uses mono text and a bounded height. Reasoning or internal narration is not presented as authoritative evidence; Assessment, Delivery, and inspected visual evidence are.
 
-### Approval panel
+### Review panel
 
-Approval panels appear only in `ASSESSMENT_REVIEW` and `ACCEPTANCE_REVIEW`. They are sticky within the detail workspace without covering content.
+One review shell appears for `REVIEW_REQUIRED`; `review.kind` selects only the decision context renderer. The shell stays within the detail document, never covers evidence, and always shows the server-provided bounded choices, optional feedback, and one submit action.
 
-Every panel names:
+Assessment reviews show the proposed verdict and editable confirmed title. Delivery reviews show the Repair iteration and inspected evidence count. Business-merge-conflict reviews compare base intent and Issue intent, state why they are mutually exclusive, list affected paths, and present the AI recommendation without selecting it on the user's behalf. Unknown extension kinds fall back to a safe bounded summary.
 
-- the Assessment revision and hash fragment;
-- the capability that will be unlocked;
-- the primary approval action;
-- a secondary feedback action.
-
-Use explicit labels:
-
-- “确认是 Bug 并开始修复”
-- “确认是 Feature 并开始实现”
-- “确认不是 Bug 并关闭”
-- “确认重复并关闭”
-- “要求修改”
-- “批准验收并关闭 Issue”
+Use the choice labels supplied by Runtime, such as “开始实现”, “要求重新分析”, “接受交付”, “要求修改”, “保留基线行为”, and “保留 Issue 行为”. Never use an ambiguous standalone “确认”.
 
 Never use an ambiguous standalone “确认”.
 

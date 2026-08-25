@@ -47,6 +47,7 @@ describe("Sentry plugin", () => {
     expect(sentryPlugin().manifest).toEqual({
       id: "sentry",
       name: "Sentry",
+      icon: "sentry",
       configFields: [
         { key: "organization", type: "string", label: "Organization", required: true },
         { key: "project", type: "string", label: "Project", required: true },

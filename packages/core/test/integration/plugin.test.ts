@@ -10,6 +10,7 @@ describe("IntegrationPlugin manifest", () => {
     const manifest: IntegrationPluginManifest = {
       id: "fixture",
       name: "Fixture",
+      icon: "dingtalk",
       configFields: [
         { key: "workspace", type: "string", label: "Workspace", required: true },
         { key: "channels", type: "string[]", label: "Channels", required: true },
@@ -34,6 +35,62 @@ describe("IntegrationPlugin manifest", () => {
         label: "Workspace",
         required: true,
         render: "plugin-owned",
+      }],
+      secretFields: [],
+    })).toThrow();
+  });
+
+  it("serializes optional Integration presentation sections", () => {
+    const manifest: IntegrationPluginManifest = {
+      id: "fixture",
+      name: "Fixture",
+      description: "Receive fixture events.",
+      sections: [
+        { id: "credentials", label: "Credentials", description: "Stored locally." },
+        { id: "rules", label: "Rules", summary: { label: "Scope", value: "Selected groups" } },
+        { id: "advanced", label: "Advanced", collapsed: true },
+      ],
+      configFields: [{
+        key: "filters",
+        type: "string[]",
+        label: "Filters",
+        required: false,
+        section: "advanced",
+        placeholder: "error",
+        addLabel: "Add filter",
+      }],
+      secretFields: [{
+        key: "token",
+        label: "Token",
+        required: true,
+        section: "credentials",
+      }],
+    };
+
+    expect(integrationPluginManifestSchema.parse(manifest)).toEqual(manifest);
+  });
+
+  it("rejects duplicate sections and unknown field section references", () => {
+    expect(() => integrationPluginManifestSchema.parse({
+      id: "fixture",
+      name: "Fixture",
+      sections: [
+        { id: "rules", label: "Rules" },
+        { id: "rules", label: "More rules" },
+      ],
+      configFields: [],
+      secretFields: [],
+    })).toThrow();
+    expect(() => integrationPluginManifestSchema.parse({
+      id: "fixture",
+      name: "Fixture",
+      sections: [{ id: "rules", label: "Rules" }],
+      configFields: [{
+        key: "filter",
+        type: "string",
+        label: "Filter",
+        required: false,
+        section: "missing",
       }],
       secretFields: [],
     })).toThrow();

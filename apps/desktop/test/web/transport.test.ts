@@ -3,7 +3,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createDesktopTransport } from "../../src/web/api/desktop-transport.js";
-import { createProjectPayload } from "../../src/web/api/transport.js";
+import {
+  createProjectPayload,
+  saveProjectSettingsPayload,
+} from "../../src/web/api/transport.js";
 
 const project = {
   id: "project-1", name: "Checkout", key: "CHK", path: "/work/checkout",
@@ -36,6 +39,7 @@ describe("renderer product transports", () => {
         issue: { id: "issue-1", status: "COMPLETED" },
         branch: { name: "ohmybug/chk-1", commit: "abc123" },
       })),
+      submitReview: vi.fn(async () => ({ id: "issue-1", status: "REPAIRING" })),
       getIssueWorkspace: vi.fn(async () => ({
         providerId: "git",
         status: "READY" as const,
@@ -82,6 +86,16 @@ describe("renderer product transports", () => {
     await expect(transport.grantIssueCapabilities("issue-1", 7, "request-1"))
       .resolves.toMatchObject({ status: "REPAIRING" });
     expect(bridge.grantIssueCapabilities).toHaveBeenCalledWith("issue-1", 7, "request-1");
+    await expect(transport.submitReview("issue-1", {
+      expectedRevision: 8,
+      requestId: "review-1",
+      choiceId: "keep-base",
+    })).resolves.toMatchObject({ status: "REPAIRING" });
+    expect(bridge.submitReview).toHaveBeenCalledWith("issue-1", {
+      expectedRevision: 8,
+      requestId: "review-1",
+      choiceId: "keep-base",
+    });
     const stop = transport.subscribeIssueEvents("issue-1", 1, listener);
     stop();
     const evidence = await transport.evidenceSource("issue-1", "evidence-1");
@@ -104,6 +118,37 @@ describe("renderer product transports", () => {
       name: "Checkout", key: "CHK", path: "/work/checkout", commands: {}, agent: { plugin: "codex" },
       workspace: { provider: "git", config: { baseBranch: "main", delivery: "local" } },
       integrations: { example: { enabled: true, config: { workspace: "acme", channels: ["alerts"] } } },
+    });
+  });
+
+  it("maps project configuration and secret drafts into one settings request", () => {
+    const formValue = {
+      id: "project-1",
+      revision: 3,
+      name: "Checkout",
+      key: "CHK",
+      path: "/work/checkout",
+      instructions: "",
+      commands: {},
+      agentPlugin: "codex",
+      workspace: { provider: "local", config: {} },
+      integrations: {
+        dingtalk: {
+          enabled: true,
+          config: { conversationIds: ["cid-1"] },
+          secretConfigured: { clientId: true, clientSecret: false },
+        },
+      },
+    };
+
+    expect(saveProjectSettingsPayload(formValue, {
+      dingtalk: { clientSecret: "client-secret" },
+    })).toEqual({
+      mode: "update",
+      id: "project-1",
+      expectedRevision: 3,
+      project: createProjectPayload(formValue),
+      secretPatches: { dingtalk: { clientSecret: "client-secret" } },
     });
   });
 });

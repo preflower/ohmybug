@@ -40,6 +40,90 @@ describe("Runtime recovery", () => {
     expect(store.readEvents(paused.id)).toEqual([]);
   });
 
+  it("preserves a pending business review and reconstructs its submitted Repair continuation", () => {
+    const { store } = createHarness();
+    const reviewRequired = {
+      id: "business-review-pending",
+      projectId: project.id,
+      projectPath: project.path,
+      identifier: "OMB-BUSINESS-PENDING",
+      title: "Business conflict",
+      titleSource: "user" as const,
+      status: "REVIEW_REQUIRED" as const,
+      inputs: [],
+      agentSession: { agent: "fake", sessionId: "session-business" },
+      assessment,
+      repair: { iteration: 3 },
+      review: {
+        id: "review-business",
+        kind: "business-merge-conflict",
+        requestedFrom: "REPAIRING" as const,
+        payload: { conflictPaths: ["src/payment.ts"] },
+        choices: [{
+          id: "keep-base",
+          label: "保留基线行为",
+          continuation: { operation: "REPAIR" as const, resumeStatus: "REPAIRING" as const },
+        }],
+        requestedAt: now,
+      },
+      revision: 9,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.transaction((transaction) => {
+      transaction.insertIssue(reviewRequired, "REPAIR");
+      transaction.updateIssue(reviewRequired, reviewRequired.revision, null);
+    });
+
+    reconcileInterruptedIssues({ store, id: eventIds("pending-review"), now: () => now });
+
+    expect(store.getIssue(reviewRequired.id)).toEqual(reviewRequired);
+    expect(store.listPendingOperations()).toEqual([]);
+
+    const resumed = {
+      ...reviewRequired,
+      id: "business-review-submitted",
+      identifier: "OMB-BUSINESS-SUBMITTED",
+      status: "REPAIRING" as const,
+      review: undefined,
+      revision: 10,
+    };
+    store.transaction((transaction) => {
+      transaction.insertIssue(resumed, "REPAIR");
+      transaction.updateIssue(resumed, resumed.revision, null);
+      transaction.appendEvent({
+        id: "business-review-submitted-event",
+        issueId: resumed.id,
+        type: "REVIEW_SUBMITTED",
+        actor: "USER",
+        data: {
+          requestId: "review-business",
+          kind: "business-merge-conflict",
+          choiceId: "keep-base",
+          operation: "REPAIR",
+          revision: resumed.revision,
+        },
+        occurredAt: now,
+      });
+    });
+    const dependencies = {
+      store,
+      id: eventIds("submitted-review"),
+      now: () => now,
+    };
+
+    reconcileInterruptedIssues(dependencies);
+    reconcileInterruptedIssues(dependencies);
+
+    expect(store.getIssue(resumed.id)).toEqual(resumed);
+    expect(store.listPendingOperations()).toEqual([{
+      issue: resumed,
+      operation: "REPAIR",
+    }]);
+    expect(store.readEvents(resumed.id).map((event) => event.type))
+      .toEqual(["REVIEW_SUBMITTED"]);
+  });
+
   it("migrates legacy evidence failures once and preserves their delivery as a draft", () => {
     const { store } = createHarness();
     const legacy = {
@@ -181,6 +265,49 @@ describe("Runtime recovery", () => {
       { issue: expect.objectContaining({ id: finalizing.id }), operation: "FINALIZE" },
     ]);
     expect(workspacePersistence.getBinding(finalizing.id)?.providerId).toBe("local");
+  });
+
+  it("requeues one in-progress finalization recovery without spending another attempt", () => {
+    const { store } = createHarness();
+    const recovering = reviewedIssue({
+      id: "finalization-recovery-restart",
+      status: "FINALIZATION_RECOVERY",
+      projectPath: project.path,
+      agentSession: { agent: "fake", sessionId: "session-recovery" },
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: "attempt-1",
+        fingerprintRef: "fingerprint-1",
+        diagnostic: {
+          providerId: "git",
+          step: "add",
+          code: "GIT_ADD_FAILED",
+          message: "git add failed",
+          relatedPaths: [".pnpm-store"],
+        },
+      },
+    });
+    store.transaction((transaction) => {
+      transaction.insertIssue(recovering, "RECOVER_FINALIZATION");
+      transaction.updateIssue(recovering, recovering.revision, null);
+    });
+    const dependencies = { store, id: eventIds("recovery-restart"), now: () => now };
+
+    reconcileInterruptedIssues(dependencies);
+    reconcileInterruptedIssues(dependencies);
+
+    expect(store.getIssue(recovering.id)).toMatchObject({
+      status: "FINALIZATION_RECOVERY",
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: "attempt-1",
+        fingerprintRef: "fingerprint-1",
+      },
+    });
+    expect(store.listPendingOperations().map((pending) => pending.operation))
+      .toEqual(["RECOVER_FINALIZATION"]);
+    expect(store.readEvents(recovering.id).filter((event) =>
+      event.type === "RUNTIME_INTERRUPTED")).toHaveLength(1);
   });
 
   it("leaves FINALIZATION_FAILED idle after restart", async () => {
@@ -334,12 +461,12 @@ describe("Runtime recovery", () => {
       .toHaveLength(1);
   });
 
-  it.each(["ASSESSMENT_REVIEW", "ACCEPTANCE_REVIEW", "COMPLETED", "CLOSED"] as const)(
-    "preserves durable %s state while migrating only active legacy workspaces",
+  it.each(["REVIEW_REQUIRED", "COMPLETED", "CLOSED"] as const)(
+    "preserves durable %s state while recovering only active workspaces",
     async (status) => {
       const agent = new FakeAgent();
       const { commands, store, agents, evidence, workspaces } = createHarness(agent);
-      const issue = {
+      const stable = {
         id: `stable-${status}`,
         projectId: project.id,
         identifier: `OMB-${status}`,
@@ -356,6 +483,9 @@ describe("Runtime recovery", () => {
         createdAt: now,
         updatedAt: now,
       };
+      const issue = status === "REVIEW_REQUIRED"
+        ? reviewedIssue({ ...stable, status, assessment, revision: 3 })
+        : stable;
       store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
       store.transaction((transaction) => transaction.updateIssue(issue, issue.revision, null));
       const runtime = new OhMyBugRuntime({
@@ -370,7 +500,7 @@ describe("Runtime recovery", () => {
 
       await runtime.start();
 
-      if (status === "ASSESSMENT_REVIEW" || status === "ACCEPTANCE_REVIEW") {
+      if (status === "REVIEW_REQUIRED") {
         expect(store.getIssue(issue.id)).toMatchObject({
           status,
           projectPath: project.path,
@@ -421,6 +551,6 @@ describe("Runtime recovery", () => {
     expect(runtime.health()).toEqual({ state: "ready" });
     releaseAssessment();
     await runtime.drain();
-    expect(store.getIssue("slow-pending-assess")?.status).toBe("ASSESSMENT_REVIEW");
+    expect(store.getIssue("slow-pending-assess")?.status).toBe("REVIEW_REQUIRED");
   });
 });
