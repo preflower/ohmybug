@@ -889,7 +889,13 @@ describe("GitWorkspace publish", () => {
     };
 
     await expect(provider.publish({ issue: approved, resourceId: "git:issue-1" }))
-      .rejects.toThrow("GIT_AUTO_MERGE_CONFLICT");
+      .rejects.toMatchObject({
+        diagnostic: {
+          step: "merge",
+          code: "GIT_AUTO_MERGE_CONFLICT",
+          relatedPaths: ["README.md"],
+        },
+      });
 
     expect(await git(fixture.repository, "rev-parse", "main")).toBe(baseline);
     expect(await git(fixture.repository, "status", "--porcelain")).toBe("");

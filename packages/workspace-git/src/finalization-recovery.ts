@@ -26,6 +26,7 @@ import {
   tryRunGit,
   type RunGitOptions,
 } from "./git-client.js";
+import { GitAutomaticMergeConflictError } from "./merge-recovery.js";
 
 interface ContentFingerprint {
   path: string;
@@ -81,10 +82,14 @@ export function finalizationError(input: {
   const generatedArtifactsError = input.error instanceof GeneratedArtifactsPresentError
     ? input.error
     : undefined;
+  const mergeConflictError = input.error instanceof GitAutomaticMergeConflictError
+    ? input.error
+    : undefined;
   const rawMessage = input.error instanceof Error
     ? input.error.message
     : "WORKSPACE_PUBLISH_FAILED";
-  const code = commandError?.message
+  const code = mergeConflictError?.message
+    ?? commandError?.message
     ?? generatedArtifactsError?.message
     ?? (/^[A-Z][A-Z0-9_:.-]{0,199}$/.test(rawMessage)
       ? rawMessage
@@ -102,7 +107,8 @@ export function finalizationError(input: {
     ...(commandError?.exitCode === undefined ? {} : { exitCode: commandError.exitCode }),
     message,
     ...(stderr ? { stderr: boundedText(stderr, 8_000) } : {}),
-    relatedPaths: generatedArtifactsError?.relatedPaths
+    relatedPaths: mergeConflictError?.conflictPaths
+      ?? generatedArtifactsError?.relatedPaths
       ?? relatedPaths(stderr ?? code, input.worktreePath),
   }, input.error);
 }

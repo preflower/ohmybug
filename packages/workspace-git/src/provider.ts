@@ -21,7 +21,11 @@ import type {
 } from "@oh-my-bug/module-api";
 import { z } from "zod";
 
-import { gitRefExists, runGit, tryRunGit } from "./git-client.js";
+import { GitCommandError, gitRefExists, runGit, tryRunGit } from "./git-client.js";
+import {
+  GitAutomaticMergeConflictError,
+  parseMergeTreeConflictOutput,
+} from "./merge-recovery.js";
 import {
   assertPublicationPreflight,
   finalizationError,
@@ -667,7 +671,16 @@ async function createAutomaticMergeCommit(
     tree = await runGit(repositoryPath, ["merge-tree", "--write-tree", baseCommit, issueCommit]);
   } catch (error) {
     if (gitErrorExitCode(error) === 1) {
-      throw new Error("GIT_AUTO_MERGE_CONFLICT", { cause: error });
+      const commandError = error instanceof GitCommandError ? error : undefined;
+      const parsed = parseMergeTreeConflictOutput(
+        commandError?.stdout ?? "",
+        commandError?.stderr ?? "",
+      );
+      throw new GitAutomaticMergeConflictError(
+        parsed.conflictPaths,
+        parsed.mergeMessages,
+        error,
+      );
     }
     throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
   }
