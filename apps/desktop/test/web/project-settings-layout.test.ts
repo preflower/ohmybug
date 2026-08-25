@@ -32,12 +32,17 @@ describe("project settings layout", () => {
     expect(settings.backgroundColor).toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("locks sticky metadata and full-width activity detail rules", () => {
+  it("locks sticky metadata rules", () => {
     expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*position:\s*sticky;/s);
     expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*top:\s*0;/s);
+  });
+
+  it("keeps Agent activity turns full width and flattens terminal output", () => {
     expect(styles).toMatch(/\.activity-turn\s*\{[^}]*width:\s*100%;/s);
     expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*box-sizing:\s*border-box;/s);
-    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*width:\s*100%;/s);
+    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*width:\s*auto;/s);
+    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*border-radius:\s*0;/s);
+    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*background:\s*transparent;/s);
   });
 
   it("uses the compact product scale across project and integration settings", () => {

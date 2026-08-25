@@ -51,9 +51,8 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     expect(evidenceUrl, evidenceUrl).toMatch(/^blob:/);
 
     await desktop.page.getByRole("button", { name: "显示详情栏" }).click();
-    const activity = desktop.page.getByRole("button", { name: "Agent 活动" });
-    await activity.click();
     const activityPanel = desktop.page.locator("section.agent-activity");
+    for (const turn of await activityPanel.locator("button.activity-turn-toggle").all()) await turn.click();
     await expect(activityPanel).toContainText("实现完成，准备采集证据");
     await expect(activityPanel).toContainText("开始采集验证证据");
     await expect(activityPanel).toContainText("验证证据已通过");

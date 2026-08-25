@@ -1854,26 +1854,18 @@ a:focus-visible {
   background: var(--surface);
 }
 
-.agent-activity > button {
+.agent-activity-header {
   display: grid;
-  width: 100%;
   min-height: 38px;
-  grid-template-columns: 1fr auto 18px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  border: 0;
-  background: transparent;
   padding: 0 11px;
   color: var(--text-muted);
   font-size: 10px;
-  text-align: left;
 }
 
-.agent-activity > button:hover {
-  background: var(--surface-raised);
-}
-
-.agent-activity > button > span:first-child {
+.agent-activity-header > span:first-child {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -1900,12 +1892,17 @@ a:focus-visible {
   transform: rotate(180deg);
 }
 
-.activity-terminal {
+.activity-groups {
   overflow-y: auto;
   max-height: min(460px, 60vh);
   border-top: 1px solid var(--border);
   background: var(--canvas);
   overscroll-behavior: contain;
+}
+
+.activity-terminal {
+  min-width: 0;
+  background: var(--canvas);
 }
 
 .activity-turn {
@@ -1927,15 +1924,27 @@ a:focus-visible {
   border-bottom: 0;
 }
 
-.activity-turn-header {
+.activity-turn-toggle {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  min-height: 32px;
+  grid-template-columns: minmax(0, 1fr) auto 14px;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   background: var(--surface-raised);
   padding: 7px 10px;
   color: var(--text-muted);
+  text-align: left;
+}
+
+.activity-turn-toggle:hover,
+.activity-turn-toggle:focus-visible {
+  background: var(--surface-hover);
+}
+
+.activity-turn-toggle > svg {
+  transition: transform 120ms ease-out;
 }
 
 .activity-turn-title,
@@ -1980,7 +1989,7 @@ a:focus-visible {
 }
 
 .activity-turn-body {
-  min-width: 0;
+  border-top: 1px solid var(--border);
   padding: 3px 0;
 }
 
@@ -2081,14 +2090,14 @@ a:focus-visible {
 
 .activity-log-output {
   box-sizing: border-box;
-  width: 100%;
+  width: auto;
   min-width: 0;
   overflow: auto;
   max-height: 240px;
-  margin: 6px 0 1px;
-  border-radius: 4px;
-  background: var(--surface-raised);
-  padding: 7px 8px;
+  margin: 4px 10px 2px 29px;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -3691,7 +3700,8 @@ a:focus-visible {
   [data-slot="dialog-overlay"],
   [data-slot="dialog-content"],
   [data-slot="select-content"],
-  [data-slot="tooltip-content"] {
+  [data-slot="tooltip-content"],
+  .activity-turn-toggle > svg {
     animation: none !important;
     transition-duration: 0.01ms !important;
   }

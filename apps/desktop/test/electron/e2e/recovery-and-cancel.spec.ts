@@ -77,7 +77,8 @@ test("discloses a missing native session and rebuilds only after user confirmati
       level: 2,
       name: "Missing Agent session keeps Issue context",
     })).toBeVisible();
-    await desktop.page.getByRole("button", { name: "Agent 活动" }).click();
+    const activityPanel = desktop.page.locator("section.agent-activity");
+    for (const turn of await activityPanel.locator("button.activity-turn-toggle").all()) await turn.click();
     await expect(desktop.page.getByText("USER · AGENT_SESSION_REBUILT")).toBeVisible();
   } finally {
     await desktop?.app.close().catch(() => undefined);

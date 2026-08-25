@@ -76,9 +76,14 @@ describe("Agent activity", () => {
     fireEvent.click(toggle);
 
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("log", { name: "Codex 开始分析 Terminal" })).toBeVisible();
+    const terminal = screen.getByRole("log", { name: "Codex 开始分析 Terminal" });
+    const output = screen.getByText("12 passed");
+    expect(terminal).toBeVisible();
+    expect(terminal).toHaveClass("activity-turn-body", "activity-terminal");
+    expect(output).toHaveClass("activity-log-output");
+    expect(output.parentElement).toBe(terminal.querySelector(".activity-log-command"));
     expect(screen.getAllByText("$ pnpm test")).toHaveLength(1);
-    expect(screen.getByText("12 passed")).toBeVisible();
+    expect(output).toBeVisible();
   });
 
   it("expands Codex turns independently", () => {
