@@ -33,6 +33,9 @@ export interface DesktopApi {
     refreshRemote: boolean,
   ): Promise<RuntimeOperationOutput<"inspectProjectBranches">>;
   getProject(id: string): Promise<RuntimeOperationOutput<"getProject">>;
+  saveProjectSettings(
+    input: RuntimeOperationInput<"saveProjectSettings">,
+  ): Promise<RuntimeOperationOutput<"saveProjectSettings">>;
   createProject(project: CreateProjectInput): Promise<RuntimeOperationOutput<"createProject">>;
   updateProject(id: string, input: UpdateProjectInput): Promise<RuntimeOperationOutput<"updateProject">>;
   setIntegrationSecrets(
@@ -105,6 +108,7 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     inspectProjectBranches: (path, providerId, refreshRemote) =>
       request("inspectProjectBranches", { path, providerId, refreshRemote }),
     getProject: (id) => request("getProject", { id }),
+    saveProjectSettings: (input) => request("saveProjectSettings", input),
     createProject: (project) => request("createProject", project),
     updateProject: (id, input) => request("updateProject", { id, input }),
     setIntegrationSecrets: (id, pluginId, patch) => request("setIntegrationSecrets", {

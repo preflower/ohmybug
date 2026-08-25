@@ -27,6 +27,16 @@ function installRuntimeProtocolFixture() {
     agent?: { plugin: string };
     integrations?: Record<string, { enabled: boolean; config: Record<string, ConfigValue> }>;
   }
+  type SecretPatches = Record<string, Record<string, string | null>>;
+  type SaveProjectSettingsInput =
+    | { mode: "create"; project: ProjectMutation; secretPatches: SecretPatches }
+    | {
+      mode: "update";
+      id: string;
+      expectedRevision: number;
+      project: ProjectMutation;
+      secretPatches: SecretPatches;
+    };
   interface FixtureProject extends Omit<ProjectMutation, "expectedRevision" | "integrations"> {
     id: string;
     integrations: Record<string, FixtureIntegration>;
@@ -120,6 +130,28 @@ function installRuntimeProtocolFixture() {
       workspaces: { local: { available: true } },
     }),
     getProject: async (id: string) => clone(read().projects.find((project) => project.id === id)),
+    saveProjectSettings: async (input: SaveProjectSettingsInput) => {
+      const state = read();
+      const current = input.mode === "update"
+        ? state.projects.find((project) => project.id === input.id)
+        : undefined;
+      if (input.mode === "update" && !current) throw new Error("PROJECT_NOT_FOUND");
+      if (input.mode === "update" && current?.revision !== input.expectedRevision) {
+        throw new Error("STALE_PROJECT_REVISION");
+      }
+      const project = projectDto(input.project, current);
+      for (const [pluginId, patch] of Object.entries(input.secretPatches)) {
+        const integration = project.integrations[pluginId];
+        if (!integration) throw new Error("PROJECT_INTEGRATION_NOT_FOUND");
+        for (const [key, value] of Object.entries(patch)) {
+          integration.secretConfigured[key] = value !== null;
+        }
+      }
+      if (input.mode === "create") state.projects.push(project);
+      else state.projects[state.projects.findIndex((candidate) => candidate.id === input.id)] = project;
+      write(state);
+      return clone(project);
+    },
     createProject: async (input: ProjectMutation) => {
       const state = read();
       const project = projectDto(input);

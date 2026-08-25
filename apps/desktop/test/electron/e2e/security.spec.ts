@@ -35,6 +35,7 @@ test("keeps the packaged renderer isolated behind the frozen desktop bridge", as
       "rejectDelivery",
       "requestReassessment",
       "retryIssue",
+      "saveProjectSettings",
       "setIntegrationSecrets",
       "submitManual",
       "subscribeIssueEvents",
