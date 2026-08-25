@@ -3637,6 +3637,16 @@ a:focus-visible {
     width: 280px;
     box-shadow: -12px 0 28px rgb(0 0 0 / 24%);
   }
+
+  .workspace.metadata-open .issue-actions .failure-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace.metadata-open .issue-actions .issue-action-buttons,
+  .workspace.metadata-open .issue-actions .approval-actions,
+  .workspace.metadata-open .issue-actions .capability-request-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 900px) {

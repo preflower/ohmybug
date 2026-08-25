@@ -61,6 +61,11 @@ function installRuntimeProtocolFixture() {
     } & Record<string, unknown>;
     resolution?: string;
     duplicateOf?: string;
+    pauseContext?: {
+      operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION";
+      resumeStatus: "ASSESSING" | "REPAIRING" | "EVIDENCE_CAPTURE" | "FINALIZATION_RECOVERY";
+      pausedAt: string;
+    };
     lastFailure?: { stage: "ASSESSMENT" | "REPAIR"; code: string };
     revision: number;
     createdAt: string;

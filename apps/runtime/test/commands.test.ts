@@ -321,7 +321,7 @@ describe("Runtime human commands", () => {
         }],
       },
     };
-    store.transaction((transaction) => transaction.insertIssue(legacy, null));
+    store.transaction((transaction) => transaction.insertIssue(legacy, "ASSESS"));
 
     expect(() => commands.submitReview(legacy.id, {
       expectedRevision: legacy.revision,

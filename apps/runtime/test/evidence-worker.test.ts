@@ -90,6 +90,36 @@ describe("Runtime evidence worker", () => {
     expect(harness.agent.repairSessions).toEqual([]);
   });
 
+  it("does not persist stale evidence after a user pause", async () => {
+    const harness = setup("agent");
+    let releaseEvidence!: (result: typeof harness.agent.nextEvidenceResult) => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const deferred = new Promise<typeof harness.agent.nextEvidenceResult>((resolve) => {
+      releaseEvidence = resolve;
+    });
+    harness.agent.captureEvidence = async (session, input) => {
+      harness.agent.evidenceSessions.push(session.sessionId);
+      harness.agent.evidenceInputs.push(input);
+      markStarted();
+      return deferred;
+    };
+    const draining = harness.worker.drainOne();
+    await started;
+    await harness.commands.pauseIssue(harness.issue.id);
+    releaseEvidence(harness.agent.nextEvidenceResult);
+    await draining;
+
+    expect(harness.store.getIssue(harness.issue.id)).toMatchObject({
+      status: "PAUSED",
+      repair: { deliveryDraft: { summary: "Implemented" } },
+      pauseContext: { operation: "CAPTURE_EVIDENCE", resumeStatus: "EVIDENCE_CAPTURE" },
+    });
+    expect(harness.store.getIssue(harness.issue.id)?.repair).not.toHaveProperty("delivery");
+    expect(harness.store.readEvents(harness.issue.id).map((event) => event.type))
+      .not.toContain("DELIVERY_READY");
+  });
+
   it("requeues an interrupted evidence turn without consuming a retry", async () => {
     const harness = setup("agent");
     harness.agent.evidenceError = new AgentTurnInterruptedError("RUNTIME_STOPPING");
