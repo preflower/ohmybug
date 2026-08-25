@@ -228,6 +228,36 @@ describe("Codex assessment", () => {
     expect(client.prompts[0]).toContain("Do not redo completed implementation work.");
   });
 
+  it("continues preserved Assessment work after a user pause", async () => {
+    const content = {
+      verdict: "FEATURE",
+      suggestedTitle: "Add CSV export",
+      reasoning: "CSV export is a new capability.",
+      rootCause: null,
+      solution: "Add an export action and CSV serializer.",
+      suspectedDuplicateOf: null,
+    } as const;
+    const sessions = new MemorySessions();
+    const client = new FixtureClient([JSON.stringify(content)]);
+    const adapter = new CodexAgentAdapter({
+      client,
+      sessions,
+      id: () => "logical-user-resume",
+    });
+    const current = issue();
+    const session = await adapter.createSession({ issue: current, project });
+    await bindSession(sessions, "logical-user-resume");
+
+    await adapter.assess(session, {
+      issue: current,
+      project,
+      continuation: { reason: "USER_RESUMED" },
+    });
+
+    expect(client.prompts[0]).toContain("paused by the user");
+    expect(client.prompts[0]).toContain("Do not redo completed work");
+  });
+
   it("clears active-session state when thread creation fails", async () => {
     const client: CodexClient = {
       startThread: () => { throw new Error("THREAD_START_FAILED"); },

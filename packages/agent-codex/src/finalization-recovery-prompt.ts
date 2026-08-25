@@ -57,6 +57,12 @@ function recoveryInstructions(input: FinalizationRecoveryInput): string[] {
 }
 
 function continuationPrompt(input: FinalizationRecoveryInput): string[] {
+  if (input.continuation?.reason === "USER_RESUMED") {
+    return [
+      "The previous recovery turn was paused by the user and is now being continued.",
+      "Inspect the preserved recovery workspace and prior verification. Do not redo completed work; finish only the remaining recovery requirements.",
+    ];
+  }
   if (input.continuation?.reason === "CAPABILITY_GRANTED") {
     return [
       `Capability request ${input.continuation.requestId} was granted: ${JSON.stringify(input.continuation.capabilities)}.`,

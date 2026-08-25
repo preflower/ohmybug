@@ -5,7 +5,7 @@ import { CodexAgentAdapter } from "../src/codex-agent-adapter.js";
 import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
 describe("Codex cancellation", () => {
-  it.each(["RUNTIME_STOPPING", "USER_CANCELED"] as const)(
+  it.each(["RUNTIME_STOPPING", "USER_CANCELED", "USER_PAUSED"] as const)(
     "aborts the active turn with the %s reason",
     async (reason) => {
     let turnSignal: AbortSignal | undefined;
