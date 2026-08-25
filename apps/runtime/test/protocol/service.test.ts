@@ -486,6 +486,38 @@ describe("RuntimeService", () => {
     })).rejects.toThrow("PROJECT_SETTINGS_ROLLBACK_FAILED");
   });
 
+  it("rolls back project-settings secrets when a later keychain write fails", async () => {
+    class FailingSecretStore extends MemorySecretStore {
+      override async set(ref: string, value: string): Promise<void> {
+        if (ref.endsWith(":secret")) throw new Error("KEYCHAIN_WRITE_FAILED");
+        await super.set(ref, value);
+      }
+    }
+
+    const secrets = new FailingSecretStore();
+    const { root, service, store } = await harness(secrets);
+    const projectDirectory = join(root, "project-settings-keychain-failure");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+
+    await expect(service.saveProjectSettings({
+      mode: "create",
+      project: {
+        path: projectDirectory,
+        key: "SHOP",
+        integrations: {
+          fixture: { enabled: true, config: { workspace: "shop" } },
+        },
+      },
+      secretPatches: {
+        fixture: { token: "token-value", secret: "secret-value" },
+      },
+    })).rejects.toThrow("KEYCHAIN_WRITE_FAILED");
+
+    expect(store.listProjects()).toEqual([]);
+    await expect(secrets.get("integration-secret:id-1:fixture:token")).resolves.toBeNull();
+    await expect(secrets.get("integration-secret:id-1:fixture:secret")).resolves.toBeNull();
+  });
+
   it("rolls back an atomic plugin secret patch when one keychain write fails", async () => {
     class FailingSecretStore extends MemorySecretStore {
       failNextSecret = false;

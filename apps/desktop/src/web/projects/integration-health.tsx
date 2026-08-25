@@ -13,7 +13,7 @@ export function IntegrationHealthStatus({
     : state === "connecting"
       ? "正在连接"
       : state === "backoff"
-        ? `连接失败${health?.lastError ? `：${health.lastError}` : ""}`
+        ? `连接失败，正在重试${health?.lastError ? `：${health.lastError}` : ""}`
         : state === "disabled"
           ? "已停用"
           : "已停用";

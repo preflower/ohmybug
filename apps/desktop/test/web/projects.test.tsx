@@ -149,7 +149,7 @@ describe("Project configuration", () => {
   it.each([
     [true, { state: "connected" as const }, "已连接"],
     [true, { state: "connecting" as const }, "正在连接"],
-    [true, { state: "backoff" as const, lastError: "凭证无效" }, "连接失败：凭证无效"],
+    [true, { state: "backoff" as const, lastError: "凭证无效" }, "连接失败，正在重试：凭证无效"],
     [true, { state: "stopped" as const }, "已停用"],
     [false, undefined, "已停用"],
   ])("shows integration health for enabled=%s as %s", (enabled, health, label) => {
