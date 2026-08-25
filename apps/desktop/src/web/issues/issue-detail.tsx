@@ -1,4 +1,4 @@
-import { CircleAlert, Image as ImageIcon, Maximize2, Minus, Play, Plus, RotateCcw, Search, Square, Wrench, X } from "lucide-react";
+import { CircleAlert, Image as ImageIcon, Maximize2, Minus, Play, Plus, RotateCcw, Search, Wrench, X } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from "react";
 
 import { api } from "../api/client.js";
@@ -201,7 +201,7 @@ export function IssueDetail({
         </section>
       ) : null}
 
-      {canCancel && !capabilityRequest && onCancel ? <section aria-label="运行控制" className="failure-actions"><div><strong>Agent 正在运行</strong><span>取消会终止当前回合，并将 Issue 标记为已取消。</span></div>{cancelError ? <Alert className="form-error" variant="destructive"><AlertDescription>{cancelError}</AlertDescription></Alert> : null}<Button disabled={canceling} type="button" variant="secondary" onClick={() => { setCanceling(true); setCancelError(""); void refreshAfter(onCancel).catch((caught) => setCancelError(caught instanceof Error ? caught.message : "取消失败")).finally(() => setCanceling(false)); }}><Square aria-hidden="true" size={12} />{canceling ? "取消中…" : "取消 Agent 运行"}</Button></section> : null}
+      {canCancel && !capabilityRequest && onCancel ? <section aria-label="运行控制" className="failure-actions"><div><strong>Agent 正在运行</strong><span>取消会终止当前回合，并将 Issue 标记为已取消。</span></div>{cancelError ? <Alert className="form-error" variant="destructive"><AlertDescription>{cancelError}</AlertDescription></Alert> : null}<Button disabled={canceling} type="button" variant="secondary" onClick={() => { setCanceling(true); setCancelError(""); void refreshAfter(onCancel).catch((caught) => setCancelError(caught instanceof Error ? caught.message : "取消失败")).finally(() => setCanceling(false)); }}><X aria-hidden="true" size={12} />{canceling ? "取消中…" : "取消 Agent 运行"}</Button></section> : null}
 
       {retryLabel && onRetry ? <section aria-label="失败恢复" className="failure-actions"><div><strong>{retryLabel}</strong><span>{issue.status === "EVIDENCE_FAILED" ? "实现改动和工作目录已保留，只会重新采集证据。" : "Issue 上下文和已确认内容会保留，并从可恢复阶段继续。"}</span></div>{retryError ? <Alert className="form-error" variant="destructive"><AlertDescription>{retryError}</AlertDescription></Alert> : null}<Button disabled={retrying} type="button" variant="secondary" onClick={() => { setRetrying(true); setRetryError(""); void refreshAfter(onRetry).catch((caught) => setRetryError(caught instanceof Error ? caught.message : "重试失败")).finally(() => setRetrying(false)); }}><RotateCcw size={13} />{retrying ? "重试中…" : retryLabel}</Button></section> : null}
 

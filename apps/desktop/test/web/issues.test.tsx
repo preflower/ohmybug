@@ -346,6 +346,14 @@ describe("Issue detail", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  it("uses a clear cancellation icon for an active Agent operation", () => {
+    render(<IssueDetail issue={{ ...issue, status: "REPAIRING", resolution: undefined }} onRefresh={async () => undefined} onCancel={async () => undefined} />);
+
+    const cancel = screen.getByRole("button", { name: "取消 Agent 运行" });
+    expect(cancel.querySelector(".lucide-x")).not.toBeNull();
+    expect(cancel.querySelector(".lucide-square")).toBeNull();
+  });
+
   it("keeps Assessment actions outside the scrolling document and closes through cancel", async () => {
     const onCancel = vi.fn(async () => undefined);
     const onRefresh = vi.fn(async () => undefined);
