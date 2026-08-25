@@ -32,23 +32,32 @@ function ReviewPanelContent({
   onSubmit,
   onCancel,
 }: ReviewPanelProps & { review: NonNullable<IssueDto["review"]> }) {
-  const [choiceId, setChoiceId] = useState(review?.choices[0]?.id ?? "");
+  const duplicateCandidate = issue.assessment?.suspectedDuplicateOf?.trim();
+  const choices = useMemo(
+    () => review.choices.filter((choice) => choice.id !== "duplicate" || Boolean(duplicateCandidate)),
+    [duplicateCandidate, review.choices],
+  );
+  const [choiceId, setChoiceId] = useState(choices[0]?.id ?? "");
   const [feedback, setFeedback] = useState("");
-  const [data, setData] = useState<ReviewSubmissionInput["data"]>();
+  const [choiceData, setChoiceData] = useState<Record<string, ReviewSubmissionInput["data"]>>({});
   const [busy, setBusy] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [error, setError] = useState("");
 
   const selected = useMemo(
-    () => review?.choices.find((choice) => choice.id === choiceId),
-    [choiceId, review],
+    () => choices.find((choice) => choice.id === choiceId),
+    [choiceId, choices],
   );
-  const response = data ?? (review.kind === "assessment" && choiceId === "implement"
-    ? { title: issue.assessment?.suggestedTitle ?? issue.title }
+  const response = choiceData[choiceId] ?? (review.kind === "assessment"
+    ? choiceId === "implement"
+      ? { title: issue.assessment?.suggestedTitle ?? issue.title }
+      : choiceId === "duplicate" && duplicateCandidate
+        ? { duplicateOf: duplicateCandidate }
+        : undefined
     : undefined);
   const missingRequiredData = review.kind === "assessment" && choiceId === "duplicate"
-    && (!data || typeof data !== "object" || Array.isArray(data)
-      || typeof data.duplicateOf !== "string" || !data.duplicateOf.trim());
+    && (!response || typeof response !== "object" || Array.isArray(response)
+      || typeof response.duplicateOf !== "string" || !response.duplicateOf.trim());
 
   const submit = async () => {
     if (!selected || (selected.feedbackRequired && !feedback.trim())) return;
@@ -63,7 +72,7 @@ function ReviewPanelContent({
         ...(response === undefined ? {} : { data: response }),
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "审核提交失败");
+      setError(reviewErrorMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -80,7 +89,12 @@ function ReviewPanelContent({
         </div>
       </div>
 
-      <ReviewRenderer issue={issue} choiceId={choiceId} data={data} onDataChange={setData} />
+      <ReviewRenderer
+        issue={issue}
+        choiceId={choiceId}
+        data={response}
+        onDataChange={(next) => setChoiceData((current) => ({ ...current, [choiceId]: next }))}
+      />
 
       <div className="review-choice-list">
         <span className="review-choice-legend">选择处理方式</span>
@@ -91,7 +105,7 @@ function ReviewPanelContent({
           value={choiceId}
           onValueChange={setChoiceId}
         >
-        {review.choices.map((choice) => (
+        {choices.map((choice) => (
           <label className="review-choice" key={choice.id}>
             <RadioGroupItem
               value={choice.id}
@@ -139,6 +153,20 @@ function ReviewPanelContent({
       </div>
     </section>
   );
+}
+
+function reviewErrorMessage(caught: unknown): string {
+  const message = caught instanceof Error ? caught.message : "审核提交失败";
+  if (message.includes("DUPLICATE_NOT_SUGGESTED")) {
+    return "Agent 尚未提供疑似重复目标，请选择其他处理方式或要求重新分析。";
+  }
+  if (message.includes("DUPLICATE_TARGET_NOT_FOUND")) {
+    return "找不到该重复 Issue，请检查编号后重试。";
+  }
+  if (message.includes("DUPLICATE_TARGET_SELF")) {
+    return "不能把 Issue 标记为自身的重复项。";
+  }
+  return message;
 }
 
 function reviewTitle(kind: string): string {

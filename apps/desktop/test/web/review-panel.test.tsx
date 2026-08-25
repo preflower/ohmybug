@@ -129,4 +129,67 @@ describe("unified review panel", () => {
     });
     expect(screen.getByRole("button", { name: "要求重新分析" })).toBeEnabled();
   });
+
+  it("hides a persisted duplicate choice when Assessment did not suggest a target", () => {
+    render(<ReviewPanel issue={{
+      ...issue,
+      review: {
+        id: "review-assessment-legacy",
+        kind: "assessment",
+        requestedFrom: "ASSESSING",
+        payload: { verdict: "BUG" },
+        choices: [{
+          id: "implement",
+          label: "开始实现",
+          continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+        }, {
+          id: "duplicate",
+          label: "确认为重复 Issue",
+          continuation: { resumeStatus: "CLOSED", resolution: "DUPLICATE" },
+        }],
+        requestedAt: timestamp,
+      },
+    }} onSubmit={async () => undefined} />);
+
+    expect(screen.queryByRole("radio", { name: "确认为重复 Issue" })).not.toBeInTheDocument();
+  });
+
+  it("prefills the Agent duplicate candidate and submits only duplicate data", async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    render(<ReviewPanel issue={{
+      ...issue,
+      assessment: { ...issue.assessment!, suspectedDuplicateOf: "CHK-9" },
+      review: {
+        id: "review-assessment-duplicate",
+        kind: "assessment",
+        requestedFrom: "ASSESSING",
+        payload: { verdict: "BUG" },
+        choices: [{
+          id: "implement",
+          label: "开始实现",
+          continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+        }, {
+          id: "duplicate",
+          label: "确认为重复 Issue",
+          continuation: { resumeStatus: "CLOSED", resolution: "DUPLICATE" },
+        }],
+        requestedAt: timestamp,
+      },
+    }} onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText("Issue 标题"), {
+      target: { value: "Edited implementation title" },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "确认为重复 Issue" }));
+    expect(screen.getByLabelText("重复 Issue")).toHaveValue("CHK-9");
+    fireEvent.click(screen.getByRole("button", { name: "确认为重复 Issue" }));
+
+    await act(async () => undefined);
+    expect(onSubmit).toHaveBeenCalledWith({
+      expectedRevision: 12,
+      requestId: "review-assessment-duplicate",
+      choiceId: "duplicate",
+      data: { duplicateOf: "CHK-9" },
+    });
+  });
 });

@@ -112,6 +112,9 @@ export class RuntimeCommands {
     const before = this.getIssue(issueId);
     let duplicateOf: string | undefined;
     if (before.review?.kind === "assessment" && submission.choiceId === "duplicate") {
+      if (!before.assessment?.suspectedDuplicateOf?.trim()) {
+        throw new Error("DUPLICATE_NOT_SUGGESTED");
+      }
       duplicateOf = this.resolveDuplicateTarget(before, reviewResponseDuplicate(submission));
     }
     const now = this.dependencies.now();

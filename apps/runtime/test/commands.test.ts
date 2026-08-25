@@ -295,12 +295,54 @@ describe("Runtime human commands", () => {
     })).toMatchObject({ status: "CLOSED", resolution: "NOT_A_BUG" });
   });
 
+  it("offers duplicate closure only when Assessment suggests a target", () => {
+    expect(reviewedIssue().review?.choices.map((choice) => choice.id))
+      .toEqual(["implement", "reassess"]);
+    expect(reviewedIssue({
+      assessment: { ...assessment, suspectedDuplicateOf: "OMB-20" },
+    }).review?.choices.map((choice) => choice.id))
+      .toEqual(["implement", "duplicate", "reassess"]);
+  });
+
+  it("rejects a persisted duplicate choice without an Agent candidate", () => {
+    const { commands, store } = createHarness();
+    const issue = reviewedIssue();
+    const legacy = {
+      ...issue,
+      review: {
+        ...issue.review!,
+        choices: [...issue.review!.choices, {
+          id: "duplicate",
+          label: "确认为重复 Issue",
+          continuation: {
+            resumeStatus: "CLOSED" as const,
+            resolution: "DUPLICATE" as const,
+          },
+        }],
+      },
+    };
+    store.transaction((transaction) => transaction.insertIssue(legacy, null));
+
+    expect(() => commands.submitReview(legacy.id, {
+      expectedRevision: legacy.revision,
+      requestId: legacy.review.id,
+      choiceId: "duplicate",
+      data: { duplicateOf: "OMB-20" },
+    })).toThrow("DUPLICATE_NOT_SUGGESTED");
+    expect(store.getIssue(legacy.id)).toEqual(legacy);
+    expect(store.readEvents(legacy.id)).toEqual([]);
+  });
+
   it.each([
     ["missing", "UNKNOWN-1"],
     ["blank", "   "],
   ])("rejects a %s duplicate target without changing the Issue", (_label, duplicateOf) => {
     const { commands, store } = createHarness();
-    const issue = reviewedIssue({ id: "issue-duplicate", identifier: "OMB-10" });
+    const issue = reviewedIssue({
+      id: "issue-duplicate",
+      identifier: "OMB-10",
+      assessment: { ...assessment, suspectedDuplicateOf: "OMB-20" },
+    });
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
     const reference = {
       assessmentRevision: assessment.revision,
@@ -318,7 +360,11 @@ describe("Runtime human commands", () => {
     ["Issue identifier", "OMB-10"],
   ])("rejects a duplicate target that is self by %s", (_label, duplicateOf) => {
     const { commands, store } = createHarness();
-    const issue = reviewedIssue({ id: "issue-duplicate", identifier: "OMB-10" });
+    const issue = reviewedIssue({
+      id: "issue-duplicate",
+      identifier: "OMB-10",
+      assessment: { ...assessment, suspectedDuplicateOf: "OMB-20" },
+    });
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
 
     expect(() => commands.confirmDuplicate(issue.id, {
@@ -337,7 +383,11 @@ describe("Runtime human commands", () => {
       path: "/tmp/project-2",
       agent: { plugin: "fake" },
     });
-    const issue = reviewedIssue({ id: "issue-duplicate", identifier: "OMB-10" });
+    const issue = reviewedIssue({
+      id: "issue-duplicate",
+      identifier: "OMB-10",
+      assessment: { ...assessment, suspectedDuplicateOf: "OMB-20" },
+    });
     const target = reviewedIssue({ id: "target-id", identifier: "OMB-20" });
     const cross = reviewedIssue({
       id: "cross-id",
