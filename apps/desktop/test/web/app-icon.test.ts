@@ -127,4 +127,27 @@ describe("application icon", () => {
       expect(maxY - minY + 1).toBeGreaterThanOrEqual(Math.floor(size * 0.7));
     }
   });
+
+  it("ships standard and Retina non-template tray status dots", async () => {
+    const colors = {
+      failure: [0xd6, 0x5f, 0x6b],
+      review: [0xd1, 0x9a, 0x3a],
+      processing: [0x5d, 0x8f, 0xde],
+    } as const;
+    for (const [kind, rgb] of Object.entries(colors)) {
+      for (const [suffix, size] of [["", 8], ["@2x", 16]] as const) {
+        const path = resolve(desktopRoot, "assets/icons", `tray-status-${kind}${suffix}.png`);
+        expect(existsSync(path)).toBe(true);
+        const { data, info } = await sharp(path)
+          .ensureAlpha()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+        expect([info.width, info.height, info.channels]).toEqual([size, size, 4]);
+        expect([...data.subarray(0, 4)]).toEqual([0, 0, 0, 0]);
+        const center = ((Math.floor(size / 2) * size) + Math.floor(size / 2)) * 4;
+        expect([...data.subarray(center, center + 3)]).toEqual([...rgb]);
+        expect(data[center + 3]).toBe(255);
+      }
+    }
+  });
 });

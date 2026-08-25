@@ -30,6 +30,12 @@ describe("Electron packaging", () => {
       renderer: ".vite/renderer/index.html",
       trayIcon: ".vite/build/apps/desktop/assets/icons/oh-my-bug-trayTemplate.png",
       trayIcon2x: ".vite/build/apps/desktop/assets/icons/oh-my-bug-trayTemplate@2x.png",
+      trayStatusFailure: ".vite/build/apps/desktop/assets/icons/tray-status-failure.png",
+      trayStatusFailure2x: ".vite/build/apps/desktop/assets/icons/tray-status-failure@2x.png",
+      trayStatusReview: ".vite/build/apps/desktop/assets/icons/tray-status-review.png",
+      trayStatusReview2x: ".vite/build/apps/desktop/assets/icons/tray-status-review@2x.png",
+      trayStatusProcessing: ".vite/build/apps/desktop/assets/icons/tray-status-processing.png",
+      trayStatusProcessing2x: ".vite/build/apps/desktop/assets/icons/tray-status-processing@2x.png",
     });
     expect(Object.values(desktopBuildLayout).join(" ")).not.toContain("localhost");
     const mainUrl = pathToFileURL(resolve(repositoryRoot, desktopBuildLayout.main));

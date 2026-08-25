@@ -98,6 +98,12 @@ export async function copyDesktopAssets(root = projectRoot): Promise<void> {
   for (const name of [
     "oh-my-bug-trayTemplate.png",
     "oh-my-bug-trayTemplate@2x.png",
+    "tray-status-failure.png",
+    "tray-status-failure@2x.png",
+    "tray-status-review.png",
+    "tray-status-review@2x.png",
+    "tray-status-processing.png",
+    "tray-status-processing@2x.png",
   ]) {
     await copyFile(resolve(source, name), resolve(destination, name));
   }
