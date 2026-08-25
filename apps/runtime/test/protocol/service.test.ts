@@ -375,6 +375,117 @@ describe("RuntimeService", () => {
     })).rejects.toThrow("SECRET_FIELD_NOT_DECLARED:unknown");
   });
 
+  it("creates a project and required secrets in one settings save", async () => {
+    const { root, service, secrets } = await harness();
+    const projectDirectory = join(root, "project-settings-create");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+
+    const saved = await service.saveProjectSettings({
+      mode: "create",
+      project: {
+        path: projectDirectory,
+        key: "SHOP",
+        integrations: {
+          fixture: { enabled: true, config: { workspace: "shop" } },
+        },
+      },
+      secretPatches: {
+        fixture: { token: "token-value", secret: "secret-value" },
+      },
+    });
+
+    expect(saved.integrations?.fixture?.secretConfigured).toEqual({
+      token: true,
+      secret: true,
+    });
+    await expect(secrets.get(`integration-secret:${saved.id}:fixture:token`))
+      .resolves.toBe("token-value");
+    await expect(secrets.get(`integration-secret:${saved.id}:fixture:secret`))
+      .resolves.toBe("secret-value");
+  });
+
+  it("restores secrets when a stale SQLite update rejects", async () => {
+    const { root, service, secrets, store } = await harness();
+    const projectDirectory = join(root, "project-settings-stale");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+    const created = await service.saveProjectSettings({
+      mode: "create",
+      project: {
+        path: projectDirectory,
+        key: "SHOP",
+        integrations: {
+          fixture: { enabled: true, config: { workspace: "shop" } },
+        },
+      },
+      secretPatches: {
+        fixture: { token: "old-token", secret: "old-secret" },
+      },
+    });
+    const before = store.getProject(created.id);
+
+    await expect(service.saveProjectSettings({
+      mode: "update",
+      id: created.id,
+      expectedRevision: created.revision - 1,
+      project: {
+        path: projectDirectory,
+        key: "SHOP",
+        integrations: {
+          fixture: { enabled: true, config: { workspace: "changed" } },
+        },
+      },
+      secretPatches: { fixture: { token: "new-token" } },
+    })).rejects.toThrow("CONCURRENT_UPDATE");
+
+    await expect(secrets.get(`integration-secret:${created.id}:fixture:token`))
+      .resolves.toBe("old-token");
+    expect(store.getProject(created.id)).toEqual(before);
+  });
+
+  it("reports a stable error when project-settings secret rollback fails", async () => {
+    class RollbackFailingSecretStore extends MemorySecretStore {
+      failRollback = false;
+
+      override async set(ref: string, value: string): Promise<void> {
+        if (this.failRollback && value === "old-token") {
+          throw new Error("KEYCHAIN_ROLLBACK_FAILED");
+        }
+        await super.set(ref, value);
+      }
+    }
+
+    const secrets = new RollbackFailingSecretStore();
+    const { root, service } = await harness(secrets);
+    const projectDirectory = join(root, "project-settings-rollback");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+    const created = await service.saveProjectSettings({
+      mode: "create",
+      project: {
+        path: projectDirectory,
+        key: "SHOP",
+        integrations: {
+          fixture: { enabled: true, config: { workspace: "shop" } },
+        },
+      },
+      secretPatches: { fixture: { token: "old-token", secret: "old-secret" } },
+    });
+    secrets.failRollback = true;
+
+    await expect(service.saveProjectSettings({
+      mode: "update",
+      id: created.id,
+      expectedRevision: created.revision - 1,
+      project: {
+        path: projectDirectory,
+        key: "SHOP",
+        integrations: {
+          fixture: { enabled: true, config: { workspace: "changed" } },
+        },
+      },
+      secretPatches: { fixture: { token: "new-token" } },
+    })).rejects.toThrow("PROJECT_SETTINGS_ROLLBACK_FAILED");
+  });
+
   it("rolls back an atomic plugin secret patch when one keychain write fails", async () => {
     class FailingSecretStore extends MemorySecretStore {
       failNextSecret = false;
