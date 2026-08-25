@@ -239,6 +239,42 @@ describe("control center workbench", () => {
     ));
   });
 
+  it("pauses and resumes an active Issue without terminal cancellation", async () => {
+    const activeIssue: IssueDto = { ...issue, status: "REPAIRING", review: undefined };
+    const pausedIssue: IssueDto = {
+      ...activeIssue,
+      status: "PAUSED",
+      revision: activeIssue.revision + 1,
+      pauseContext: {
+        operation: "REPAIR",
+        resumeStatus: "REPAIRING",
+        pausedAt: activeIssue.updatedAt,
+      },
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([activeIssue]);
+    vi.spyOn(api, "issue")
+      .mockResolvedValueOnce(activeIssue)
+      .mockResolvedValueOnce(pausedIssue)
+      .mockResolvedValue(activeIssue);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    const pause = vi.spyOn(api, "pause").mockResolvedValue(pausedIssue);
+    const resume = vi.spyOn(api, "resume").mockResolvedValue({ ...activeIssue, revision: pausedIssue.revision + 1 });
+    const cancel = vi.spyOn(api, "cancel");
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "暂停 Agent" }));
+    await waitFor(() => expect(pause).toHaveBeenCalledWith(activeIssue.id));
+    fireEvent.click(await screen.findByRole("button", { name: "继续执行" }));
+    await waitFor(() => expect(resume).toHaveBeenCalledWith(activeIssue.id));
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
   it("orders the Issue list newest first and selects the newest Issue", async () => {
     const newestIssue: IssueDto = {
       ...issue,
@@ -851,6 +887,7 @@ describe("control center workbench", () => {
     const rail = await screen.findByTestId("issue-metadata-rail");
     expect(await within(rail).findByText("ohmybug/chk-1")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认取消" }));
     await waitFor(() => expect(cancel).toHaveBeenCalledWith(issue.id));
     await waitFor(() => expect(workspace).toHaveBeenCalledTimes(2));
 

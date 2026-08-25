@@ -251,6 +251,23 @@ describe("Agent activity", () => {
     expect(screen.queryByText("运行中")).not.toBeInTheDocument();
   });
 
+  it("marks a paused turn interrupted and records a later resume without a fake command", () => {
+    render(<AgentActivity active={false} events={[
+      { id: "issue-1:1", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始实现" } },
+      { id: "issue-1:2", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "AGENT_COMMAND_STARTED", occurredAt: "2026-08-24T09:00:01Z", data: { message: "正在执行项目命令", detail: "$ pnpm test" } },
+      { id: "issue-1:3", issueId: "issue-1", sequence: 3, actor: "USER", type: "ISSUE_PAUSED", occurredAt: "2026-08-24T09:00:02Z", data: {} },
+      { id: "issue-1:4", issueId: "issue-1", sequence: 4, actor: "USER", type: "ISSUE_RESUMED", occurredAt: "2026-08-24T09:01:00Z", data: { operation: "REPAIR" } },
+    ]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+
+    expect(screen.getByText("Issue 已暂停")).toBeVisible();
+    expect(screen.getByText("Issue 已继续执行")).toBeVisible();
+    expect(screen.getAllByText("已中断")).toHaveLength(2);
+    expect(screen.queryByText("已取消")).not.toBeInTheDocument();
+    expect(screen.getAllByText("$ pnpm test")).toHaveLength(1);
+  });
+
   it("uses correlation IDs when identical commands finish out of order", () => {
     render(<AgentActivity active={false} events={[
       { id: "issue-1:1", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始实现" } },

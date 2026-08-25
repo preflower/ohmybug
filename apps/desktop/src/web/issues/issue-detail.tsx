@@ -7,7 +7,6 @@ import type {
   IssueDto,
   ReviewSubmissionInput,
 } from "../api/types.js";
-import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
 import {
   Dialog,
@@ -16,9 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/ui/dialog.js";
-import { CapabilityRequestPanel } from "./capability-request-panel.js";
+import { IssueActions } from "./issue-actions.js";
 import { IssueStatusBadge } from "./issue-status.js";
-import { ReviewPanel } from "./review-panel.js";
 
 interface IssueDetailProps {
   issue: IssueDto;
@@ -26,6 +24,8 @@ interface IssueDetailProps {
   onRefresh: () => Promise<void>;
   onApproveDelivery?: () => Promise<void>;
   onSubmitReview?: (input: ReviewSubmissionInput) => Promise<void>;
+  onPause?: () => Promise<void>;
+  onResume?: () => Promise<void>;
   onCancel?: () => Promise<void>;
   onRetry?: () => Promise<void>;
   onRebuildSession?: () => Promise<void>;
@@ -73,6 +73,8 @@ export function IssueDetail({
   onRefresh,
   onApproveDelivery,
   onSubmitReview,
+  onPause,
+  onResume,
   onCancel,
   onRetry,
   onRebuildSession,
@@ -81,42 +83,9 @@ export function IssueDetail({
   const assessment = issue.assessment;
   const delivery = issue.repair?.delivery;
   const latestInput = issue.inputs.at(-1);
-  const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState("");
-  const [canceling, setCanceling] = useState(false);
-  const [cancelError, setCancelError] = useState("");
-  const [rebuilding, setRebuilding] = useState(false);
-  const [rebuildError, setRebuildError] = useState("");
-  const [finalizationRetrying, setFinalizationRetrying] = useState(false);
-  const [finalizationRetryError, setFinalizationRetryError] = useState("");
-  const capabilityRequest = issue.status === "PERMISSION_REQUIRED"
-    ? issue.pendingCapabilityRequest
-    : undefined;
-  const canCancel = [
-    "ASSESSING",
-    "REPAIRING",
-    "EVIDENCE_CAPTURE",
-    "EVIDENCE_CHECK",
-    "PERMISSION_REQUIRED",
-    "FINALIZATION_RECOVERY",
-  ].includes(issue.status);
-  const sessionUnavailable = issue.lastFailure?.code === "AGENT_SESSION_UNAVAILABLE";
   const mergeRecovery = issue.finalizationRecovery?.context?.recoveryKind === "MERGE_CONFLICT"
     || issue.finalizationRecovery?.context?.recoveryKind === "MERGE_ENVIRONMENT"
     || issue.finalizationRecovery?.diagnostic?.step === "merge";
-  const retryLabel = sessionUnavailable
-    ? undefined
-    : issue.status === "ASSESSMENT_FAILED"
-    ? "重试分析"
-    : issue.status === "REPAIR_FAILED"
-      ? "重试实现"
-      : issue.status === "EVIDENCE_FAILED"
-        ? "重试证据"
-      : undefined;
-  const refreshAfter = async (action: () => Promise<void>) => {
-    await action();
-    await onRefresh();
-  };
 
   return (
     <article className="issue-detail">
@@ -138,14 +107,8 @@ export function IssueDetail({
         {latestInput?.data.content ? <p>{latestInput.data.content}</p> : null}
         {issue.inputs.length > 1 ? <span className="occurrence-summary">已收到 {issue.inputs.length} 次输入 · 最近 {new Date(latestInput!.receivedAt).toLocaleString("zh-CN")}</span> : null}
         {issue.resolution ? <p className="resolution-summary" role="status">结果：{issue.resolution}{issue.duplicateOf ? ` · ${issue.duplicateOf}` : ""}{issue.status === "COMPLETED" && issue.resolution === "FIXED" ? " · 修复已验收，Issue 已完成。" : issue.status === "COMPLETED" && issue.resolution === "IMPLEMENTED" ? " · 特性已验收，Issue 已完成。" : ""}</p> : null}
-        {issue.status === "EVIDENCE_FAILED" && !retrying ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />证据采集失败；实现改动和工作目录已保留。</div> : issue.lastFailure && !retrying ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />{failureMessage(issue.lastFailure)}</div> : null}
+        {issue.status === "EVIDENCE_FAILED" ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />证据采集失败；实现改动和工作目录已保留。</div> : issue.lastFailure ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />{failureMessage(issue.lastFailure)}</div> : null}
       </header>
-
-      {capabilityRequest && onGrantCapabilities && onCancel ? <CapabilityRequestPanel
-        request={capabilityRequest}
-        onGrant={() => refreshAfter(() => onGrantCapabilities(issue.revision, capabilityRequest.id))}
-        onCancel={() => refreshAfter(onCancel)}
-      /> : null}
 
       {issue.status === "FINALIZATION_RECOVERY" && issue.finalizationRecovery ? (
         <section
@@ -188,56 +151,6 @@ export function IssueDetail({
         </section>
       ) : null}
 
-      {canCancel && !capabilityRequest && onCancel ? <section aria-label="运行控制" className="failure-actions"><div><strong>Agent 正在运行</strong><span>取消会终止当前回合，并将 Issue 标记为已取消。</span></div>{cancelError ? <Alert className="form-error" variant="destructive"><AlertDescription>{cancelError}</AlertDescription></Alert> : null}<Button disabled={canceling} type="button" variant="secondary" onClick={() => { setCanceling(true); setCancelError(""); void refreshAfter(onCancel).catch((caught) => setCancelError(caught instanceof Error ? caught.message : "取消失败")).finally(() => setCanceling(false)); }}><X aria-hidden="true" size={12} />{canceling ? "取消中…" : "取消 Agent 运行"}</Button></section> : null}
-
-      {retryLabel && onRetry ? <section aria-label="失败恢复" className="failure-actions"><div><strong>{retryLabel}</strong><span>{issue.status === "EVIDENCE_FAILED" ? "实现改动和工作目录已保留，只会重新采集证据。" : "Issue 上下文和已确认内容会保留，并从可恢复阶段继续。"}</span></div>{retryError ? <Alert className="form-error" variant="destructive"><AlertDescription>{retryError}</AlertDescription></Alert> : null}<Button disabled={retrying} type="button" variant="secondary" onClick={() => { setRetrying(true); setRetryError(""); void refreshAfter(onRetry).catch((caught) => setRetryError(caught instanceof Error ? caught.message : "重试失败")).finally(() => setRetrying(false)); }}><RotateCcw size={13} />{retrying ? "重试中…" : retryLabel}</Button></section> : null}
-
-      {sessionUnavailable && onRebuildSession ? <section aria-label="会话恢复" className="failure-actions"><div><strong>Agent 会话已被删除或不可用</strong><span>重建后会保留 Issue、Assessment、反馈和证据记录，并用新会话继续当前阶段。</span></div>{rebuildError ? <Alert className="form-error" variant="destructive"><AlertDescription>{rebuildError}</AlertDescription></Alert> : null}<Button disabled={rebuilding} type="button" variant="secondary" onClick={() => { setRebuilding(true); setRebuildError(""); void refreshAfter(onRebuildSession).catch((caught) => setRebuildError(caught instanceof Error ? caught.message : "重建会话失败")).finally(() => setRebuilding(false)); }}><RotateCcw size={13} />{rebuilding ? "重建中…" : "重建 Agent 会话"}</Button></section> : null}
-
-      {issue.status === "FINALIZATION_FAILED" && onApproveDelivery ? (
-        <section aria-label="交付恢复" className="failure-actions">
-          <div>
-            <strong>交付失败，待重新验证</strong>
-            <span>代码和工作目录已保留；AI 会从 Repair 重新验证、修复后再发布。</span>
-            {issue.finalizationRecovery?.automaticAttempts === 1 ? (
-              <span>自动恢复尝试 1/1 已用尽</span>
-            ) : null}
-            {issue.finalizationRecovery?.summary ? (
-              <span>自动恢复结果：{issue.finalizationRecovery.summary}</span>
-            ) : null}
-            {issue.finalizationRecovery?.diagnostic ? (
-              <>
-                <code>
-                  {issue.finalizationRecovery.diagnostic.step} · {issue.finalizationRecovery.diagnostic.code}
-                </code>
-                <span>{issue.finalizationRecovery.diagnostic.message}</span>
-              </>
-            ) : null}
-          </div>
-          {finalizationRetryError ? (
-            <Alert className="form-error" variant="destructive">
-              <AlertDescription>{finalizationRetryError}</AlertDescription>
-            </Alert>
-          ) : null}
-          <Button
-            disabled={finalizationRetrying}
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setFinalizationRetrying(true);
-              setFinalizationRetryError("");
-              void refreshAfter(onApproveDelivery)
-                .catch((caught) => setFinalizationRetryError(
-                  caught instanceof Error ? caught.message : "重新验证失败",
-                ))
-                .finally(() => setFinalizationRetrying(false));
-            }}
-          >
-            <RotateCcw size={13} />
-            {finalizationRetrying ? "重新验证中…" : "重新验证并修复"}
-          </Button>
-        </section>
-      ) : null}
 
       {branch ? <section aria-label="交付分支" className="review-section"><div className="review-heading"><span>交付分支</span></div><dl><div><dt>分支</dt><dd><code>{branch.name}</code></dd></div><div><dt>Commit</dt><dd><code>{branch.commit.slice(0, 7)}</code></dd></div>{branch.remote ? <div><dt>Remote</dt><dd><code>{branch.remote}</code></dd></div> : null}</dl></section> : null}
 
@@ -258,15 +171,20 @@ export function IssueDetail({
         </section>
       ) : null}
 
-      {issue.status === "REVIEW_REQUIRED" && issue.review && onSubmitReview ? (
-        <ReviewPanel
-          issue={issue}
-          onCancel={onCancel ? () => refreshAfter(onCancel) : undefined}
-          onSubmit={(input) => refreshAfter(() => onSubmitReview(input))}
-        />
-      ) : null}
         </div>
       </div>
+      <IssueActions
+        issue={issue}
+        onApproveDelivery={onApproveDelivery}
+        onCancel={onCancel}
+        onGrantCapabilities={onGrantCapabilities}
+        onPause={onPause}
+        onRebuildSession={onRebuildSession}
+        onRefresh={onRefresh}
+        onResume={onResume}
+        onRetry={onRetry}
+        onSubmitReview={onSubmitReview}
+      />
     </article>
   );
 }

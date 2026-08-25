@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group.js";
 import { Textarea } from "../components/ui/textarea.js";
+import { CancelIssueButton } from "./cancel-issue-button.js";
 import { ReviewRenderer } from "./review-renderers.js";
 
 interface ReviewPanelProps {
@@ -41,7 +42,6 @@ function ReviewPanelContent({
   const [feedback, setFeedback] = useState("");
   const [choiceData, setChoiceData] = useState<Record<string, ReviewSubmissionInput["data"]>>({});
   const [busy, setBusy] = useState(false);
-  const [canceling, setCanceling] = useState(false);
   const [error, setError] = useState("");
 
   const selected = useMemo(
@@ -100,7 +100,7 @@ function ReviewPanelContent({
         <span className="review-choice-legend">选择处理方式</span>
         <RadioGroup
           aria-label="选择处理方式"
-          disabled={busy || canceling}
+          disabled={busy}
           name={`review-${review.id}`}
           value={choiceId}
           onValueChange={setChoiceId}
@@ -124,29 +124,16 @@ function ReviewPanelContent({
       <label className="feedback-field">
         {selected?.feedbackRequired ? "补充说明（必填）" : "补充说明（可选）"}
         <Textarea
-          disabled={busy || canceling}
+          disabled={busy}
           value={feedback}
           onChange={(event) => setFeedback(event.target.value)}
         />
       </label>
       {error ? <Alert className="form-error" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       <div className="approval-actions">
-        {onCancel ? (
-          <Button
-            disabled={busy || canceling}
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setCanceling(true);
-              setError("");
-              void onCancel()
-                .catch((caught) => setError(caught instanceof Error ? caught.message : "取消失败"))
-                .finally(() => setCanceling(false));
-            }}
-          >{canceling ? "取消中…" : "取消 Issue"}</Button>
-        ) : null}
+        {onCancel ? <CancelIssueButton disabled={busy} onCancel={onCancel} /> : null}
         <Button
-          disabled={busy || canceling || !selected || missingRequiredData || Boolean(selected.feedbackRequired && !feedback.trim())}
+          disabled={busy || !selected || missingRequiredData || Boolean(selected.feedbackRequired && !feedback.trim())}
           type="button"
           onClick={() => void submit()}
         >{busy ? "提交中…" : selected?.label ?? "提交审核"}</Button>

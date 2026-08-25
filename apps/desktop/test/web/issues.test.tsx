@@ -276,12 +276,12 @@ describe("Issue detail", () => {
   it("shows preserved implementation state while evidence is captured", () => {
     render(<IssueDetail
       issue={{ ...issue, status: "EVIDENCE_CAPTURE", resolution: undefined }}
-      onCancel={async () => undefined}
+      onPause={async () => undefined}
       onRefresh={async () => undefined}
     />);
 
     expect(screen.getByText("实现完成，正在采集证据")).toBeVisible();
-    expect(screen.getByRole("button", { name: "取消 Agent 运行" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "暂停 Agent" })).toBeEnabled();
   });
 
   it("retries only evidence after evidence capture fails", async () => {
@@ -310,7 +310,7 @@ describe("Issue detail", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
-  it("hides the previous failure banner as soon as retry starts", async () => {
+  it("keeps failure context visible while retry starts", async () => {
     let finishRetry: (() => void) | undefined;
     const onRetry = vi.fn(() => new Promise<void>((resolve) => {
       finishRetry = resolve;
@@ -320,7 +320,7 @@ describe("Issue detail", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Codex 未能完成实现");
     fireEvent.click(screen.getByRole("button", { name: "重试实现" }));
 
-    expect(screen.queryByText("Codex 未能完成实现")).not.toBeInTheDocument();
+    expect(screen.getByText("Codex 未能完成实现")).toBeVisible();
     expect(screen.getByRole("button", { name: "重试中…" })).toBeDisabled();
 
     await act(async () => finishRetry?.());
@@ -338,20 +338,32 @@ describe("Issue detail", () => {
     expect(onRetry).not.toHaveBeenCalled();
   });
 
-  it("lets the user cancel an active Agent operation", async () => {
+  it("pauses an active Agent operation without canceling the Issue", async () => {
+    const onPause = vi.fn(async () => undefined);
     const onCancel = vi.fn(async () => undefined);
-    render(<IssueDetail issue={{ ...issue, status: "REPAIRING", resolution: undefined }} onRefresh={async () => undefined} onCancel={onCancel} />);
+    render(<IssueDetail issue={{ ...issue, status: "REPAIRING", resolution: undefined }} onRefresh={async () => undefined} onPause={onPause} onCancel={onCancel} />);
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "取消 Agent 运行" })); });
-    expect(onCancel).toHaveBeenCalledOnce();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "暂停 Agent" })); });
+    expect(onPause).toHaveBeenCalledOnce();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "取消 Issue" })).not.toBeInTheDocument();
   });
 
-  it("uses a clear cancellation icon for an active Agent operation", () => {
-    render(<IssueDetail issue={{ ...issue, status: "REPAIRING", resolution: undefined }} onRefresh={async () => undefined} onCancel={async () => undefined} />);
+  it("continues or cancels a paused Issue from one action area", () => {
+    render(<IssueDetail issue={{
+      ...issue,
+      status: "PAUSED",
+      resolution: undefined,
+      pauseContext: {
+        operation: "REPAIR",
+        resumeStatus: "REPAIRING",
+        pausedAt: issue.updatedAt,
+      },
+    }} onRefresh={async () => undefined} onResume={async () => undefined} onCancel={async () => undefined} />);
 
-    const cancel = screen.getByRole("button", { name: "取消 Agent 运行" });
-    expect(cancel.querySelector(".lucide-x")).not.toBeNull();
-    expect(cancel.querySelector(".lucide-square")).toBeNull();
+    const actions = screen.getByRole("region", { name: "Issue 操作" });
+    expect(within(actions).getByRole("button", { name: "继续执行" })).toBeVisible();
+    expect(within(actions).getByRole("button", { name: "取消 Issue" })).toBeVisible();
   });
 
   it("renders the unified Assessment review and cancels through the generic control", async () => {
@@ -383,9 +395,42 @@ describe("Issue detail", () => {
 
     expect(screen.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
+    expect(screen.getByRole("dialog", { name: "确认取消 Issue？" })).toBeVisible();
+    expect(onCancel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "确认取消" }));
     await vi.waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
     expect(onRefresh).toHaveBeenCalledOnce();
   });
+
+  it("keeps terminal cancellation actionable when the request fails", async () => {
+    const onCancel = vi.fn(async () => { throw new Error("取消服务不可用"); });
+    render(<IssueDetail
+      issue={{ ...issue, status: "ASSESSMENT_FAILED", resolution: undefined }}
+      onCancel={onCancel}
+      onRefresh={async () => undefined}
+      onRetry={async () => undefined}
+    />);
+
+    const actions = screen.getByRole("region", { name: "Issue 操作" });
+    expect(within(actions).getByRole("button", { name: "重试分析" })).toBeVisible();
+    fireEvent.click(within(actions).getByRole("button", { name: "取消 Issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认取消" }));
+
+    expect(await screen.findByText("取消服务不可用")).toBeVisible();
+    expect(screen.getByRole("button", { name: "确认取消" })).toBeEnabled();
+  });
+
+  it.each(["FINALIZING", "COMPLETED", "CLOSED", "CANCELED"] as const)(
+    "does not render Issue actions while %s",
+    (status) => {
+      render(<IssueDetail
+        issue={{ ...issue, status }}
+        onCancel={async () => undefined}
+        onRefresh={async () => undefined}
+      />);
+      expect(screen.queryByRole("region", { name: "Issue 操作" })).not.toBeInTheDocument();
+    },
+  );
 
   it("keeps retry available beside a destructive failure alert", async () => {
     render(<IssueDetail issue={{ ...issue, status: "REPAIR_FAILED", resolution: undefined, lastFailure: { stage: "REPAIR", code: "TEST_FAILED" } }} onRefresh={async () => undefined} onRetry={async () => Promise.reject(new Error("重试服务不可用"))} />);
@@ -397,17 +442,6 @@ describe("Issue detail", () => {
     expect(retryError.closest('[data-slot="alert"]')).toHaveAttribute("data-slot", "alert");
     expect(screen.getByText("测试未通过")).toBeVisible();
     expect(retry).toBeVisible();
-  });
-
-  it("keeps cancel available beside a destructive failure alert", async () => {
-    render(<IssueDetail issue={{ ...issue, status: "REPAIRING", resolution: undefined }} onRefresh={async () => undefined} onCancel={async () => Promise.reject(new Error("取消服务不可用"))} />);
-
-    const cancel = screen.getByRole("button", { name: "取消 Agent 运行" });
-    fireEvent.click(cancel);
-
-    const cancelError = await screen.findByText("取消服务不可用");
-    expect(cancelError.closest('[data-slot="alert"]')).toHaveAttribute("data-slot", "alert");
-    expect(cancel).toBeVisible();
   });
 
   it("keeps session reconstruction available beside a destructive failure alert", async () => {
@@ -453,6 +487,7 @@ describe("Issue detail", () => {
         },
       }}
       onApproveDelivery={async () => undefined}
+      onPause={async () => undefined}
       onCancel={async () => undefined}
       onRefresh={async () => undefined}
     />);
@@ -463,7 +498,7 @@ describe("Issue detail", () => {
     expect(within(recovery).getByText("生成的临时目录阻塞了 Git 暂存")).toBeVisible();
     expect(within(recovery).getByText(".pnpm-store/shared/v11/tmp/_tmp_fixture")).toBeVisible();
     expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "取消 Agent 运行" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "暂停 Agent" })).toBeVisible();
   });
 
   it("shows merge-aware recovery copy and conflict context", () => {
