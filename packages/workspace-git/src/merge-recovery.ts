@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -323,36 +323,9 @@ export async function validateGitMergeRecovery(input: {
   result: FinalizationRecoveryResult;
 }): Promise<WorkspaceFinalizationRecoveryValidation> {
   const { session } = input;
-  const [head, headRef, mergeHead, conflictStages] = await Promise.all([
-    runGit(input.worktreePath, ["rev-parse", "HEAD"]),
-    tryRunGit(input.worktreePath, ["symbolic-ref", "-q", "HEAD"], [1]),
-    tryRunGit(input.worktreePath, ["rev-parse", "-q", "MERGE_HEAD"], [128]),
-    runGit(input.worktreePath, ["ls-files", "-u", "-z"]),
-  ]);
-  if (head !== session.issueCommit) return unsafe("GIT_MERGE_RECOVERY_HEAD_CHANGED");
-  if (headRef !== session.preparedFingerprint.headRef) {
-    return unsafe("GIT_MERGE_RECOVERY_HEAD_REF_CHANGED");
-  }
-  if (mergeHead !== session.baseCommit) return unsafe("GIT_MERGE_RECOVERY_MERGE_HEAD_CHANGED");
-  if (conflictStages !== session.conflictStages) {
-    return unsafe("GIT_MERGE_RECOVERY_INDEX_CHANGED");
-  }
-
-  const current = await captureGitFinalizationFingerprint({
-    worktreePath: input.worktreePath,
-    diagnosticPaths: [],
-    fingerprintRef: session.fingerprintRef,
-    attemptId: session.attemptId,
-  });
-  if (current.index !== session.preparedFingerprint.index) {
-    return unsafe("GIT_MERGE_RECOVERY_INDEX_CHANGED");
-  }
-  if (current.indexFlags !== session.preparedFingerprint.indexFlags) {
-    return unsafe("GIT_MERGE_RECOVERY_INDEX_FLAGS_CHANGED");
-  }
-  if (current.repositoryStateHash !== session.preparedFingerprint.repositoryStateHash) {
-    return unsafe("GIT_MERGE_RECOVERY_REPOSITORY_STATE_CHANGED");
-  }
+  const invariants = await inspectMergeSessionInvariants(input.worktreePath, session);
+  if (invariants.validation) return invariants.validation;
+  const current = invariants.fingerprint;
   const changedTracked = changedContent(
     session.preparedFingerprint.tracked,
     current.tracked,
@@ -367,18 +340,27 @@ export async function validateGitMergeRecovery(input: {
   if (changedUntracked.length > 0) {
     return unsafe("GIT_MERGE_RECOVERY_UNTRACKED_CHANGED", changedUntracked);
   }
-  const allowedPaths = new Set([
-    ...session.conflictPaths,
-    ...input.result.affectedPaths,
-  ]);
+  const allowedPaths = new Set(session.conflictPaths);
   const outOfScope = changedTracked.filter((path) => !allowedPaths.has(path));
   if (outOfScope.length > 0) {
     return unsafe("GIT_MERGE_RECOVERY_OUT_OF_SCOPE", outOfScope);
   }
   for (const path of session.conflictPaths) {
+    const conflictModes = indexModesForPath(session.conflictStages, path);
+    if (
+      conflictModes.length === 0
+      || conflictModes.some((mode) => mode !== "100644" && mode !== "100755")
+    ) {
+      return unsafe("GIT_MERGE_RECOVERY_FILE_TYPE_INVALID", [path]);
+    }
     let content: Buffer;
     try {
-      content = await readFile(join(input.worktreePath, path));
+      const absolutePath = join(input.worktreePath, path);
+      const stats = await lstat(absolutePath);
+      if (!stats.isFile() || stats.isSymbolicLink()) {
+        return unsafe("GIT_MERGE_RECOVERY_FILE_TYPE_INVALID", [path]);
+      }
+      content = await readFile(absolutePath);
     } catch {
       return unsafe("GIT_MERGE_RECOVERY_CONFLICT_PATH_MISSING", [path]);
     }
@@ -418,12 +400,9 @@ export async function finalizeGitMergeRecovery(input: {
   }
   const baseCommit = await tryRunGit(input.worktreePath, ["rev-parse", input.baseRef], [128]);
   if (baseCommit !== session.baseCommit) throw new Error("GIT_AUTO_MERGE_BASE_MOVED");
-  const [head, mergeHead] = await Promise.all([
-    runGit(input.worktreePath, ["rev-parse", "HEAD"]),
-    tryRunGit(input.worktreePath, ["rev-parse", "-q", "MERGE_HEAD"], [128]),
-  ]);
-  if (head !== session.issueCommit) throw new Error("GIT_MERGE_RECOVERY_HEAD_CHANGED");
-  if (mergeHead !== session.baseCommit) throw new Error("GIT_MERGE_RECOVERY_MERGE_HEAD_CHANGED");
+  const invariants = await inspectMergeSessionInvariants(input.worktreePath, session);
+  if (invariants.validation) throw new Error(invariants.validation.reason);
+  await assertPublicationPreflight(input.worktreePath);
   const candidate = await resolvedTreeFromTemporaryIndex(
     input.worktreePath,
     session.validatedPaths,
@@ -453,6 +432,55 @@ export async function finalizeGitMergeRecovery(input: {
   }
   session.mergeCommit = commit;
   return commit;
+}
+
+async function inspectMergeSessionInvariants(
+  worktreePath: string,
+  session: GitMergeRecoverySession,
+): Promise<{
+  fingerprint: GitFinalizationFingerprint;
+  validation?: WorkspaceFinalizationRecoveryValidation & { kind: "UNSAFE" };
+}> {
+  const [head, headRef, mergeHead, conflictStages, fingerprint] = await Promise.all([
+    runGit(worktreePath, ["rev-parse", "HEAD"]),
+    tryRunGit(worktreePath, ["symbolic-ref", "-q", "HEAD"], [1]),
+    tryRunGit(worktreePath, ["rev-parse", "-q", "MERGE_HEAD"], [128]),
+    runGit(worktreePath, ["ls-files", "-u", "-z"]),
+    captureGitFinalizationFingerprint({
+      worktreePath,
+      diagnosticPaths: [],
+      fingerprintRef: session.fingerprintRef,
+      attemptId: session.attemptId,
+    }),
+  ]);
+  const invalid = (reason: string) => ({ fingerprint, validation: unsafe(reason) as
+    WorkspaceFinalizationRecoveryValidation & { kind: "UNSAFE" } });
+  if (head !== session.issueCommit) return invalid("GIT_MERGE_RECOVERY_HEAD_CHANGED");
+  if (headRef !== session.preparedFingerprint.headRef) {
+    return invalid("GIT_MERGE_RECOVERY_HEAD_REF_CHANGED");
+  }
+  if (mergeHead !== session.baseCommit) {
+    return invalid("GIT_MERGE_RECOVERY_MERGE_HEAD_CHANGED");
+  }
+  if (conflictStages !== session.conflictStages || fingerprint.index !== session.preparedFingerprint.index) {
+    return invalid("GIT_MERGE_RECOVERY_INDEX_CHANGED");
+  }
+  if (fingerprint.indexFlags !== session.preparedFingerprint.indexFlags) {
+    return invalid("GIT_MERGE_RECOVERY_INDEX_FLAGS_CHANGED");
+  }
+  if (fingerprint.repositoryStateHash !== session.preparedFingerprint.repositoryStateHash) {
+    return invalid("GIT_MERGE_RECOVERY_REPOSITORY_STATE_CHANGED");
+  }
+  return { fingerprint };
+}
+
+function indexModesForPath(conflictStages: string, path: string): string[] {
+  return conflictStages.split("\0").flatMap((entry) => {
+    const separator = entry.indexOf("\t");
+    if (separator === -1 || entry.slice(separator + 1) !== path) return [];
+    const mode = entry.slice(0, separator).split(" ")[0];
+    return mode ? [mode] : [];
+  });
 }
 
 async function resolvedTreeFromTemporaryIndex(

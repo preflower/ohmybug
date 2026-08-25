@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { WorkspaceFinalizationError } from "../src/finalization-recovery.js";
@@ -267,6 +267,89 @@ describe("Git merge recovery diagnostics", () => {
     }
   });
 
+  it("does not let Agent-declared paths broaden merge recovery authority", async () => {
+    const prepared = await createPreparedConflict({ trackedRelatedFile: true });
+    try {
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+      await writeFile(join(prepared.acquired.projectPath, "unrelated.txt"), "self-declared edit\n");
+
+      await expect(prepared.provider.validateFinalizationRecovery?.({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Changed an unrelated path",
+          diagnosis: "The Agent declared the path itself",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md", "unrelated.txt"],
+        },
+      })).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_MERGE_RECOVERY_OUT_OF_SCOPE",
+        changedPaths: ["unrelated.txt"],
+      });
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
+  it("rejects a conflict resolution replaced by a symlink", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      const outside = join(prepared.root, "outside.txt");
+      await writeFile(outside, "outside content\n");
+      await rm(join(prepared.acquired.projectPath, "README.md"));
+      await symlink(outside, join(prepared.acquired.projectPath, "README.md"));
+
+      await expect(prepared.provider.validateFinalizationRecovery?.({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Replaced the conflict with a symlink",
+          diagnosis: "Unsafe file type",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      })).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_MERGE_RECOVERY_FILE_TYPE_INVALID",
+        changedPaths: ["README.md"],
+      });
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
+  it("rejects dirty initialized submodules during merge recovery", async () => {
+    const prepared = await createPreparedConflict({ initializedSubmodule: true });
+    try {
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+      await writeFile(
+        join(prepared.acquired.projectPath, "vendor", "README.md"),
+        "dirty submodule content\n",
+      );
+
+      await expect(prepared.provider.validateFinalizationRecovery?.({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Resolved the source conflict",
+          diagnosis: "A submodule was also modified",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      })).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_MERGE_RECOVERY_OUT_OF_SCOPE",
+        changedPaths: ["vendor"],
+      });
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
   it("rejects a resolved tree changed after deterministic validation", async () => {
     const prepared = await createPreparedConflict();
     try {
@@ -288,6 +371,34 @@ describe("Git merge recovery diagnostics", () => {
         issue: prepared.approved,
         resourceId: "git:issue-1",
       })).rejects.toThrow("GIT_MERGE_RECOVERY_TREE_CHANGED");
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
+  it("renews repository invariants immediately before final publication", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+      await prepared.provider.validateFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Combined both changes",
+          diagnosis: "Both branches changed README.md",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      });
+      await git(prepared.acquired.projectPath, "config", "user.name", "Changed After Validation");
+
+      await expect(prepared.provider.publish({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+      })).rejects.toThrow("GIT_MERGE_RECOVERY_REPOSITORY_STATE_CHANGED");
+      expect(await git(prepared.acquired.projectPath, "rev-parse", "HEAD"))
+        .toBe(prepared.context.merge!.issueCommit);
     } finally {
       await prepared.cleanup();
     }
@@ -362,7 +473,10 @@ describe("Git merge recovery diagnostics", () => {
   });
 
   it("rejects a base move between recovered merge creation and base publication", async () => {
-    const prepared = await createPreparedConflict({ pushToRemote: true });
+    const prepared = await createPreparedConflict({
+      pushToRemote: true,
+      moveBaseDuringRecoveredPush: true,
+    });
     try {
       await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
       await prepared.provider.validateFinalizationRecovery!({
@@ -376,32 +490,11 @@ describe("Git merge recovery diagnostics", () => {
           affectedPaths: ["README.md"],
         },
       });
-      const baseCommit = prepared.context.merge!.baseCommit!;
-      const baseTree = await git(prepared.repository, "rev-parse", `${baseCommit}^{tree}`);
-      const movedBase = await git(
-        prepared.repository,
-        "commit-tree",
-        baseTree,
-        "-p",
-        baseCommit,
-        "-m",
-        "advance base during push",
-      );
-      const hooks = join(prepared.root, "hooks");
-      await mkdir(hooks);
-      const prePush = join(hooks, "pre-push");
-      await writeFile(prePush, [
-        "#!/bin/sh",
-        `git -C ${JSON.stringify(prepared.repository)} update-ref refs/heads/main ${movedBase} ${baseCommit}`,
-      ].join("\n"));
-      await chmod(prePush, 0o755);
-      await git(prepared.repository, "config", "core.hooksPath", hooks);
-
       await expect(prepared.provider.publish({
         issue: prepared.approved,
         resourceId: "git:issue-1",
       })).rejects.toThrow("GIT_AUTO_MERGE_BASE_MOVED");
-      expect(await git(prepared.repository, "rev-parse", "main")).toBe(movedBase);
+      expect(await git(prepared.repository, "rev-parse", "main")).toBe(prepared.movedBase);
     } finally {
       await prepared.cleanup();
     }
@@ -424,8 +517,38 @@ function fingerprintFixture() {
   };
 }
 
-async function createPreparedConflict(options: { pushToRemote?: boolean } = {}) {
+async function createPreparedConflict(options: {
+  pushToRemote?: boolean;
+  trackedRelatedFile?: boolean;
+  moveBaseDuringRecoveredPush?: boolean;
+  initializedSubmodule?: boolean;
+} = {}) {
   const fixture = await createGitFixture();
+  if (options.trackedRelatedFile) {
+    await writeFile(join(fixture.repository, "unrelated.txt"), "baseline unrelated\n");
+    await git(fixture.repository, "add", "unrelated.txt");
+    await git(fixture.repository, "commit", "-m", "add unrelated source file");
+  }
+  if (options.initializedSubmodule) {
+    const source = join(fixture.root, "submodule-source");
+    await mkdir(source);
+    await git(source, "init", "-b", "main");
+    await git(source, "config", "user.name", "Submodule Test");
+    await git(source, "config", "user.email", "submodule@ohmybug.local");
+    await writeFile(join(source, "README.md"), "submodule baseline\n");
+    await git(source, "add", "README.md");
+    await git(source, "commit", "-m", "submodule baseline");
+    await git(
+      fixture.repository,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      source,
+      "vendor",
+    );
+    await git(fixture.repository, "commit", "-am", "add submodule");
+  }
   if (options.pushToRemote) {
     const bare = join(fixture.root, "delivery.git");
     await mkdir(bare);
@@ -442,10 +565,47 @@ async function createPreparedConflict(options: { pushToRemote?: boolean } = {}) 
     ...(options.pushToRemote ? { remote: "delivery" } : {}),
   });
   const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+  if (options.initializedSubmodule) {
+    await git(
+      acquired.projectPath,
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "update",
+      "--init",
+      "vendor",
+    );
+  }
   await writeFile(join(acquired.projectPath, "README.md"), "issue change\n");
   await writeFile(join(fixture.repository, "README.md"), "base change\n");
   await git(fixture.repository, "add", "README.md");
   await git(fixture.repository, "commit", "-m", "advance base");
+  let movedBase: string | undefined;
+  if (options.moveBaseDuringRecoveredPush) {
+    const baseCommit = await git(fixture.repository, "rev-parse", "main");
+    const baseTree = await git(fixture.repository, "rev-parse", `${baseCommit}^{tree}`);
+    movedBase = await git(
+      fixture.repository,
+      "commit-tree",
+      baseTree,
+      "-p",
+      baseCommit,
+      "-m",
+      "advance base during push",
+    );
+    const hooks = join(fixture.root, "hooks");
+    await mkdir(hooks);
+    const prePush = join(hooks, "pre-push");
+    const bare = join(fixture.root, "delivery.git");
+    await writeFile(prePush, [
+      "#!/bin/sh",
+      `if git --git-dir=${JSON.stringify(bare)} show-ref --verify --quiet refs/heads/ohmybug/omb-1; then`,
+      `  git -C ${JSON.stringify(fixture.repository)} update-ref refs/heads/main ${movedBase} ${baseCommit}`,
+      "fi",
+    ].join("\n"));
+    await chmod(prePush, 0o755);
+    await git(fixture.repository, "config", "core.hooksPath", hooks);
+  }
   const approved = {
     ...fixture.issue,
     projectPath: acquired.projectPath,
@@ -466,5 +626,5 @@ async function createPreparedConflict(options: { pushToRemote?: boolean } = {}) 
     diagnostic: failure.diagnostic,
     attemptId: "recovery-21",
   });
-  return { ...fixture, provider, acquired, approved, context };
+  return { ...fixture, provider, acquired, approved, context, movedBase };
 }

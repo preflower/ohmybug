@@ -342,10 +342,28 @@ async function fingerprintPath(
         hash: digest(await readFile(join(worktreePath, path))),
       };
     }
+    if (stats.isDirectory() && await hasGitMetadata(join(worktreePath, path))) {
+      const head = await tryRunGit(join(worktreePath, path), ["rev-parse", "HEAD"], [128]);
+      if (!head) return { path, kind: "directory", mode, hash: digest("UNBORN") };
+      const status = await readGitWorkspaceStatus(join(worktreePath, path));
+      return { path, kind: "directory", mode, hash: digest(`${head}\0${status}`) };
+    }
     return { path, kind: "directory", mode, hash: "" };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return { path, kind: "missing", mode: 0, hash: "" };
+    }
+    throw error;
+  }
+}
+
+async function hasGitMetadata(path: string): Promise<boolean> {
+  try {
+    await lstat(join(path, ".git"));
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return false;
     }
     throw error;
   }
