@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group.js";
 import { Textarea } from "../components/ui/textarea.js";
-import { ReviewRenderer } from "./review-renderers.js";
+import { ReviewRenderer, ReviewResponseFields } from "./review-renderers.js";
 
 interface ReviewPanelProps {
   issue: IssueDto;
@@ -80,7 +80,7 @@ function ReviewPanelContent({
         </div>
       </div>
 
-      <ReviewRenderer issue={issue} choiceId={choiceId} data={data} onDataChange={setData} />
+      <ReviewRenderer issue={issue} />
 
       <div className="review-choice-list">
         <span className="review-choice-legend">选择处理方式</span>
@@ -106,6 +106,13 @@ function ReviewPanelContent({
         ))}
         </RadioGroup>
       </div>
+
+      <ReviewResponseFields
+        issue={issue}
+        choiceId={choiceId}
+        data={data}
+        onDataChange={setData}
+      />
 
       <label className="feedback-field">
         {selected?.feedbackRequired ? "补充说明（必填）" : "补充说明（可选）"}
