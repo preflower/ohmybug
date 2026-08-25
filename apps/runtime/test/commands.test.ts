@@ -452,6 +452,76 @@ describe("Runtime human commands", () => {
     }]);
     expect(store.listPendingOperations()).toEqual([]);
   });
+
+  it("persists pause before aborting the session-selected Agent", async () => {
+    const agent = new FakeAgent();
+    const { commands, store } = createHarness(agent);
+    const issue = reviewedIssue({
+      id: "issue-pause",
+      status: "REPAIRING",
+      revision: 7,
+      repair: { iteration: 2 },
+      agentSession: { agent: "fake", sessionId: "session-active" },
+    });
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+    agent.cancel = async (session, reason) => {
+      expect(store.getIssue(issue.id)).toMatchObject({ status: "PAUSED" });
+      agent.canceledSessions.push(session.sessionId);
+      agent.cancellations.push({ sessionId: session.sessionId, reason });
+    };
+
+    await expect(commands.pauseIssue(issue.id)).resolves.toMatchObject({
+      status: "PAUSED",
+      repair: { iteration: 2 },
+      pauseContext: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+    });
+    expect(agent.cancellations).toEqual([{
+      sessionId: "session-active",
+      reason: "USER_PAUSED",
+    }]);
+    expect(store.listPendingOperations()).toEqual([]);
+  });
+
+  it("resumes the recorded operation without incrementing Repair iteration", async () => {
+    const { commands, store, wakes } = createHarness();
+    const issue = reviewedIssue({
+      id: "issue-resume",
+      status: "REPAIRING",
+      revision: 7,
+      repair: { iteration: 2 },
+    });
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+    const paused = await commands.pauseIssue(issue.id);
+
+    const resumed = commands.resumeIssue(paused.id);
+
+    expect(resumed).toMatchObject({ status: "REPAIRING", repair: { iteration: 2 } });
+    expect(resumed.pauseContext).toBeUndefined();
+    expect(store.listPendingOperations()).toEqual([{ issue: resumed, operation: "REPAIR" }]);
+    expect(wakes()).toBe(1);
+    expect(store.readEvents(issue.id).map((event) => event.type))
+      .toEqual(["ISSUE_PAUSED", "ISSUE_RESUMED"]);
+  });
+
+  it("keeps the Issue paused when Agent interruption fails", async () => {
+    const agent = new FakeAgent();
+    agent.cancel = async () => { throw new Error("private pause detail"); };
+    const { commands, store } = createHarness(agent);
+    const issue = reviewedIssue({
+      id: "issue-pause-failed",
+      status: "REPAIRING",
+      repair: { iteration: 1 },
+      agentSession: { agent: "fake", sessionId: "session-active" },
+    });
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+
+    await expect(commands.pauseIssue(issue.id)).resolves.toMatchObject({ status: "PAUSED" });
+    expect(store.getIssue(issue.id)?.status).toBe("PAUSED");
+    expect(store.readEvents(issue.id)).toContainEqual(expect.objectContaining({
+      type: "AGENT_PAUSE_FAILED",
+      data: { message: expect.any(String) },
+    }));
+  });
 });
 
 function permissionRequiredIssue(overrides: Partial<Issue> = {}): Issue {

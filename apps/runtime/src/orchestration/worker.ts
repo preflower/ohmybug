@@ -786,6 +786,11 @@ export class RuntimeWorker {
     operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION",
   ): AgentContinuation | undefined {
     const events = this.dependencies.store.readEvents(issue.id);
+    const resumed = events.findLast((event) =>
+      event.type === "ISSUE_RESUMED" &&
+      event.data.operation === operation &&
+      event.data.revision === issue.revision);
+    if (resumed) return { reason: "USER_RESUMED" };
     const granted = events.findLast((event) =>
       event.type === "CAPABILITY_GRANTED" &&
       event.data.operation === operation &&

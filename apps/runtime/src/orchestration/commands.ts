@@ -291,6 +291,55 @@ export class RuntimeCommands {
     return result.issue;
   }
 
+  async pauseIssue(issueId: string): Promise<Issue> {
+    this.assertAccepting();
+    const paused = this.dependencies.store.transaction((transaction) => {
+      const current = this.getIssue(issueId);
+      const next = transitionIssue(current, "PAUSE", this.dependencies.now());
+      transaction.updateIssue(next, current.revision, null);
+      transaction.appendEvent(this.event(issueId, "ISSUE_PAUSED", {
+        operation: next.pauseContext!.operation,
+        resumeStatus: next.pauseContext!.resumeStatus,
+        revision: next.revision,
+      }));
+      return next;
+    });
+    if (!paused.agentSession) return paused;
+
+    try {
+      await this.dependencies.agents.forSession(paused.agentSession).cancel(
+        paused.agentSession,
+        "USER_PAUSED",
+      );
+    } catch (error) {
+      this.dependencies.store.transaction((transaction) => transaction.appendEvent(
+        this.event(issueId, "AGENT_PAUSE_FAILED", {
+          message: publicModuleError(error),
+        }),
+      ));
+    }
+    return paused;
+  }
+
+  resumeIssue(issueId: string): Issue {
+    this.assertAccepting();
+    const resumed = this.dependencies.store.transaction((transaction) => {
+      const current = this.getIssue(issueId);
+      const operation = current.pauseContext?.operation;
+      if (!operation) throw new Error("PAUSE_CONTEXT_REQUIRED");
+      const next = transitionIssue(current, "RESUME", this.dependencies.now());
+      transaction.updateIssue(next, current.revision, operation);
+      transaction.appendEvent(this.event(issueId, "ISSUE_RESUMED", {
+        operation,
+        resumeStatus: next.status,
+        revision: next.revision,
+      }));
+      return next;
+    });
+    this.dependencies.wake();
+    return resumed;
+  }
+
   async cancelIssue(issueId: string): Promise<Issue> {
     this.assertAccepting();
     const canceled = this.change(issueId, "ISSUE_CANCELED", null, (current, now) =>
