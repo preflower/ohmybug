@@ -25,7 +25,6 @@ function context(overrides: Partial<IntegrationPluginContext> = {}): Integration
       enabled: true,
       config: {
         conversationIds: ["conversation-1"],
-        mention: "@Oh My Bug",
         messageRule: "bug",
         threadKeyField: "conversationId",
       },
@@ -45,15 +44,48 @@ describe("DingTalk plugin", () => {
     expect(dingTalkPlugin().manifest).toEqual({
       id: "dingtalk",
       name: "DingTalk",
+      description: "从指定群聊接收消息并创建 Issue。",
+      sections: [
+        {
+          id: "credentials",
+          label: "应用凭证",
+          description: "凭证仅保存在这台电脑的系统钥匙串中。",
+        },
+        { id: "rules", label: "接收规则" },
+        {
+          id: "advanced",
+          label: "高级设置",
+          description: "关键词过滤与消息归并",
+          collapsed: true,
+        },
+      ],
       configFields: [
-        { key: "conversationIds", type: "string[]", label: "Conversation IDs", required: true },
-        { key: "mention", type: "string", label: "Mention", required: true },
-        { key: "messageRule", type: "string", label: "Message rule", required: false },
-        { key: "threadKeyField", type: "string", label: "Thread key field", required: false },
+        {
+          key: "conversationIds",
+          type: "string[]",
+          label: "群聊 ID",
+          description: "仅处理来自这些群聊且 @ 机器人的消息。",
+          required: true,
+          section: "rules",
+        },
+        {
+          key: "messageRule",
+          type: "string",
+          label: "消息关键词",
+          required: false,
+          section: "advanced",
+        },
+        {
+          key: "threadKeyField",
+          type: "string",
+          label: "消息归并字段",
+          required: false,
+          section: "advanced",
+        },
       ],
       secretFields: [
-        { key: "clientId", label: "Client ID", required: true },
-        { key: "clientSecret", label: "Client secret", required: true },
+        { key: "clientId", label: "Client ID", required: true, section: "credentials" },
+        { key: "clientSecret", label: "Client Secret", required: true, section: "credentials" },
       ],
     });
   });
@@ -63,12 +95,26 @@ describe("DingTalk plugin", () => {
     expect(() => plugin.validate(context().configuration)).not.toThrow();
     expect(() => plugin.validate({
       ...context().configuration,
-      config: { conversationIds: ["same", "same"], mention: "@Oh My Bug" },
+      config: { conversationIds: ["same", "same"] },
     })).toThrow("DINGTALK_CONFIG_CONVERSATION_IDS_INVALID");
     expect(() => plugin.validate({
       ...context().configuration,
-      config: { conversationIds: ["allowed"], mention: "@Oh My Bug", webhook: "no" },
+      config: { conversationIds: ["allowed"], webhook: "no" },
     })).toThrow("DINGTALK_CONFIG_UNKNOWN_FIELD:webhook");
+  });
+
+  it("accepts legacy mention configuration without requiring it", () => {
+    const plugin = dingTalkPlugin();
+    const current = context().configuration;
+
+    expect(() => plugin.validate({
+      ...current,
+      config: { conversationIds: ["allowed"] },
+    })).not.toThrow();
+    expect(() => plugin.validate({
+      ...current,
+      config: { conversationIds: ["allowed"], mention: "@Old Bot" },
+    })).not.toThrow();
   });
 
   it("constructs the official client boundary and normalizes allowed messages", async () => {
@@ -88,7 +134,7 @@ describe("DingTalk plugin", () => {
         conversationId: "conversation-1",
         msgId: "message-1",
         isInAtList: true,
-        text: { content: "@Oh My Bug BUG checkout fails" },
+        text: { content: "@OhMyBug BUG checkout fails" },
       }),
     });
     controller.abort();

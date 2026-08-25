@@ -22,15 +22,48 @@ export interface DingTalkPluginOptions {
 const manifest = {
   id: "dingtalk",
   name: "DingTalk",
+  description: "从指定群聊接收消息并创建 Issue。",
+  sections: [
+    {
+      id: "credentials",
+      label: "应用凭证",
+      description: "凭证仅保存在这台电脑的系统钥匙串中。",
+    },
+    { id: "rules", label: "接收规则" },
+    {
+      id: "advanced",
+      label: "高级设置",
+      description: "关键词过滤与消息归并",
+      collapsed: true,
+    },
+  ],
   configFields: [
-    { key: "conversationIds", type: "string[]", label: "Conversation IDs", required: true },
-    { key: "mention", type: "string", label: "Mention", required: true },
-    { key: "messageRule", type: "string", label: "Message rule", required: false },
-    { key: "threadKeyField", type: "string", label: "Thread key field", required: false },
+    {
+      key: "conversationIds",
+      type: "string[]",
+      label: "群聊 ID",
+      description: "仅处理来自这些群聊且 @ 机器人的消息。",
+      required: true,
+      section: "rules",
+    },
+    {
+      key: "messageRule",
+      type: "string",
+      label: "消息关键词",
+      required: false,
+      section: "advanced",
+    },
+    {
+      key: "threadKeyField",
+      type: "string",
+      label: "消息归并字段",
+      required: false,
+      section: "advanced",
+    },
   ],
   secretFields: [
-    { key: "clientId", label: "Client ID", required: true },
-    { key: "clientSecret", label: "Client secret", required: true },
+    { key: "clientId", label: "Client ID", required: true, section: "credentials" },
+    { key: "clientSecret", label: "Client Secret", required: true, section: "credentials" },
   ],
 } as const satisfies IntegrationPluginManifest;
 
@@ -90,7 +123,6 @@ function validateDingTalkConfiguration(configuration: ProjectIntegrationConfigur
 
 function dingTalkConfig(configuration: ProjectIntegrationConfiguration): {
   conversationIds: string[];
-  mention: string;
   messageRule?: string;
   threadKeyField?: string;
 } {
@@ -104,7 +136,6 @@ function dingTalkConfig(configuration: ProjectIntegrationConfiguration): {
   ) {
     throw new Error("DINGTALK_CONFIG_CONVERSATION_IDS_INVALID");
   }
-  const mention = requiredString(configuration.config.mention, "DINGTALK_CONFIG_MENTION_REQUIRED");
   const messageRule = optionalString(
     configuration.config.messageRule,
     "DINGTALK_CONFIG_MESSAGE_RULE_INVALID",
@@ -115,7 +146,6 @@ function dingTalkConfig(configuration: ProjectIntegrationConfiguration): {
   );
   return {
     conversationIds,
-    mention,
     ...(messageRule ? { messageRule } : {}),
     ...(threadKeyField ? { threadKeyField } : {}),
   };
