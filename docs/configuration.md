@@ -16,13 +16,23 @@
 
 ## Integration plugins
 
-Desktop 从 Runtime 读取插件清单，再根据有限字段类型 `string | string[] | number | boolean` 动态生成表单。新增内置 Integration 只需要新增包、Runtime 依赖和 registry 条目，不需要修改 Desktop 表单。
+Desktop 从 Runtime 读取插件清单，再根据有限字段类型 `string | string[] | number | boolean` 和可选展示分组动态生成表单。新增内置 Integration 只需要新增包、Runtime 依赖和 registry 条目，不需要修改 Desktop 表单。
 
 - Sentry：`organization`、`project` 必填，`environment`、`query` 可选；Secret key 为 `token`。
-- DingTalk：`conversationIds` 是字符串数组，`mention` 必填，`messageRule`、`threadKeyField` 可选；Secret keys 为 `clientId`、`clientSecret`。
+- DingTalk：必填项只有 Client ID、Client Secret 和至少一个群聊 ID。`messageRule`（消息关键词）与 `threadKeyField`（消息归并字段）位于默认折叠的高级设置中，均为可选。机器人称呼不需要配置；只有 DingTalk 标记为已 @ 机器人的消息才会进入系统。
 - Manual：无需 Project 配置，通过 Runtime protocol 提交 `content` 和可选 `summary/context`。
 
-一个 Integration 可以声明多个 Secret key。每个 key 独立存入系统 Keychain，但 Desktop 以一次 Integration 级 patch 提交；任一写入失败会回滚整批。协议响应只返回 `secretConfigured` 布尔值，不返回 Secret 内容。
+一个 Integration 可以声明多个 Secret key。每个 key 独立存入系统 Keychain，普通项目配置存入 SQLite；这些存储位置不会暴露成多个保存按钮。项目设置页的“保存更改”会一次提交普通配置和凭证草稿，任一写入失败都会回滚本次变更。协议响应只返回 `secretConfigured` 布尔值，不返回 Secret 内容。
+
+### DingTalk 接入
+
+1. 在 DingTalk 应用凭证中取得 Client ID 与 Client Secret。
+2. 在项目设置中打开 DingTalk，填写两个凭证。
+3. 添加允许创建 Issue 的群聊 ID；该白名单至少保留一项，避免机器人加入其他群后自动扩大接收范围。
+4. 如需过滤消息或归并同一讨论，再展开“高级设置”。
+5. 点击页面底部唯一的“保存更改”。保存成功后凭证输入会恢复为“已配置”，连接结果单独显示为“已连接”“正在连接”或“连接失败”。
+
+已保存的凭证默认不渲染输入框；点击对应的“替换”后才会出现空密码输入。空值不会覆盖现有凭证。旧项目中的 `mention` 配置仍可读取，但不再参与接收判断，并会在下一次成功保存时从普通配置中移除。
 
 ## Desktop 进程
 

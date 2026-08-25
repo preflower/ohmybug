@@ -65,7 +65,13 @@ describe("Runtime evidence worker", () => {
 
     await harness.worker.drain();
 
-    expect(harness.store.getIssue(harness.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    expect(harness.store.getIssue(harness.issue.id)).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      review: { kind: "delivery", requestedFrom: "EVIDENCE_CHECK" },
+    });
+    expect(harness.store.getIssue(harness.issue.id)?.review?.id).not.toMatch(/^legacy:/);
+    expect(harness.store.readEvents(harness.issue.id).map((event) => event.type))
+      .toContain("REVIEW_REQUESTED");
     expect(harness.capture.inputs).toHaveLength(1);
     expect(harness.agent.evidenceSessions).toEqual([]);
     expect(harness.agent.repairSessions).toEqual([]);
@@ -76,7 +82,10 @@ describe("Runtime evidence worker", () => {
 
     await harness.worker.drain();
 
-    expect(harness.store.getIssue(harness.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    expect(harness.store.getIssue(harness.issue.id)).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      review: { kind: "delivery", requestedFrom: "EVIDENCE_CHECK" },
+    });
     expect(harness.agent.evidenceSessions).toEqual(["session-1"]);
     expect(harness.agent.repairSessions).toEqual([]);
   });

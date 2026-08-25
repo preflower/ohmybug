@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { RuntimeWorker } from "../src/orchestration/worker.js";
-import { FakeAgent } from "./helpers/fakes.js";
-import { assessment, createHarness, eventIds, project } from "./helpers/runtime.js";
+import { delivery, FakeAgent } from "./helpers/fakes.js";
+import {
+  assessment,
+  createHarness,
+  eventIds,
+  project,
+  reviewedIssue,
+} from "./helpers/runtime.js";
 
 describe("Runtime typed lifecycle hooks", () => {
   it("emits the public lifecycle in persisted workflow order", async () => {
@@ -66,21 +72,19 @@ describe("Runtime typed lifecycle hooks", () => {
       throw new Error("PIPELINE_FAILED");
     });
     hooks.on("healthy", "issue.userApproved", () => calls.push("healthy"));
-    const issue = {
+    const issue = reviewedIssue({
       id: "issue-delivery-hook",
-      projectId: project.id,
       projectPath: project.path,
       identifier: "OMB-DELIVERY-HOOK",
       title: "Checkout fails",
-      titleSource: "user" as const,
-      status: "ACCEPTANCE_REVIEW" as const,
-      inputs: [],
+      titleSource: "user",
+      status: "REVIEW_REQUIRED",
       assessment,
-      repair: { iteration: 1 },
+      repair: { iteration: 1, delivery },
       revision: 7,
       createdAt: "2026-08-20T15:00:00.000Z",
       updatedAt: "2026-08-20T15:00:00.000Z",
-    };
+    });
     store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
 
     expect(commands.approveDelivery(issue.id)).toMatchObject({ status: "FINALIZING" });

@@ -1,9 +1,13 @@
 import type {
   ConfigField,
   ConfigValue,
+  FinalizationRecoveryContextSummary,
+  FinalizationRecoveryResult,
   Issue,
   NewIssueEvent,
+  RepairResult,
   RuntimeProject,
+  WorkspaceFinalizationDiagnostic,
 } from "@oh-my-bug/core";
 
 export interface BranchInfo {
@@ -74,6 +78,33 @@ export interface WorkspaceDescription {
   branch?: string;
 }
 
+export interface WorkspaceFinalizationRecoveryContext
+  extends FinalizationRecoveryContextSummary {
+  fingerprintRef: string;
+  workspaceStatus: string;
+  fingerprintSummary: string;
+}
+
+export type WorkspaceFinalizationRecoveryValidation =
+  | { kind: "UNCHANGED"; changedPaths: string[] }
+  | { kind: "CHANGED"; changedPaths: string[] }
+  | { kind: "UNSAFE"; changedPaths: string[]; reason: string };
+
+export interface WorkspaceRepairObservation {
+  required: boolean;
+  baseBranch?: string;
+  baseCommit?: string;
+  issueBranch?: string;
+}
+
+export type WorkspaceRepairValidation =
+  | { kind: "DELIVERY_READY"; branch: BranchInfo }
+  | { kind: "BUSINESS_DECISION_REQUIRED" };
+
+export type WorkspacePublishResult =
+  | { kind: "PUBLISHED"; branch?: BranchInfo }
+  | { kind: "BASE_STALE"; currentBaseCommit: string };
+
 export interface WorkspaceProvider {
   readonly id: string;
   acquire(input: { issue: Issue; project: RuntimeProject }): Promise<{
@@ -84,10 +115,38 @@ export interface WorkspaceProvider {
     issue: Issue;
     resourceId: string;
   }): Promise<WorkspaceDescription>;
+  observeRepair?(input: {
+    issue: Issue;
+    resourceId: string;
+  }): Promise<WorkspaceRepairObservation>;
+  validateRepair?(input: {
+    issue: Issue;
+    resourceId: string;
+    observation: WorkspaceRepairObservation;
+    result: RepairResult;
+    runtimeIntakeDirectory?: string;
+  }): Promise<WorkspaceRepairValidation>;
   publish(input: {
     issue: Issue;
     resourceId: string;
-  }): Promise<BranchInfo | undefined>;
+  }): Promise<WorkspacePublishResult>;
+  prepareFinalizationRecovery?(input: {
+    issue: Issue;
+    resourceId: string;
+    diagnostic: WorkspaceFinalizationDiagnostic;
+    attemptId: string;
+  }): Promise<WorkspaceFinalizationRecoveryContext>;
+  validateFinalizationRecovery?(input: {
+    issue: Issue;
+    resourceId: string;
+    fingerprintRef: string;
+    result: FinalizationRecoveryResult;
+  }): Promise<WorkspaceFinalizationRecoveryValidation>;
+  bindFinalizationRecoveryDelivery?(input: {
+    issue: Issue;
+    resourceId: string;
+    fingerprintRef: string;
+  }): Promise<void>;
   release(input: { issue: Issue; resourceId: string }): Promise<void>;
 }
 

@@ -11,7 +11,6 @@ import type { IntegrationInput } from "../integration/input.js";
 export type IssueStatus =
   | "RECEIVED"
   | "ASSESSING"
-  | "ASSESSMENT_REVIEW"
   | "ASSESSMENT_FAILED"
   | "REPAIRING"
   | "EVIDENCE_CAPTURE"
@@ -19,8 +18,9 @@ export type IssueStatus =
   | "EVIDENCE_FAILED"
   | "REPAIR_FAILED"
   | "PERMISSION_REQUIRED"
-  | "ACCEPTANCE_REVIEW"
+  | "REVIEW_REQUIRED"
   | "FINALIZING"
+  | "FINALIZATION_RECOVERY"
   | "FINALIZATION_FAILED"
   | "COMPLETED"
   | "CLOSED"
@@ -34,6 +34,48 @@ export type IssueResolution =
   | "CANCELED";
 export type IssueTitleSource = "integration" | "assessment" | "user";
 
+export type ReviewJson =
+  | null
+  | boolean
+  | number
+  | string
+  | ReviewJson[]
+  | { [key: string]: ReviewJson };
+
+export type ReviewSourceStatus = "ASSESSING" | "REPAIRING" | "EVIDENCE_CHECK";
+export type ReviewOperation = "ASSESS" | "REPAIR" | "FINALIZE";
+export type ReviewResumeStatus = "ASSESSING" | "REPAIRING" | "FINALIZING" | "CLOSED";
+
+export interface ReviewContinuation {
+  operation?: ReviewOperation;
+  resumeStatus: ReviewResumeStatus;
+  resolution?: IssueResolution;
+}
+
+export interface ReviewChoice {
+  id: string;
+  label: string;
+  feedbackRequired?: boolean;
+  continuation: ReviewContinuation;
+}
+
+export interface ReviewRequest {
+  id: string;
+  kind: string;
+  requestedFrom: ReviewSourceStatus;
+  payload: ReviewJson;
+  choices: ReviewChoice[];
+  requestedAt: string;
+}
+
+export interface ReviewSubmission {
+  expectedRevision: number;
+  requestId: string;
+  choiceId: string;
+  feedback?: string;
+  data?: ReviewJson;
+}
+
 export interface RepairState {
   iteration: number;
   evidenceRetries?: number;
@@ -44,15 +86,68 @@ export interface RepairState {
 }
 
 export interface IssueFailure {
-  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE";
+  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE" | "FINALIZATION_RECOVERY";
   code: string;
+}
+
+export type WorkspaceFinalizationStep =
+  | "status"
+  | "add"
+  | "commit"
+  | "push"
+  | "merge"
+  | "release"
+  | "unknown";
+
+export interface WorkspaceFinalizationDiagnostic {
+  providerId: string;
+  step: WorkspaceFinalizationStep;
+  code: string;
+  exitCode?: number;
+  message: string;
+  stderr?: string;
+  relatedPaths: string[];
+}
+
+export type FinalizationRecoveryKind =
+  | "GENERATED_ARTIFACT_CLEANUP"
+  | "MERGE_CONFLICT"
+  | "MERGE_ENVIRONMENT";
+
+export interface FinalizationRecoveryMergeContext {
+  kind: "MERGE_CONFLICT" | "MERGE_ENVIRONMENT";
+  baseBranch: string;
+  baseCommit?: string;
+  issueBranch: string;
+  issueCommit: string;
+  conflictPaths: string[];
+  mergeMessages: string[];
+  mergePrepared: boolean;
+}
+
+export interface FinalizationRecoveryContextSummary {
+  recoveryKind: FinalizationRecoveryKind;
+  merge?: FinalizationRecoveryMergeContext;
+}
+
+export interface FinalizationRecoveryState {
+  automaticAttempts: 0 | 1;
+  attemptId?: string;
+  diagnostic?: WorkspaceFinalizationDiagnostic;
+  fingerprintRef?: string;
+  context?: FinalizationRecoveryContextSummary;
+  summary?: string;
 }
 
 export interface PendingCapabilityRequest extends AgentCapabilityRequest {
   id: string;
-  operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE";
-  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE";
-  resumeStatus: "ASSESSING" | "REPAIRING" | "EVIDENCE_CAPTURE";
+  operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION";
+  stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE" | "FINALIZATION_RECOVERY";
+  resumeStatus:
+    | "ASSESSING"
+    | "REPAIRING"
+    | "EVIDENCE_CAPTURE"
+    | "FINALIZATION_RECOVERY";
   requestedAt: string;
 }
 
@@ -74,6 +169,8 @@ export interface Issue {
   lastFailure?: IssueFailure;
   capabilityGrants?: CapabilityGrant[];
   pendingCapabilityRequest?: PendingCapabilityRequest;
+  review?: ReviewRequest;
+  finalizationRecovery?: FinalizationRecoveryState;
   revision: number;
   createdAt: string;
   updatedAt: string;

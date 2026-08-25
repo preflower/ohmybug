@@ -52,7 +52,7 @@ describe("Git Workspace restart acceptance", () => {
     await reopened.stop();
   });
 
-  it("resumes failed remote publication without rerunning Repair", async () => {
+  it("revalidates Repair after a failed remote publication restart", async () => {
     const fixture = await createFixture("remote");
     const runtime = createRuntime(fixture.runtimeOptions);
     await runtime.start();
@@ -64,7 +64,7 @@ describe("Git Workspace restart acceptance", () => {
     await runtime.drain();
     const assessed = runtime.getIssue(created.issue.id);
     expect(assessed).toMatchObject({
-      status: "ASSESSMENT_REVIEW",
+      status: "REVIEW_REQUIRED",
       assessment,
     });
     runtime.approveAssessment(assessed.id, {
@@ -75,7 +75,9 @@ describe("Git Workspace restart acceptance", () => {
     await runtime.drain();
 
     const failed = await runtime.approveDelivery(assessed.id);
-    expect(failed.issue.status).toBe("FINALIZATION_FAILED");
+    expect(failed.issue.status).toBe("FINALIZING");
+    await runtime.drain();
+    expect(runtime.getIssue(assessed.id).status).toBe("FINALIZATION_FAILED");
     expect(fixture.agent.repairInputs).toHaveLength(1);
     await runtime.stop();
 
@@ -89,9 +91,19 @@ describe("Git Workspace restart acceptance", () => {
     await reopened.drain();
 
     expect(reopened.getIssue(assessed.id).status).toBe("FINALIZATION_FAILED");
+    const repairing = await reopened.approveDelivery(assessed.id);
+    expect(repairing.issue).toMatchObject({
+      status: "REPAIRING",
+      repair: { iteration: 2 },
+    });
+    await reopened.drain();
+    expect(reopened.getIssue(assessed.id).status).toBe("REVIEW_REQUIRED");
+    expect(fixture.agent.repairInputs).toHaveLength(2);
     const completed = await reopened.approveDelivery(assessed.id);
-    expect(completed.issue.status).toBe("COMPLETED");
-    expect(fixture.agent.repairInputs).toHaveLength(1);
+    expect(completed.issue.status).toBe("FINALIZING");
+    await reopened.drain();
+    expect(reopened.getIssue(assessed.id).status).toBe("COMPLETED");
+    expect(fixture.agent.repairInputs).toHaveLength(2);
     expect(reopened.readIssueEvents(assessed.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: "ISSUE_COMPLETED",

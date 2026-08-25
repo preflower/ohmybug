@@ -7,6 +7,34 @@ import { describe, expect, it } from "vitest";
 import { AgentActivity } from "../../src/web/issues/agent-activity.js";
 
 describe("Agent activity", () => {
+  it("labels merge preparation and resolution events", () => {
+    render(<AgentActivity active={false} events={[
+      {
+        id: "issue-1:1",
+        issueId: "issue-1",
+        sequence: 1,
+        actor: "SYSTEM",
+        type: "DELIVERY_FINALIZATION_MERGE_PREPARED",
+        occurredAt: "2026-08-25T09:00:00Z",
+        data: { conflictCount: 1 },
+      },
+      {
+        id: "issue-1:2",
+        issueId: "issue-1",
+        sequence: 2,
+        actor: "SYSTEM",
+        type: "DELIVERY_FINALIZATION_MERGE_RESOLVED",
+        occurredAt: "2026-08-25T09:00:01Z",
+        data: { resolvedPathCount: 1 },
+      },
+    ]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+
+    expect(screen.getByText("已准备合并冲突供 AI 解析")).toBeVisible();
+    expect(screen.getByText("AI 已解析合并冲突，等待重新验证")).toBeVisible();
+  });
+
   it("labels a non-fatal Agent temp cleanup failure in the activity log", () => {
     render(<AgentActivity active={false} events={[{
       id: "issue-1:1",

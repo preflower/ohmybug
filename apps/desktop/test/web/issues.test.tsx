@@ -207,6 +207,39 @@ describe("Issue detail", () => {
     const dialog = screen.getByRole("dialog", { name: "Checkout success" });
     expect(within(dialog).getByRole("img", { name: "Checkout success" })).toHaveAttribute("src", "blob:checkout-shot");
     expect(within(dialog).getByRole("button", { name: "关闭预览" })).toBeVisible();
+    expect(dialog.querySelector(".evidence-preview-header")).not.toBeInTheDocument();
+    expect(dialog.querySelector(".evidence-preview-stage > .evidence-preview-toolbar")).toBeInTheDocument();
+  });
+
+  it("zooms, pans, and resets screenshot evidence", async () => {
+    vi.spyOn(api, "evidenceSource").mockResolvedValue({ url: "blob:checkout-shot" });
+    render(<IssueDetail issue={issue} onRefresh={async () => undefined} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "预览 Checkout success" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Checkout success" });
+    const preview = within(dialog);
+    const image = preview.getByRole("img", { name: "Checkout success" });
+    const stage = image.closest(".evidence-preview-stage");
+    expect(stage).not.toBeNull();
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("100%");
+
+    fireEvent.click(preview.getByRole("button", { name: "放大" }));
+    fireEvent.click(preview.getByRole("button", { name: "放大" }));
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("150%");
+
+    fireEvent.pointerDown(stage!, { button: 0, clientX: 120, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(stage!, { clientX: 150, clientY: 120, pointerId: 1 });
+    fireEvent.pointerUp(stage!, { pointerId: 1 });
+    expect(image).toHaveStyle({ transform: "translate3d(30px, 20px, 0) scale(1.5)" });
+
+    fireEvent.click(preview.getByRole("button", { name: "重置视图" }));
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("100%");
+    expect(image).toHaveStyle({ transform: "translate3d(0px, 0px, 0) scale(1)" });
+
+    fireEvent.wheel(stage!, { clientX: 200, clientY: 160, deltaY: -100 });
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("125%");
+    expect(image).not.toHaveStyle({ transform: "translate3d(0px, 0px, 0) scale(1.25)" });
   });
 
   it("plays recording evidence in a large dialog", async () => {
@@ -313,22 +346,43 @@ describe("Issue detail", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("keeps Assessment actions outside the scrolling document and closes through cancel", async () => {
+  it("uses a clear cancellation icon for an active Agent operation", () => {
+    render(<IssueDetail issue={{ ...issue, status: "REPAIRING", resolution: undefined }} onRefresh={async () => undefined} onCancel={async () => undefined} />);
+
+    const cancel = screen.getByRole("button", { name: "取消 Agent 运行" });
+    expect(cancel.querySelector(".lucide-x")).not.toBeNull();
+    expect(cancel.querySelector(".lucide-square")).toBeNull();
+  });
+
+  it("renders the unified Assessment review and cancels through the generic control", async () => {
     const onCancel = vi.fn(async () => undefined);
     const onRefresh = vi.fn(async () => undefined);
     render(<IssueDetail
-      issue={{ ...issue, status: "ASSESSMENT_REVIEW", repair: undefined, resolution: undefined }}
-      onApproveAssessment={async () => undefined}
+      issue={{
+        ...issue,
+        status: "REVIEW_REQUIRED",
+        repair: undefined,
+        resolution: undefined,
+        review: {
+          id: "review-assessment-1",
+          kind: "assessment",
+          requestedFrom: "ASSESSING",
+          payload: { verdict: "BUG" },
+          choices: [{
+            id: "implement",
+            label: "开始实现",
+            continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+          }],
+          requestedAt: "2026-08-25T08:00:00.000Z",
+        },
+      }}
       onCancel={onCancel}
       onRefresh={onRefresh}
-      onRequestReassessment={async () => undefined}
+      onSubmitReview={async () => undefined}
     />);
 
-    const dock = screen.getByTestId("assessment-approval-dock");
-    expect(dock.parentElement).toHaveClass("issue-detail");
-    expect(dock.previousElementSibling).toHaveClass("issue-detail-document");
-    fireEvent.click(screen.getByRole("button", { name: "关闭 Issue" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认关闭" }));
+    expect(screen.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
     await vi.waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
     expect(onRefresh).toHaveBeenCalledOnce();
   });
@@ -379,19 +433,145 @@ describe("Issue detail", () => {
     expect(screen.queryByText(/发布/)).not.toBeInTheDocument();
   });
 
+  it("shows bounded AI finalization recovery state without duplicate delivery actions", () => {
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "FINALIZATION_RECOVERY",
+        resolution: "FIXED",
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-1",
+          fingerprintRef: "fingerprint-1",
+          diagnostic: {
+            providerId: "git",
+            step: "add",
+            code: "GIT_ADD_FAILED",
+            message: "生成的临时目录阻塞了 Git 暂存",
+            relatedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
+          },
+        },
+      }}
+      onApproveDelivery={async () => undefined}
+      onCancel={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("AI 正在恢复交付")).toBeVisible();
+    const recovery = screen.getByRole("status", { name: "自动交付恢复" });
+    expect(within(recovery).getByText("第 1/1 次自动恢复")).toBeVisible();
+    expect(within(recovery).getByText("生成的临时目录阻塞了 Git 暂存")).toBeVisible();
+    expect(within(recovery).getByText(".pnpm-store/shared/v11/tmp/_tmp_fixture")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消 Agent 运行" })).toBeVisible();
+  });
+
+  it("shows merge-aware recovery copy and conflict context", () => {
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "FINALIZATION_RECOVERY",
+        resolution: "FIXED",
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-merge",
+          fingerprintRef: "fingerprint-merge",
+          diagnostic: {
+            providerId: "git",
+            step: "merge",
+            code: "GIT_AUTO_MERGE_CONFLICT",
+            message: "自动合并发现内容冲突",
+            relatedPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+          },
+          context: {
+            recoveryKind: "MERGE_CONFLICT",
+            merge: {
+              kind: "MERGE_CONFLICT",
+              baseBranch: "main",
+              baseCommit: "a".repeat(40),
+              issueBranch: "ohmybug/ohmybug-21",
+              issueCommit: "b".repeat(40),
+              conflictPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+              mergeMessages: ["content conflict"],
+              mergePrepared: true,
+            },
+          },
+        },
+      }}
+      onCancel={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("AI 正在修复合并")).toBeVisible();
+    const recovery = screen.getByRole("status", { name: "自动交付恢复" });
+    expect(within(recovery).getByText("AI 正在解析合并问题")).toBeVisible();
+    expect(within(recovery).getByText("基线分支：main")).toBeVisible();
+    expect(within(recovery).getByText("apps/desktop/src/web/issues/issue-detail.tsx"))
+      .toBeVisible();
+    expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
+  });
+
+  it("uses merge recovery copy for older persisted Issues without context", () => {
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "FINALIZATION_RECOVERY",
+        resolution: "FIXED",
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-legacy-merge",
+          fingerprintRef: "fingerprint-legacy-merge",
+          diagnostic: {
+            providerId: "git",
+            step: "merge",
+            code: "GIT_AUTO_MERGE_CONFLICT",
+            message: "旧版本保存的合并冲突",
+            relatedPaths: ["src/conflict.ts"],
+          },
+        },
+      }}
+      onCancel={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("AI 正在修复合并")).toBeVisible();
+    expect(screen.getByText("AI 正在解析合并问题")).toBeVisible();
+  });
+
   it("retries only a failed finalization", async () => {
     const onApproveDelivery = vi.fn(async () => undefined);
     render(<IssueDetail
-      issue={{ ...issue, status: "FINALIZATION_FAILED", repair: undefined }}
+      issue={{
+        ...issue,
+        status: "FINALIZATION_FAILED",
+        repair: undefined,
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-1",
+          fingerprintRef: "fingerprint-1",
+          summary: "未找到可安全自动修复的路径",
+          diagnostic: {
+            providerId: "git",
+            step: "commit",
+            code: "GIT_COMMAND_FAILED:commit",
+            message: "提交钩子拒绝了交付",
+            relatedPaths: [],
+          },
+        },
+      }}
       onApproveDelivery={onApproveDelivery}
       onRefresh={async () => undefined}
     />);
 
     const recovery = within(screen.getByRole("region", { name: "交付恢复" }));
-    expect(recovery.getByText("交付失败，待重试")).toBeVisible();
-    expect(recovery.getByText("代码和工作目录已保留，可安全重试交付收尾。")).toBeVisible();
+    expect(recovery.getByText("交付失败，待重新验证")).toBeVisible();
+    expect(recovery.getByText("代码和工作目录已保留；AI 会从 Repair 重新验证、修复后再发布。")).toBeVisible();
+    expect(recovery.getByText("自动恢复尝试 1/1 已用尽")).toBeVisible();
+    expect(recovery.getByText("自动恢复结果：未找到可安全自动修复的路径")).toBeVisible();
+    expect(recovery.getByText("commit · GIT_COMMAND_FAILED:commit")).toBeVisible();
+    expect(recovery.getByText("提交钩子拒绝了交付")).toBeVisible();
     await act(async () => {
-      fireEvent.click(recovery.getByRole("button", { name: "重试交付" }));
+      fireEvent.click(recovery.getByRole("button", { name: "重新验证并修复" }));
     });
     expect(onApproveDelivery).toHaveBeenCalledOnce();
   });
@@ -403,9 +583,9 @@ describe("Issue detail", () => {
       onRefresh={async () => undefined}
     />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重试交付" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新验证并修复" }));
 
-    expect(await screen.findByText("重试交付失败")).toBeVisible();
+    expect(await screen.findByText("重新验证失败")).toBeVisible();
   });
 
   it("shows the returned branch separately from the completed Issue", () => {

@@ -3,6 +3,7 @@ import { isAbsolute, relative } from "node:path";
 
 import {
   deliverySchema,
+  reviewJsonSchema,
   isAgentCapabilityRequiredError,
   isAgentTurnInterruptedError,
   recordCapabilityRequest,
@@ -14,11 +15,13 @@ import {
   recordEvidenceFailure,
   recordEvidenceRejection,
   recordImplementationDraft,
+  requestReview,
   recordRepairFailure,
   reviewVisualEvidence,
   transitionIssue,
   type EvidenceInspector,
   type EvidenceStore,
+  type FinalizationRecoveryResult,
   type AgentAdapter,
   type AgentContinuation,
   type AgentSessionRef,
@@ -28,7 +31,10 @@ import {
   type RepairEvidencePath,
   type RuntimeStore,
 } from "@oh-my-bug/core";
-import type { LifecycleEventMap } from "@oh-my-bug/module-api";
+import type {
+  LifecycleEventMap,
+  WorkspaceRepairObservation,
+} from "@oh-my-bug/module-api";
 
 import type { AgentRegistry } from "../agents/registry.js";
 import {
@@ -41,13 +47,26 @@ import type {
 } from "../modules/lifecycle-hooks.js";
 import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
 import { publicCapabilityRequest } from "./capability-request.js";
+import {
+  assessmentReview,
+  businessMergeReview,
+  deliveryReview,
+} from "./reviews.js";
 
 export interface RuntimeWorkerDependencies {
   store: RuntimeStore;
   agents: AgentRegistry;
   evidence: EvidenceStore & EvidenceInspector;
   capture?: EvidenceCaptureProvider;
-  workspaces: Pick<WorkspaceCoordinator, "prepare" | "finalize" | "recover">;
+  workspaces: Pick<
+    WorkspaceCoordinator,
+    | "prepare"
+    | "finalize"
+    | "recover"
+    | "observeRepair"
+    | "validateRepair"
+    | "validateFinalizationRecovery"
+  >;
   hooks?: RuntimeLifecycleHooks;
   id: () => string;
   now: () => string;
@@ -137,6 +156,9 @@ export class RuntimeWorker {
     if (pending.operation === "EVIDENCE") return this.inspectEvidence(pending.issue);
     if (pending.operation === "FINALIZE") {
       return this.dependencies.workspaces.finalize(pending.issue);
+    }
+    if (pending.operation === "RECOVER_FINALIZATION") {
+      return this.recoverFinalization(pending.issue);
     }
     throw new Error("UNSUPPORTED_PENDING_OPERATION");
   }
@@ -254,12 +276,18 @@ export class RuntimeWorker {
         feedback: claimed.assessmentFeedback,
         continuation,
       });
-      const assessed = recordAssessment(claimed, result, this.dependencies.now());
-      if (this.complete(claimed, assessed, "ASSESSMENT_READY")) {
+      const reviewedAt = this.dependencies.now();
+      const assessed = recordAssessment(claimed, result, reviewedAt);
+      const reviewed = requestReview(
+        assessed,
+        assessmentReview(assessed, this.dependencies.id(), reviewedAt),
+        reviewedAt,
+      );
+      if (this.completeReview(claimed, reviewed, "ASSESSMENT_READY")) {
         this.emitLifecycle("assessment.after", {
-          issue: assessed,
+          issue: reviewed,
           project,
-          assessment: assessed.assessment,
+          assessment: reviewed.assessment,
         });
       }
     } catch (error) {
@@ -310,6 +338,22 @@ export class RuntimeWorker {
     });
     const projectPath = requireProjectPath(claimed);
     this.emitLifecycle("repair.before", { issue: claimed, project });
+    let observation: WorkspaceRepairObservation;
+    let integration: Parameters<AgentAdapter["repair"]>[1]["integration"];
+    try {
+      observation = await this.dependencies.workspaces.observeRepair(claimed);
+      integration = repairIntegrationInput(observation);
+    } catch (error) {
+      const failed = recordRepairFailure(
+        claimed,
+        repairFailureCode(error),
+        this.dependencies.now(),
+      );
+      if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+        this.emitLifecycle("repair.after", { issue: failed, project });
+      }
+      return;
+    }
     let intake: Awaited<ReturnType<EvidenceStore["prepareIntake"]>>;
     try {
       intake = await this.dependencies.evidence.prepareIntake(
@@ -339,6 +383,7 @@ export class RuntimeWorker {
           previousDelivery: claimed.repair?.delivery,
           feedback: claimed.repair?.feedback,
           continuation,
+          ...(integration ? { integration } : {}),
         });
       } catch (error) {
         if (this.pauseForCapability(
@@ -360,7 +405,80 @@ export class RuntimeWorker {
         return;
       }
 
-      const drafted = recordImplementationDraft(claimed, result.summary, this.dependencies.now());
+      let validation: Awaited<ReturnType<WorkspaceCoordinator["validateRepair"]>>;
+      try {
+        validation = await this.dependencies.workspaces.validateRepair(
+          claimed,
+          observation,
+          result,
+          intake.directory,
+        );
+      } catch (error) {
+        const failed = recordRepairFailure(
+          claimed,
+          repairFailureCode(error),
+          this.dependencies.now(),
+        );
+        if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+          this.emitLifecycle("repair.after", { issue: failed, project });
+        }
+        return;
+      }
+
+      if (result.kind === "BUSINESS_DECISION_REQUIRED") {
+        if (validation.kind !== "BUSINESS_DECISION_REQUIRED") {
+          const failed = recordRepairFailure(
+            claimed,
+            "WORKSPACE_REPAIR_VALIDATION_MISMATCH",
+            this.dependencies.now(),
+          );
+          if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+            this.emitLifecycle("repair.after", { issue: failed, project });
+          }
+          return;
+        }
+        const now = this.dependencies.now();
+        const reviewed = requestReview(
+          claimed,
+          businessMergeReview(claimed, result, this.dependencies.id(), now),
+          now,
+        );
+        if (this.completeReview(
+          claimed,
+          reviewed,
+          "REPAIR_BUSINESS_DECISION_REQUIRED",
+        )) {
+          this.emitLifecycle("repair.after", { issue: reviewed, project });
+        }
+        return;
+      }
+      if (validation.kind !== "DELIVERY_READY") {
+        const failed = recordRepairFailure(
+          claimed,
+          "WORKSPACE_REPAIR_VALIDATION_MISMATCH",
+          this.dependencies.now(),
+        );
+        if (this.complete(claimed, failed, "REPAIR_FAILED")) {
+          this.emitLifecycle("repair.after", { issue: failed, project });
+        }
+        return;
+      }
+      const integrationSnapshot = observation.required && result.integration
+        ? {
+            baseBranch: integration!.baseBranch,
+            baseCommit: result.integration.baseCommit,
+            issueBranch: validation.branch.name,
+            issueCommit: validation.branch.commit,
+            conflicts: result.integration.conflicts,
+            verification: result.verification,
+          }
+        : undefined;
+      const drafted = recordImplementationDraft(
+        claimed,
+        result.summary,
+        this.dependencies.now(),
+        integrationSnapshot,
+      );
       if (result.evidence.length === 0) {
         if (this.complete(claimed, drafted, "IMPLEMENTATION_READY", "CAPTURE_EVIDENCE")) {
           this.emitLifecycle("repair.after", { issue: drafted, project });
@@ -551,11 +669,14 @@ export class RuntimeWorker {
         )));
       const gate = reviewVisualEvidence(delivery, claimed.repair.iteration, inspections);
       if (gate.reviewable) {
-        this.complete(
-          claimed,
-          recordEvidenceAcceptance(claimed, this.dependencies.now()),
-          "EVIDENCE_ACCEPTED",
+        const reviewedAt = this.dependencies.now();
+        const accepted = recordEvidenceAcceptance(claimed, reviewedAt);
+        const reviewed = requestReview(
+          accepted,
+          deliveryReview(accepted, this.dependencies.id(), reviewedAt),
+          reviewedAt,
         );
+        this.completeReview(claimed, reviewed, "EVIDENCE_ACCEPTED");
       } else {
         this.requeueEvidence(
           claimed,
@@ -567,9 +688,102 @@ export class RuntimeWorker {
     }
   }
 
+  private async recoverFinalization(pending: Issue): Promise<void> {
+    const current = this.dependencies.store.getIssue(pending.id);
+    if (
+      !current
+      || current.revision !== pending.revision
+      || current.status !== "FINALIZATION_RECOVERY"
+    ) return;
+    const attemptId = current.finalizationRecovery?.attemptId;
+    const diagnostic = current.finalizationRecovery?.diagnostic;
+    const fingerprintRef = current.finalizationRecovery?.fingerprintRef;
+    const recoveryContext = current.finalizationRecovery?.context;
+    const contextEvent = this.dependencies.store.readEvents(current.id).findLast((event) =>
+      event.type === "DELIVERY_FINALIZATION_RECOVERY_STARTED"
+      && event.data.attemptId === attemptId);
+    const workspaceStatus = contextEvent?.data.workspaceStatus;
+    const fingerprintSummary = contextEvent?.data.fingerprintSummary;
+    const project = this.dependencies.store.getProject(current.projectId);
+    if (
+      !project
+      || !current.agentSession
+      || !attemptId
+      || !diagnostic
+      || !fingerprintRef
+      || !recoveryContext
+      || typeof workspaceStatus !== "string"
+      || typeof fingerprintSummary !== "string"
+    ) {
+      await this.dependencies.workspaces.validateFinalizationRecovery(
+        current,
+        unsafeRecoveryResult("FINALIZATION_RECOVERY_CONTEXT_REQUIRED"),
+      );
+      return;
+    }
+
+    let agent: AgentAdapter;
+    try {
+      agent = this.dependencies.agents.forSession(current.agentSession);
+      if (!agent.recoverFinalization) throw new Error("FINALIZATION_RECOVERY_AGENT_UNSUPPORTED");
+    } catch (error) {
+      await this.dependencies.workspaces.validateFinalizationRecovery(
+        current,
+        unsafeRecoveryResult(agentFailureCode(error)),
+      );
+      return;
+    }
+    const claimed = this.dependencies.store.transaction((tx) => {
+      const latest = this.dependencies.store.getIssue(current.id);
+      if (
+        !latest
+        || latest.revision !== current.revision
+        || latest.status !== "FINALIZATION_RECOVERY"
+      ) return undefined;
+      tx.updateIssue(latest, latest.revision, null);
+      return latest;
+    });
+    if (!claimed) return;
+
+    try {
+      const result = await agent.recoverFinalization!(claimed.agentSession!, {
+        issue: claimed,
+        project,
+        diagnostic,
+        workspaceStatus,
+        fingerprintSummary,
+        recoveryKind: recoveryContext.recoveryKind,
+        ...(recoveryContext.merge ? { merge: recoveryContext.merge } : {}),
+        continuation: this.continuation(claimed, "RECOVER_FINALIZATION"),
+      });
+      await this.dependencies.workspaces.validateFinalizationRecovery(
+        claimed,
+        publicRecoveryResult(result),
+      );
+    } catch (error) {
+      if (this.pauseForCapability(
+        claimed,
+        error,
+        "RECOVER_FINALIZATION",
+        "FINALIZATION_RECOVERY",
+        attemptId,
+      )) return;
+      if (this.requeueInterrupted(
+        claimed,
+        error,
+        "RECOVER_FINALIZATION",
+        attemptId,
+      )) return;
+      await this.dependencies.workspaces.validateFinalizationRecovery(
+        claimed,
+        unsafeRecoveryResult(agentFailureCode(error)),
+      );
+    }
+  }
+
   private continuation(
     issue: Issue,
-    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
+    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION",
   ): AgentContinuation | undefined {
     const events = this.dependencies.store.readEvents(issue.id);
     const granted = events.findLast((event) =>
@@ -593,6 +807,32 @@ export class RuntimeWorker {
         };
       }
     }
+    const reviewed = events.findLast((event) =>
+      event.type === "REVIEW_SUBMITTED" &&
+      event.data.operation === operation &&
+      event.data.revision === issue.revision);
+    if (
+      reviewed &&
+      typeof reviewed.data.requestId === "string" &&
+      typeof reviewed.data.kind === "string" &&
+      typeof reviewed.data.choiceId === "string"
+    ) {
+      const response = reviewed.data.response === undefined
+        ? undefined
+        : reviewJsonSchema.safeParse(reviewed.data.response);
+      if (response === undefined || response.success) {
+        return {
+          reason: "REVIEW_SUBMITTED",
+          requestId: reviewed.data.requestId,
+          kind: reviewed.data.kind,
+          choiceId: reviewed.data.choiceId,
+          ...(typeof reviewed.data.feedback === "string"
+            ? { feedback: reviewed.data.feedback }
+            : {}),
+          ...(response?.success ? { data: response.data } : {}),
+        };
+      }
+    }
     const interrupted = events.findLast((event) =>
       event.type === "RUNTIME_INTERRUPTED" &&
       event.data.operation === operation &&
@@ -609,8 +849,8 @@ export class RuntimeWorker {
   private pauseForCapability(
     claimed: Issue,
     error: unknown,
-    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
-    stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE",
+    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION",
+    stage: "ASSESSMENT" | "REPAIR" | "EVIDENCE" | "FINALIZATION_RECOVERY",
     attemptId: string,
   ): boolean {
     if (!isAgentCapabilityRequiredError(error)) return false;
@@ -650,7 +890,7 @@ export class RuntimeWorker {
   private requeueInterrupted(
     claimed: Issue,
     error: unknown,
-    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE",
+    operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION",
     attemptId: string,
   ): boolean {
     if (
@@ -668,7 +908,13 @@ export class RuntimeWorker {
       };
       tx.updateIssue(resumable, current.revision, operation);
       tx.appendEvent(this.event(resumable.id, "RUNTIME_INTERRUPTED", "SYSTEM", {
-        stage: operation === "ASSESS" ? "ASSESSMENT" : operation === "REPAIR" ? "REPAIR" : "EVIDENCE",
+        stage: operation === "ASSESS"
+          ? "ASSESSMENT"
+          : operation === "REPAIR"
+            ? "REPAIR"
+            : operation === "CAPTURE_EVIDENCE"
+              ? "EVIDENCE"
+              : "FINALIZATION_RECOVERY",
         reason: error.reason,
         operation,
         attemptId,
@@ -774,6 +1020,26 @@ export class RuntimeWorker {
     });
   }
 
+  private completeReview(previous: Issue, next: Issue, type: string): boolean {
+    const review = next.review;
+    if (next.status !== "REVIEW_REQUIRED" || !review) {
+      throw new Error("REVIEW_COMPLETION_REQUIRED");
+    }
+    return this.dependencies.store.transaction((tx) => {
+      const current = this.dependencies.store.getIssue(previous.id);
+      if (!current || current.revision !== previous.revision) return false;
+      tx.updateIssue(next, previous.revision, null);
+      tx.appendEvent(this.event(next.id, type, "AGENT"));
+      tx.appendEvent(this.event(next.id, "REVIEW_REQUESTED", "SYSTEM", {
+        requestId: review.id,
+        kind: review.kind,
+        choiceIds: review.choices.map((choice) => choice.id),
+        revision: next.revision,
+      }));
+      return true;
+    });
+  }
+
   private emitLifecycle<K extends keyof LifecycleEventMap>(
     name: K,
     payload: LifecycleEventMap[K],
@@ -836,9 +1102,29 @@ const REPAIR_OUTPUT_FAILURE_CODES = new Set([
 ]);
 
 function repairFailureCode(error: unknown): string {
-  return error instanceof Error && REPAIR_OUTPUT_FAILURE_CODES.has(error.message)
-    ? error.message
-    : agentFailureCode(error);
+  if (!(error instanceof Error)) return agentFailureCode(error);
+  if (
+    REPAIR_OUTPUT_FAILURE_CODES.has(error.message) ||
+    /^GIT_REPAIR_[A-Z_]+$/.test(error.message) ||
+    /^WORKSPACE_REPAIR_[A-Z_]+$/.test(error.message)
+  ) return error.message;
+  return agentFailureCode(error);
+}
+
+function repairIntegrationInput(
+  observation: WorkspaceRepairObservation,
+): Parameters<AgentAdapter["repair"]>[1]["integration"] {
+  if (!observation.required) return undefined;
+  if (
+    !observation.baseBranch ||
+    !observation.baseCommit ||
+    !observation.issueBranch
+  ) throw new Error("WORKSPACE_REPAIR_OBSERVATION_INVALID");
+  return {
+    baseBranch: observation.baseBranch,
+    observedBaseCommit: observation.baseCommit,
+    issueBranch: observation.issueBranch,
+  };
 }
 
 function publicEvidenceFailure(error: unknown): string {
@@ -848,4 +1134,42 @@ function publicEvidenceFailure(error: unknown): string {
 
 function evidenceFailureCode(error: unknown, fallback: string): string {
   return error instanceof EvidenceCaptureError ? error.code : fallback;
+}
+
+const recoverySecretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)\s*[=:]\s*)([^\s"']+)/gi;
+const recoveryBearerToken = /(bearer\s+)([^\s"']+)/gi;
+
+function publicRecoveryText(value: string, maxLength: number): string {
+  return stripControlCharacters(value
+    .trim()
+    .replace(recoverySecretAssignment, "$1[REDACTED]")
+    .replace(recoveryBearerToken, "$1[REDACTED]")
+  )
+    .slice(0, maxLength);
+}
+
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+  }).join("");
+}
+
+function publicRecoveryResult(result: FinalizationRecoveryResult): FinalizationRecoveryResult {
+  return {
+    summary: publicRecoveryText(result.summary, 4_000) || "Automatic finalization recovery finished",
+    diagnosis: publicRecoveryText(result.diagnosis, 4_000) || "No diagnosis was provided",
+    disposition: result.disposition,
+    affectedPaths: result.affectedPaths.slice(0, 50).map((path) =>
+      publicRecoveryText(path, 1_000)),
+  };
+}
+
+function unsafeRecoveryResult(diagnosis: string): FinalizationRecoveryResult {
+  return publicRecoveryResult({
+    summary: "Automatic finalization recovery stopped safely",
+    diagnosis,
+    disposition: "UNSAFE",
+    affectedPaths: [],
+  });
 }

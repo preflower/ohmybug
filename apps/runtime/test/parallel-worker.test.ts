@@ -98,7 +98,7 @@ describe("Runtime parallel Issue scheduler", () => {
     worker.kick();
     await worker.drain();
 
-    expect(harness.store.getIssue("issue-1")?.status).toBe("ASSESSMENT_REVIEW");
+    expect(harness.store.getIssue("issue-1")?.status).toBe("REVIEW_REQUIRED");
   });
 
   it("reserves an Issue before adapters can kick the worker re-entrantly", async () => {
@@ -200,7 +200,7 @@ describe("Runtime parallel Issue scheduler", () => {
     queueAssessment(harness.store, "good-issue", "OMB-02");
 
     await expect(worker.drain()).rejects.toThrow("ISSUE_PROJECT_PATH_REQUIRED");
-    expect(harness.store.getIssue("good-issue")?.status).toBe("ASSESSMENT_REVIEW");
+    expect(harness.store.getIssue("good-issue")?.status).toBe("REVIEW_REQUIRED");
     expect(harness.store.listPendingOperations().map(({ issue }) => issue.id))
       .toContain("bad-issue");
   });

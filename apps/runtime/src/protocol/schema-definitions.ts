@@ -2,6 +2,7 @@ import {
   integrationPluginManifestSchema,
   configFieldSchema,
   issueSchema,
+  reviewSubmissionSchema as coreReviewSubmissionSchema,
   projectCommandsSchema as coreProjectCommandsSchema,
 } from "@oh-my-bug/core";
 import { z } from "zod";
@@ -81,6 +82,24 @@ const projectFields = {
 };
 
 export const createProjectInputSchema = z.object(projectFields).strict();
+export const integrationSecretPatchesSchema = z.record(
+  identifierSchema,
+  z.record(identifierSchema, z.string().min(1).nullable()),
+);
+export const saveProjectSettingsInputSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("create"),
+    project: createProjectInputSchema,
+    secretPatches: integrationSecretPatchesSchema,
+  }).strict(),
+  z.object({
+    mode: z.literal("update"),
+    id: identifierSchema,
+    expectedRevision: z.number().int().positive(),
+    project: createProjectInputSchema,
+    secretPatches: integrationSecretPatchesSchema,
+  }).strict(),
+]);
 export const updateProjectInputSchema = z.object({
   expectedRevision: z.number().int().positive(),
   path: projectFields.path.optional(),
@@ -127,6 +146,7 @@ export const approveAssessmentInputSchema = assessmentReferenceSchema.extend({
   title: z.string().trim().min(1),
 }).strict();
 export const feedbackSchema = z.string().trim().min(1);
+export const reviewSubmissionSchema = coreReviewSubmissionSchema;
 export const issueEventSchema = z.object({
   id: identifierSchema,
   issueId: identifierSchema,

@@ -30,6 +30,54 @@ function receivedIssue(id = "issue-1"): Issue {
 }
 
 describe("demo Agent adapter", () => {
+  it("uses an unsafe default and supports a deterministic recovery fixture", async () => {
+    const sessions = new MemorySessions();
+    const issue = receivedIssue();
+    const unsafeAdapter = new DemoAgentAdapter({ sessions });
+    const session = await unsafeAdapter.createSession({ issue, project });
+    await sessions.save({
+      agent: session.agent,
+      logicalSessionId: session.sessionId,
+      issueId: issue.id,
+      projectId: project.id,
+      lifecycle: "ACTIVE",
+      updatedAt: now,
+    });
+    const input = {
+      issue: { ...issue, status: "FINALIZATION_RECOVERY" as const },
+      project,
+      diagnostic: {
+        providerId: "git",
+        step: "add" as const,
+        code: "GIT_ADD_FAILED",
+        message: "git add failed",
+        relatedPaths: [".pnpm-store"],
+      },
+      workspaceStatus: "?? .pnpm-store/",
+      fingerprintSummary: "approved content unchanged",
+      recoveryKind: "GENERATED_ARTIFACT_CLEANUP" as const,
+    };
+
+    await expect(unsafeAdapter.recoverFinalization!(session, input)).resolves.toMatchObject({
+      disposition: "UNSAFE",
+      affectedPaths: [],
+    });
+
+    const configured = new DemoAgentAdapter({
+      sessions,
+      finalizationRecoveryResult: {
+        summary: "Removed generated pollution",
+        diagnosis: "A package-manager cache contained a nested repository",
+        disposition: "RECOVERED",
+        affectedPaths: [".pnpm-store"],
+      },
+    });
+    await expect(configured.recoverFinalization!(session, input)).resolves.toMatchObject({
+      disposition: "RECOVERED",
+      affectedPaths: [".pnpm-store"],
+    });
+  });
+
   it("keeps one native session across implementation and evidence capture", async () => {
     const sessions = new MemorySessions();
     const adapter = new DemoAgentAdapter({
@@ -66,8 +114,14 @@ describe("demo Agent adapter", () => {
       expect(sessions.values.get(session.sessionId)?.providerSessionId)
         .toBe("demo-native-demo-issue-1-1");
       expect(result).toEqual({
+        kind: "DELIVERY_READY",
         summary: "The failing path now returns a recoverable result.",
         evidence: [],
+        verification: [{
+          command: "pnpm test",
+          outcome: "PASSED",
+          summary: "configured tests passed",
+        }],
       });
       const evidenceResult = await adapter.captureEvidence(session, {
         issue: {
@@ -101,6 +155,57 @@ describe("demo Agent adapter", () => {
     } finally {
       await rm(evidenceDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("captures Repair integration/review continuation and can queue a business decision", async () => {
+    const sessions = new MemorySessions();
+    const businessDecision = {
+      kind: "BUSINESS_DECISION_REQUIRED" as const,
+      summary: "Choose one behavior",
+      decision: {
+        baseCommit: "a".repeat(40),
+        issueCommit: "b".repeat(40),
+        conflictPaths: ["src/total.ts"],
+        baseIntent: "Round total",
+        issueIntent: "Round lines",
+        incompatibility: "Totals differ",
+        recommendation: "Use Issue",
+        rationale: "Matches examples",
+        choices: [{ id: "use-issue", label: "Use Issue", description: "Round lines" }],
+      },
+    };
+    const adapter = new DemoAgentAdapter({ sessions, repairResults: [businessDecision] });
+    const issue = receivedIssue("issue-review");
+    const session = await adapter.createSession({ issue, project });
+    await sessions.save({
+      agent: session.agent,
+      logicalSessionId: session.sessionId,
+      issueId: issue.id,
+      projectId: project.id,
+      lifecycle: "ACTIVE",
+      updatedAt: now,
+    });
+    const assessment = await adapter.assess(session, { issue, project });
+    const input = {
+      issue: { ...issue, status: "REPAIRING" as const, assessment, repair: { iteration: 1 } },
+      project,
+      assessment,
+      evidenceDirectory: "/tmp/evidence",
+      integration: {
+        baseBranch: "main",
+        observedBaseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/issue-review",
+      },
+      continuation: {
+        reason: "REVIEW_SUBMITTED" as const,
+        requestId: "review-1",
+        kind: "business-merge-conflict",
+        choiceId: "use-issue",
+      },
+    };
+
+    await expect(adapter.repair(session, input)).resolves.toEqual(businessDecision);
+    expect(adapter.repairInputs).toEqual([input]);
   });
 
   it("cancels an in-flight deterministic turn", async () => {

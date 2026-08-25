@@ -3,15 +3,28 @@ import {
   assessmentSchema,
   deliverySchema,
 } from "../agent/schemas.js";
+import {
+  reviewRequestSchema,
+  reviewSubmissionSchema,
+} from "./schema.js";
 import type {
   AgentSessionRef,
   Assessment,
   Delivery,
+  DeliveryIntegrationSnapshot,
+  FinalizationRecoveryResult,
 } from "../agent/types.js";
 import type {
+  FinalizationRecoveryContextSummary,
   Issue,
   IssueFailure,
   PendingCapabilityRequest,
+  ReviewChoice,
+  ReviewOperation,
+  ReviewRequest,
+  ReviewSourceStatus,
+  ReviewSubmission,
+  WorkspaceFinalizationDiagnostic,
 } from "./types.js";
 import { transitionIssue } from "./workflow.js";
 
@@ -25,16 +38,115 @@ function withFailure(issue: Issue, failure: IssueFailure): Issue {
   return { ...issue, lastFailure: failure };
 }
 
+const allowedReviewContinuations: Record<ReviewSourceStatus, ReadonlySet<string>> = {
+  ASSESSING: new Set([
+    "ASSESSING:ASSESS:-",
+    "REPAIRING:REPAIR:-",
+    "CLOSED:-:NOT_A_BUG",
+    "CLOSED:-:DUPLICATE",
+  ]),
+  REPAIRING: new Set(["REPAIRING:REPAIR:-"]),
+  EVIDENCE_CHECK: new Set([
+    "REPAIRING:REPAIR:-",
+    "FINALIZING:FINALIZE:FIXED",
+    "FINALIZING:FINALIZE:IMPLEMENTED",
+  ]),
+};
+
+function reviewContinuationKey(choice: ReviewChoice): string {
+  const continuation = choice.continuation;
+  return [
+    continuation.resumeStatus,
+    continuation.operation ?? "-",
+    continuation.resolution ?? "-",
+  ].join(":");
+}
+
+export function requestReview(
+  issue: Issue,
+  requestInput: ReviewRequest,
+  now: string,
+): Issue {
+  if (issue.review || issue.status === "REVIEW_REQUIRED") {
+    throw new Error("REVIEW_ALREADY_REQUIRED");
+  }
+  const request = reviewRequestSchema.parse(requestInput);
+  if (issue.status !== request.requestedFrom) {
+    throw new Error("REVIEW_SOURCE_STATUS_MISMATCH");
+  }
+  if (request.choices.some((choice) =>
+    !allowedReviewContinuations[request.requestedFrom].has(reviewContinuationKey(choice)))) {
+    throw new Error("REVIEW_CONTINUATION_NOT_ALLOWED");
+  }
+  return {
+    ...issue,
+    status: "REVIEW_REQUIRED",
+    review: request,
+    lastFailure: undefined,
+    revision: issue.revision + 1,
+    updatedAt: now,
+  };
+}
+
+export function submitReview(
+  issue: Issue,
+  submissionInput: ReviewSubmission,
+  now: string,
+): {
+  issue: Issue;
+  operation: ReviewOperation | null;
+  request: ReviewRequest;
+  choice: ReviewChoice;
+} {
+  const submission = reviewSubmissionSchema.parse(submissionInput);
+  if (issue.revision !== submission.expectedRevision) {
+    throw new Error("REVIEW_SUBMISSION_STALE");
+  }
+  if (issue.status !== "REVIEW_REQUIRED" || !issue.review) {
+    throw new Error("REVIEW_NOT_AVAILABLE");
+  }
+  const request = issue.review;
+  if (request.id !== submission.requestId) throw new Error("REVIEW_REQUEST_STALE");
+  const choice = request.choices.find((candidate) => candidate.id === submission.choiceId);
+  if (!choice) throw new Error("REVIEW_CHOICE_NOT_AVAILABLE");
+  if (choice.feedbackRequired && !submission.feedback) {
+    throw new Error("REVIEW_FEEDBACK_REQUIRED");
+  }
+  const continuation = choice.continuation;
+  const next: Issue = {
+    ...issue,
+    status: continuation.resumeStatus,
+    ...(continuation.resolution ? { resolution: continuation.resolution } : {}),
+    review: undefined,
+    lastFailure: undefined,
+    revision: issue.revision + 1,
+    updatedAt: now,
+  };
+  if (continuation.resumeStatus === "CLOSED") {
+    delete next.capabilityGrants;
+    delete next.pendingCapabilityRequest;
+    delete next.finalizationRecovery;
+  }
+  return {
+    issue: next,
+    operation: continuation.operation ?? null,
+    request,
+    choice,
+  };
+}
+
 const resumeStatusByOperation = {
   ASSESS: "ASSESSING",
   REPAIR: "REPAIRING",
   CAPTURE_EVIDENCE: "EVIDENCE_CAPTURE",
+  RECOVER_FINALIZATION: "FINALIZATION_RECOVERY",
 } as const;
 
 const stageByOperation = {
   ASSESS: "ASSESSMENT",
   REPAIR: "REPAIR",
   CAPTURE_EVIDENCE: "EVIDENCE",
+  RECOVER_FINALIZATION: "FINALIZATION_RECOVERY",
 } as const;
 
 export function recordCapabilityRequest(
@@ -164,6 +276,7 @@ export function recordAssessment(
   const next = transitionIssue(issue, "ASSESSMENT_READY", now);
   return {
     ...next,
+    status: "ASSESSING",
     assessment: assessmentSchema.parse(assessmentInput),
     assessmentFeedback: undefined,
     lastFailure: undefined,
@@ -223,13 +336,17 @@ export function recordEvidenceRejection(
 }
 
 export function recordEvidenceAcceptance(issue: Issue, now: string): Issue {
-  return transitionIssue(issue, "EVIDENCE_ACCEPTED", now);
+  return {
+    ...transitionIssue(issue, "EVIDENCE_ACCEPTED", now),
+    status: "EVIDENCE_CHECK",
+  };
 }
 
 export function recordImplementationDraft(
   issue: Issue,
   summaryInput: string,
   now: string,
+  integration?: DeliveryIntegrationSnapshot,
 ): Issue {
   const summary = required(summaryInput, "DELIVERY_SUMMARY_REQUIRED");
   const iteration = issue.repair?.iteration ?? 1;
@@ -243,10 +360,93 @@ export function recordImplementationDraft(
         summary,
         repairIteration: iteration,
         implementationCompletedAt: now,
+        ...(integration ? { integration } : {}),
       },
     },
     lastFailure: undefined,
   };
+}
+
+export interface BeginFinalizationRecoveryInput {
+  attemptId: string;
+  diagnostic: WorkspaceFinalizationDiagnostic;
+  fingerprintRef: string;
+  context: FinalizationRecoveryContextSummary;
+}
+
+export function beginFinalizationRecovery(
+  issue: Issue,
+  input: BeginFinalizationRecoveryInput,
+  now: string,
+): Issue {
+  if ((issue.finalizationRecovery?.automaticAttempts ?? 0) >= 1) {
+    throw new Error("FINALIZATION_RECOVERY_BUDGET_SPENT");
+  }
+  const attemptId = required(input.attemptId, "FINALIZATION_RECOVERY_ATTEMPT_REQUIRED");
+  const fingerprintRef = required(
+    input.fingerprintRef,
+    "FINALIZATION_RECOVERY_FINGERPRINT_REQUIRED",
+  );
+  return {
+    ...transitionIssue(issue, "BEGIN_FINALIZATION_RECOVERY", now),
+    finalizationRecovery: {
+      automaticAttempts: 1,
+      attemptId,
+      diagnostic: input.diagnostic,
+      fingerprintRef,
+      context: input.context,
+    },
+    lastFailure: undefined,
+  };
+}
+
+export type FinalizationRecoveryValidationKind =
+  | "UNCHANGED"
+  | "CHANGED"
+  | "UNSAFE";
+
+export function recordFinalizationRecoveryResult(
+  issue: Issue,
+  result: FinalizationRecoveryResult,
+  validationKind: FinalizationRecoveryValidationKind,
+  now: string,
+): Issue {
+  const summary = required(result.summary, "FINALIZATION_RECOVERY_SUMMARY_REQUIRED");
+  const finalizationRecovery = {
+    ...(issue.finalizationRecovery ?? { automaticAttempts: 1 as const }),
+    summary,
+  };
+  if (validationKind === "UNCHANGED") {
+    return {
+      ...transitionIssue(issue, "RETRY_FINALIZATION", now),
+      finalizationRecovery,
+      lastFailure: undefined,
+    };
+  }
+  if (validationKind === "CHANGED") {
+    const iteration = (issue.repair?.iteration ?? 0) + 1;
+    return {
+      ...transitionIssue(issue, "FINALIZATION_RECOVERY_CHANGED_DELIVERY", now),
+      finalizationRecovery,
+      repair: {
+        iteration,
+        evidenceRetries: 0,
+        deliveryDraft: {
+          summary,
+          repairIteration: iteration,
+          implementationCompletedAt: now,
+        },
+      },
+      lastFailure: undefined,
+    };
+  }
+  return withFailure({
+    ...transitionIssue(issue, "FINALIZATION_RECOVERY_ERRORED", now),
+    finalizationRecovery,
+  }, {
+    stage: "FINALIZATION_RECOVERY",
+    code: "FINALIZATION_RECOVERY_UNSAFE",
+  });
 }
 
 export function recordEvidenceFailure(
@@ -279,29 +479,36 @@ export function recordRepairFailure(
   );
 }
 
-export function requestAssessmentChanges(
+export function recordBaseIntegrationStale(
   issue: Issue,
-  feedbackInput: string,
+  currentBaseCommitInput: string,
   now: string,
 ): Issue {
-  const feedback = required(feedbackInput, "FEEDBACK_REQUIRED");
-  return {
-    ...transitionIssue(issue, "REQUEST_REASSESSMENT", now),
-    assessmentFeedback: feedback,
-    lastFailure: undefined,
+  const currentBaseCommit = required(currentBaseCommitInput, "BASE_COMMIT_REQUIRED");
+  if (currentBaseCommit.length > 200) throw new Error("BASE_COMMIT_TOO_LONG");
+  const next: Issue = {
+    ...transitionIssue(issue, "BASE_INTEGRATION_STALE", now),
+    repair: {
+      iteration: (issue.repair?.iteration ?? 0) + 1,
+      feedback: `The baseline advanced to ${currentBaseCommit}. Integrate this exact base, rerun verification, and produce new evidence.`,
+    },
   };
+  delete next.resolution;
+  delete next.finalizationRecovery;
+  delete next.lastFailure;
+  return next;
 }
 
-export function requestDeliveryChanges(
-  issue: Issue,
-  feedbackInput: string,
-  now: string,
-): Issue {
-  const feedback = required(feedbackInput, "FEEDBACK_REQUIRED");
-  const next = transitionIssue(issue, "REJECT_DELIVERY", now);
-  return {
-    ...next,
-    repair: { ...(next.repair ?? { iteration: 1 }), feedback },
-    lastFailure: undefined,
+export function retryFinalizationAsRepair(issue: Issue, now: string): Issue {
+  const next: Issue = {
+    ...transitionIssue(issue, "RETRY_FINALIZATION_REPAIR", now),
+    repair: {
+      iteration: (issue.repair?.iteration ?? 0) + 1,
+      feedback: "Final publication failed. Revalidate the latest baseline, integration, verification, and evidence before publishing again.",
+    },
   };
+  delete next.resolution;
+  delete next.finalizationRecovery;
+  delete next.lastFailure;
+  return next;
 }

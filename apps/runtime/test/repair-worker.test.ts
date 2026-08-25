@@ -65,7 +65,12 @@ describe("Runtime repair worker", () => {
 
   it("passes the capability grant marker into resumed Repair", async () => {
     const agent = new FakeAgent();
-    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [],
+    };
     const { store, agents, evidence, workspaces } = createHarness(agent);
     const issue = {
       ...repairingIssue("repair-grant-continuation"),
@@ -111,7 +116,12 @@ describe("Runtime repair worker", () => {
 
   it("persists a draft and queues evidence when Repair returns none", async () => {
     const agent = new FakeAgent();
-    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [],
+    };
     const { store, agents, evidence, workspaces } = createHarness(agent);
     const issue = repairingIssue("repair-draft");
     store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
@@ -138,6 +148,197 @@ describe("Runtime repair worker", () => {
       },
     });
     expect(store.listPendingOperations()[0]?.operation).toBe("CAPTURE_EVIDENCE");
+  });
+
+  it("passes the observed base to Repair and persists the validated integration snapshot", async () => {
+    const agent = new FakeAgent();
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Merged latest main",
+      evidence: repairResult.evidence,
+      integration: {
+        baseCommit: "base-2",
+        issueCommit: "issue-2",
+        conflicts: [{
+          path: "src/payment.ts",
+          classification: "COMPATIBLE_BUSINESS",
+          resolution: "Preserved validation and the new retry behavior.",
+        }],
+      },
+      verification: repairResult.verification,
+    };
+    const { store, agents, evidence, workspaces } = createHarness(agent);
+    const observation = {
+      required: true,
+      baseBranch: "main",
+      baseCommit: "base-2",
+      issueBranch: "issue/OMB-9",
+    } as const;
+    workspaces.observeRepair = async () => observation;
+    workspaces.validateRepair = async (_issue, observed, result) => {
+      expect(observed).toEqual(observation);
+      expect(result).toEqual(agent.nextRepairResult);
+      expect(evidence.imported).toEqual([]);
+      return {
+        kind: "DELIVERY_READY",
+        branch: { name: "issue/OMB-9", commit: "issue-2" },
+      };
+    };
+    const issue = repairingIssue("repair-integrated");
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-integrated"),
+      now: () => now,
+    }).drainOne();
+
+    expect(agent.repairInputs[0]?.integration).toEqual({
+      baseBranch: "main",
+      observedBaseCommit: "base-2",
+      issueBranch: "issue/OMB-9",
+    });
+    expect(store.getIssue(issue.id)?.repair?.deliveryDraft?.integration).toEqual({
+      baseBranch: "main",
+      baseCommit: "base-2",
+      issueBranch: "issue/OMB-9",
+      issueCommit: "issue-2",
+      conflicts: agent.nextRepairResult.kind === "DELIVERY_READY"
+        ? agent.nextRepairResult.integration?.conflicts
+        : undefined,
+      verification: repairResult.verification,
+    });
+  });
+
+  it("fails Repair with the workspace validation code before importing evidence", async () => {
+    const agent = new FakeAgent();
+    const { store, agents, evidence, workspaces } = createHarness(agent);
+    workspaces.observeRepair = async () => ({
+      required: true,
+      baseBranch: "main",
+      baseCommit: "base-2",
+      issueBranch: "issue/OMB-9",
+    });
+    workspaces.validateRepair = async () => {
+      throw new Error("GIT_REPAIR_HEAD_MISMATCH");
+    };
+    const issue = repairingIssue("repair-invalid-integration");
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-invalid-integration"),
+      now: () => now,
+    }).drainOne();
+
+    expect(store.getIssue(issue.id)).toMatchObject({
+      status: "REPAIR_FAILED",
+      lastFailure: { stage: "REPAIR", code: "GIT_REPAIR_HEAD_MISMATCH" },
+    });
+    expect(evidence.imported).toEqual([]);
+    expect(store.getIssue(issue.id)?.repair).not.toHaveProperty("deliveryDraft");
+  });
+
+  it("pauses only business-incompatible merges for review and resumes the same Repair context", async () => {
+    const agent = new FakeAgent();
+    const businessDecision: RepairResult = {
+      kind: "BUSINESS_DECISION_REQUIRED",
+      summary: "Both branches changed payment cancellation semantics.",
+      decision: {
+        baseCommit: "base-2",
+        issueCommit: "issue-1",
+        conflictPaths: ["src/payment.ts"],
+        baseIntent: "Cancel immediately.",
+        issueIntent: "Wait for settlement.",
+        incompatibility: "Only one cancellation contract can be exposed.",
+        recommendation: "keep-base",
+        rationale: "The current API contract promises immediate cancellation.",
+        choices: [{
+          id: "keep-base",
+          label: "保留基线行为",
+          description: "Keep immediate cancellation and adapt the feature.",
+        }, {
+          id: "keep-issue",
+          label: "采用功能行为",
+          description: "Change cancellation to wait for settlement.",
+        }],
+      },
+    };
+    agent.nextRepairResult = businessDecision;
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
+    workspaces.observeRepair = async () => ({
+      required: true,
+      baseBranch: "main",
+      baseCommit: "base-2",
+      issueBranch: "issue/OMB-9",
+    });
+    workspaces.validateRepair = async (_issue, _observation, result) =>
+      result.kind === "BUSINESS_DECISION_REQUIRED"
+        ? { kind: "BUSINESS_DECISION_REQUIRED" }
+        : { kind: "DELIVERY_READY", branch: { name: "issue/OMB-9", commit: "issue-2" } };
+    const issue = repairingIssue("repair-business-review");
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+    const worker = new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-business-review"),
+      now: () => now,
+    });
+
+    await worker.drainOne();
+
+    const paused = store.getIssue(issue.id)!;
+    expect(paused).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      agentSession: issue.agentSession,
+      repair: { iteration: 1 },
+      review: {
+        kind: "business-merge-conflict",
+        choices: [{ id: "keep-base" }, { id: "keep-issue" }],
+      },
+    });
+    expect(paused.repair).not.toHaveProperty("deliveryDraft");
+    expect(evidence.imported).toEqual([]);
+
+    const resumed = commands.submitReview(issue.id, {
+      expectedRevision: paused.revision,
+      requestId: paused.review!.id,
+      choiceId: "keep-base",
+    });
+    expect(resumed).toMatchObject({
+      status: "REPAIRING",
+      agentSession: issue.agentSession,
+      repair: { iteration: 1 },
+    });
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Applied the selected cancellation contract.",
+      evidence: [],
+      integration: { baseCommit: "base-2", issueCommit: "issue-2", conflicts: [] },
+      verification: repairResult.verification,
+    };
+
+    await worker.drainOne();
+
+    expect(agent.repairInputs[1]?.continuation).toEqual({
+      reason: "REVIEW_SUBMITTED",
+      requestId: paused.review!.id,
+      kind: "business-merge-conflict",
+      choiceId: "keep-base",
+    });
+    expect(store.getIssue(issue.id)).toMatchObject({
+      status: "EVIDENCE_CAPTURE",
+      agentSession: issue.agentSession,
+      repair: { iteration: 1 },
+    });
   });
 
   it("imports scoped Agent evidence and reaches human acceptance", async () => {
@@ -169,7 +370,7 @@ describe("Runtime repair worker", () => {
     await worker.drainOne();
 
     expect(store.getIssue(issue.id)).toMatchObject({
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       repair: { delivery },
     });
     expect(agent.repairSessions).toEqual(["session-1"]);

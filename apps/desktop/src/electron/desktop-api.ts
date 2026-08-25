@@ -8,6 +8,9 @@ import type {
   RuntimeOperationOutput,
   UpdateProjectInput,
 } from "@oh-my-bug/runtime/protocol";
+import type { TrayNavigationTarget } from "./tray-navigation.js";
+
+export type { TrayNavigationTarget } from "./tray-navigation.js";
 
 export const DESKTOP_REQUEST_CHANNEL = "oh-my-bug:request";
 export const OPEN_PROJECT_DIRECTORY_CHANNEL = "oh-my-bug:open-project-directory";
@@ -15,6 +18,7 @@ export const SUBSCRIBE_ISSUE_CHANNEL = "oh-my-bug:subscribe-issue";
 export const UNSUBSCRIBE_ISSUE_CHANNEL = "oh-my-bug:unsubscribe-issue";
 export const ISSUE_EVENT_CHANNEL = "oh-my-bug:issue-event";
 export const RUNTIME_STATE_CHANNEL = "oh-my-bug:runtime-state";
+export const TRAY_NAVIGATION_CHANNEL = "oh-my-bug:tray-navigation";
 
 export interface RendererIpc {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>;
@@ -33,6 +37,9 @@ export interface DesktopApi {
     refreshRemote: boolean,
   ): Promise<RuntimeOperationOutput<"inspectProjectBranches">>;
   getProject(id: string): Promise<RuntimeOperationOutput<"getProject">>;
+  saveProjectSettings(
+    input: RuntimeOperationInput<"saveProjectSettings">,
+  ): Promise<RuntimeOperationOutput<"saveProjectSettings">>;
   createProject(project: CreateProjectInput): Promise<RuntimeOperationOutput<"createProject">>;
   updateProject(id: string, input: UpdateProjectInput): Promise<RuntimeOperationOutput<"updateProject">>;
   setIntegrationSecrets(
@@ -45,6 +52,10 @@ export interface DesktopApi {
   getIssue(id: string): Promise<RuntimeOperationOutput<"getIssue">>;
   getIssueWorkspace(id: string): Promise<RuntimeOperationOutput<"getIssueWorkspace">>;
   submitManual(input: ManualIssueCommand): Promise<RuntimeOperationOutput<"submitManual">>;
+  submitReview(
+    id: string,
+    input: RuntimeOperationInput<"submitReview">["input"],
+  ): Promise<RuntimeOperationOutput<"submitReview">>;
   approveAssessment(
     id: string,
     input: RuntimeOperationInput<"approveAssessment">["input"],
@@ -88,6 +99,7 @@ export interface DesktopApi {
     listener: (event: IssueEventEnvelope) => void,
   ): () => void;
   onRuntimeState(listener: (state: unknown) => void): () => void;
+  onTrayNavigation(listener: (target: TrayNavigationTarget) => void): () => void;
 }
 
 export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
@@ -105,6 +117,7 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     inspectProjectBranches: (path, providerId, refreshRemote) =>
       request("inspectProjectBranches", { path, providerId, refreshRemote }),
     getProject: (id) => request("getProject", { id }),
+    saveProjectSettings: (input) => request("saveProjectSettings", input),
     createProject: (project) => request("createProject", project),
     updateProject: (id, input) => request("updateProject", { id, input }),
     setIntegrationSecrets: (id, pluginId, patch) => request("setIntegrationSecrets", {
@@ -117,6 +130,7 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     getIssue: (id) => request("getIssue", { id }),
     getIssueWorkspace: (id) => request("getIssueWorkspace", { id }),
     submitManual: (input) => request("submitManual", input),
+    submitReview: (id, input) => request("submitReview", { id, input }),
     approveAssessment: (id, input) => request("approveAssessment", { id, input }),
     approveBugAssessment: (id, input) => request("approveBugAssessment", { id, input }),
     confirmNotABug: (id, reference) => request("confirmNotABug", { id, reference }),
@@ -161,6 +175,18 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
       const onState = (_event: unknown, state: unknown) => listener(state);
       ipc.on(RUNTIME_STATE_CHANNEL, onState);
       return () => ipc.removeListener(RUNTIME_STATE_CHANNEL, onState);
+    },
+    onTrayNavigation: (listener) => {
+      const onNavigation = (_event: unknown, value: unknown) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return;
+        const issueId = (value as { issueId?: unknown }).issueId;
+        if (issueId === undefined) listener({});
+        else if (typeof issueId === "string" && issueId.trim().length > 0) {
+          listener({ issueId });
+        }
+      };
+      ipc.on(TRAY_NAVIGATION_CHANNEL, onNavigation);
+      return () => ipc.removeListener(TRAY_NAVIGATION_CHANNEL, onNavigation);
     },
   };
   return Object.freeze(api);

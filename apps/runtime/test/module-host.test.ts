@@ -24,7 +24,7 @@ function fakeWorkspaceFactory(id: string): WorkspaceProviderFactory {
             resourceId: `${id}:${issue.id}:${String(config.marker ?? "")}`,
           };
         },
-        async publish() { return undefined; },
+        async publish() { return { kind: "PUBLISHED" as const }; },
         async release() {},
       };
     },

@@ -43,6 +43,7 @@ const stageLabels = {
   ASSESSMENT: "分析",
   REPAIR: "实现",
   EVIDENCE: "证据采集",
+  FINALIZATION_RECOVERY: "交付恢复",
 } as const;
 
 export function CapabilityRequestPanel({

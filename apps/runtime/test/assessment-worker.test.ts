@@ -166,10 +166,14 @@ describe("Runtime assessment worker", () => {
 
     const issue = store.getIssue(created.issue.id);
     expect(issue).toMatchObject({
-      status: "ASSESSMENT_REVIEW",
+      status: "REVIEW_REQUIRED",
+      review: { kind: "assessment", requestedFrom: "ASSESSING" },
       agentSession: { agent: "fake", sessionId: "session-1" },
       assessment: agent.nextAssessment,
     });
+    expect(issue?.review?.id).not.toMatch(/^legacy:/);
+    expect(store.readEvents(created.issue.id).map((event) => event.type))
+      .toContain("REVIEW_REQUESTED");
     expect(store.getAgentSession("session-1")).toMatchObject({
       issueId: created.issue.id,
       projectId: project.id,
