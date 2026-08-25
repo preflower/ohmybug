@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { Bot, ClipboardCheck, Folder, MessageCircle, Plug, Webhook } from "lucide-react";
+import { toast } from "sonner";
 
 import { DingTalkIcon, SentryIcon } from "../components/brand-icons.js";
 import { Alert, AlertDescription } from "../components/ui/alert.js";
@@ -85,7 +86,6 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
   const [editingSecrets, setEditingSecrets] = useState<Record<string, Record<string, boolean>>>({});
   const [integrationErrors, setIntegrationErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(Boolean(initial));
   const [saveConfirmed, setSaveConfirmed] = useState(false);
 
@@ -143,7 +143,6 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
     }
     setSaving(true);
     setSaved(false);
-    setSaveError("");
     try {
       const normalized = {
         ...project,
@@ -161,7 +160,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
       setSaved(true);
       setSaveConfirmed(true);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "保存更改失败");
+      toast.error(error instanceof Error ? error.message : "保存更改失败");
     } finally {
       setSaving(false);
     }
@@ -291,7 +290,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
             />
           </section></div> : null;
         })}
-      </div>{saveError ? <Alert className="project-save-alert" variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert> : null}<footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存更改"}</Button></div></footer></div>
+      </div><footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存更改"}</Button></div></footer></div>
     </Tabs>
   </form>;
 }

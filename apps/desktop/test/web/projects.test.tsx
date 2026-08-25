@@ -5,10 +5,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 
 import type { IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../../src/web/api/types.js";
+import { Toaster } from "../../src/web/components/ui/sonner.js";
 import { GitBranchCombobox } from "../../src/web/projects/git-branch-combobox.js";
 import { IntegrationFields } from "../../src/web/projects/integration-fields.js";
 import { IntegrationHealthStatus } from "../../src/web/projects/integration-health.js";
 import { ProjectForm } from "../../src/web/projects/project-form.js";
+import { ThemeProvider } from "../../src/web/theme/theme-provider.js";
 
 class ResizeObserverMock {
   disconnect() {}
@@ -269,6 +271,21 @@ describe("Project configuration", () => {
         dingtalk: expect.objectContaining({ config: { conversationFilterEnabled: true, conversationIds: ["cid-a", "cid-b"] } }),
       }),
     }), {}));
+  });
+
+  it("shows persistence failures in a toast instead of an inline alert", async () => {
+    render(<ThemeProvider>
+      <ProjectForm
+        initial={configuredProject}
+        manifests={manifests}
+        onSave={async () => { throw new Error("浏览器样式预览为只读模式"); }}
+      />
+      <Toaster />
+    </ThemeProvider>);
+
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+    expect(await screen.findByText("浏览器样式预览为只读模式")).toBeVisible();
+    expect(document.querySelector(".project-save-alert")).not.toBeInTheDocument();
   });
 
   it("shows local branches first, then appends searchable remote branches", async () => {
@@ -681,14 +698,15 @@ describe("Project configuration", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("shows a request error above the save footer without clearing the form", async () => {
-    render(<ProjectForm inspection={inspection} manifests={manifests} onSave={async () => Promise.reject(new Error("目录不可用"))} />);
+  it("shows a request error in a toast without clearing the form", async () => {
+    render(<ThemeProvider>
+      <ProjectForm inspection={inspection} manifests={manifests} onSave={async () => Promise.reject(new Error("目录不可用"))} />
+      <Toaster />
+    </ThemeProvider>);
     fireEvent.change(screen.getByLabelText("项目名称"), { target: { value: "Broken" } });
     const saveButton = screen.getByRole("button", { name: "保存更改" });
     fireEvent.click(saveButton);
-    const alert = await screen.findByRole("alert");
-    expect(Boolean(alert.compareDocumentPosition(saveButton) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(alert).toHaveTextContent("目录不可用");
+    expect(await screen.findByText("目录不可用")).toBeVisible();
     expect(screen.getByLabelText("项目名称")).toHaveValue("Broken");
   });
 
@@ -725,15 +743,16 @@ describe("Project configuration", () => {
 
   it("keeps secret drafts when the unified save fails", async () => {
     const onSave = vi.fn(async () => Promise.reject(new Error("系统钥匙串不可用")));
-    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />);
+    render(<ThemeProvider>
+      <ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />
+      <Toaster />
+    </ThemeProvider>);
     selectTab("Example source");
     fireEvent.click(screen.getByRole("button", { name: "替换 API token" }));
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "secret-token" } });
     const save = screen.getByRole("button", { name: "保存更改" });
     fireEvent.click(save);
-    const alert = await screen.findByRole("alert");
-    expect(Boolean(alert.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(alert).toHaveTextContent("系统钥匙串不可用");
+    expect(await screen.findByText("系统钥匙串不可用")).toBeVisible();
     expect(screen.getByLabelText("API token")).toHaveValue("secret-token");
   });
 });
