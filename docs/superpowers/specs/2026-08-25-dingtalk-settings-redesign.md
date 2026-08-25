@@ -66,7 +66,7 @@ interface IntegrationSection {
 interface IntegrationPluginManifest {
   id: string;
   name: string;
-  icon?: "plug" | "messageCircle" | "webhook";
+  icon?: "plug" | "messageCircle" | "webhook" | "sentry" | "dingtalk";
   description?: string;
   sections?: IntegrationSection[];
   configFields: ConfigField[];

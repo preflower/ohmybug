@@ -10,7 +10,7 @@ describe("IntegrationPlugin manifest", () => {
     const manifest: IntegrationPluginManifest = {
       id: "fixture",
       name: "Fixture",
-      icon: "messageCircle",
+      icon: "dingtalk",
       configFields: [
         { key: "workspace", type: "string", label: "Workspace", required: true },
         { key: "channels", type: "string[]", label: "Channels", required: true },

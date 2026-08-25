@@ -51,7 +51,7 @@ export const integrationSectionSchema = z.object({
 export const integrationPluginManifestSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]*$/),
   name: z.string().trim().min(1),
-  icon: z.enum(["plug", "messageCircle", "webhook"]).optional(),
+  icon: z.enum(["plug", "messageCircle", "webhook", "sentry", "dingtalk"]).optional(),
   description: z.string().trim().min(1).optional(),
   sections: z.array(integrationSectionSchema).optional(),
   configFields: z.array(configFieldSchema),

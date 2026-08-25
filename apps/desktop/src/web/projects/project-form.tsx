@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { Bot, ClipboardCheck, Folder, MessageCircle, Plug, Webhook } from "lucide-react";
 
+import { DingTalkIcon, SentryIcon } from "../components/brand-icons.js";
 import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
 import { Checkbox } from "../components/ui/checkbox.js";
@@ -328,6 +329,8 @@ function initialValue(manifests: IntegrationPluginManifest[], workspaceProviders
 }
 
 function IntegrationNavIcon({ icon }: { icon?: IntegrationPluginManifest["icon"] }) {
+  if (icon === "sentry") return <SentryIcon aria-hidden="true" />;
+  if (icon === "dingtalk") return <DingTalkIcon aria-hidden="true" />;
   const Icon = icon === "messageCircle" ? MessageCircle : icon === "webhook" ? Webhook : Plug;
   return <Icon aria-hidden="true" />;
 }

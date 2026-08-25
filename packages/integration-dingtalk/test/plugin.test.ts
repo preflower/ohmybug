@@ -44,7 +44,7 @@ describe("DingTalk plugin", () => {
     expect(dingTalkPlugin().manifest).toEqual({
       id: "dingtalk",
       name: "DingTalk",
-      icon: "messageCircle",
+      icon: "dingtalk",
       description: "从指定群聊接收消息并创建 Issue。",
       sections: [
         {

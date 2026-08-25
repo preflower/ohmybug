@@ -440,6 +440,20 @@ describe("Project configuration", () => {
     expect(screen.queryByDisplayValue(/token/i)).not.toBeInTheDocument();
   });
 
+  it("renders the Sentry and DingTalk brand marks in integration navigation", () => {
+    render(<ProjectForm
+      initial={configuredProject}
+      manifests={[
+        { id: "sentry", name: "Sentry", icon: "sentry", configFields: [], secretFields: [] },
+        { id: "dingtalk", name: "DingTalk", icon: "dingtalk", configFields: [], secretFields: [] },
+      ]}
+      onSave={async () => undefined}
+    />);
+
+    expect(screen.getByRole("tab", { name: "Sentry" }).querySelector('[data-brand-icon="sentry"]')).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "DingTalk" }).querySelector('[data-brand-icon="dingtalk"]')).toBeInTheDocument();
+  });
+
   it("shows the inspected remote path read-only and stores its internal name", async () => {
     const onSave = vi.fn(async () => undefined);
     render(<ProjectForm

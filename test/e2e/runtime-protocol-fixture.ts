@@ -69,7 +69,7 @@ function installRuntimeProtocolFixture() {
   const now = () => new Date().toISOString();
   const manifests = [
     {
-      id: "sentry", name: "Sentry", icon: "webhook",
+      id: "sentry", name: "Sentry", icon: "sentry",
       configFields: [
         { key: "organization", type: "string", label: "Organization", required: true },
         { key: "project", type: "string", label: "Project", required: true },
@@ -79,7 +79,7 @@ function installRuntimeProtocolFixture() {
       secretFields: [{ key: "token", label: "Auth token", required: true }],
     },
     {
-      id: "dingtalk", name: "DingTalk", icon: "messageCircle", description: "从指定群聊接收消息并创建 Issue。",
+      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从指定群聊接收消息并创建 Issue。",
       sections: [
         { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
         { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
