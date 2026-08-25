@@ -47,4 +47,9 @@ describe("project settings layout", () => {
     expect(styles).toMatch(/\.project-settings-actions\s*\{[^}]*box-shadow:\s*none;/s);
     expect(styles).toMatch(/\.project-path-control \[data-slot="button"\]\s*\{[^}]*height:\s*32px;/s);
   });
+
+  it("optically aligns the narrower DingTalk brand mark with Sentry", () => {
+    expect(styles).toMatch(/\[data-brand-icon="dingtalk"\]\s*\{[^}]*transform:\s*scale\(1\.15\);/s);
+    expect(styles).toMatch(/\[data-brand-icon="dingtalk"\]\s*\{[^}]*transform-origin:\s*center;/s);
+  });
 });

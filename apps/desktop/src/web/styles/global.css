@@ -2362,6 +2362,11 @@ a:focus-visible {
   height: 24px;
 }
 
+[data-brand-icon="dingtalk"] {
+  transform: scale(1.15);
+  transform-origin: center;
+}
+
 .project-settings-nav [data-slot="tabs-trigger"]::after {
   display: none;
 }
