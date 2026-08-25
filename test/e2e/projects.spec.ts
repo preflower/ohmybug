@@ -1,3 +1,6 @@
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
+
 import { expect, test } from "./runtime-protocol-fixture.js";
 
 import { registerProject } from "./project-fixture.js";
@@ -24,8 +27,8 @@ test("registers a local project and renders built-in plugins from manifests", as
     await page.getByRole("tab", { name: "Sentry" }).click();
     await expect(page.getByLabel("Auth token")).toBeVisible();
     await page.getByLabel("Auth token").fill("must-not-leak");
-    await page.getByRole("button", { name: "保存 Sentry 凭证" }).click();
-    await expect(page.getByText("凭证已保存到系统钥匙串")).toBeVisible();
+    await page.getByRole("button", { name: "保存更改" }).click();
+    await expect(page.getByText("所有更改已保存")).toBeVisible();
     const response = await page.evaluate(async () => JSON.stringify(await (
       window as unknown as Window & { ohMyBug: { listProjects(): Promise<unknown> } }
     ).ohMyBug.listProjects()));
@@ -114,6 +117,33 @@ test("keeps project settings flat across desktop and narrow layouts", async ({ p
   }
 });
 
+test("renders streamlined DingTalk settings with one save action", async ({ page }) => {
+  await page.setViewportSize({ width: 1806, height: 1076 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  const fixture = await registerProject(page, String(Date.now()));
+  try {
+    await page.getByRole("tab", { name: "DingTalk" }).click();
+    await page.getByRole("checkbox", { name: "启用" }).click();
+    await page.getByLabel("Client ID").fill("ding-client-id");
+    await page.getByLabel("Client Secret").fill("ding-client-secret");
+    await page.getByRole("button", { name: "添加群聊 ID" }).click();
+    await page.getByRole("textbox", { name: "群聊 ID 1", exact: true }).fill("cid-acceptance-group");
+
+    await expect(page.getByRole("button", { name: "保存更改" })).toHaveCount(1);
+    await page.getByRole("button", { name: "保存更改" }).click();
+    await expect(page.getByText("所有更改已保存")).toBeVisible();
+    await expect(page.getByText("已连接", { exact: true })).toBeVisible();
+    await expect(page.getByText("已配置")).toHaveCount(2);
+    await expect(page.locator("details").filter({ hasText: "高级设置" })).not.toHaveAttribute("open");
+
+    const outputDir = resolve(".artifacts", "visual-diff", "dingtalk-settings");
+    await mkdir(outputDir, { recursive: true });
+    await page.locator(".project-settings-tabs").screenshot({ path: resolve(outputDir, "actual.png") });
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test("fills the desktop project workspace without a trailing blank region", async ({ page }) => {
   await page.setViewportSize({ width: 1368, height: 1230 });
   await page.goto("/projects");
@@ -181,7 +211,7 @@ test("shows inline project validation instead of silently ignoring save", async 
   await page.getByLabel("项目标识").fill("BROKEN");
 
   await page.getByTestId("project-settings-form")
-    .getByRole("button", { name: "保存项目", exact: true })
+    .getByRole("button", { name: "保存更改", exact: true })
     .click();
 
   await expect(page.getByText("请输入本机项目路径")).toBeVisible();

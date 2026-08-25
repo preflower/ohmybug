@@ -15,7 +15,7 @@ test("toggles the Issue details rail with the documented keyboard shortcut", asy
     await desktop.page.getByRole("tab", { name: "命令与验收" }).click();
     await desktop.page.getByLabel("测试命令").fill("node --test");
     await desktop.page.getByTestId("project-settings-form")
-      .getByRole("button", { name: "保存项目", exact: true }).click();
+      .getByRole("button", { name: "保存更改", exact: true }).click();
     await expect(desktop.page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
 
     await desktop.page.getByRole("button", { name: "新建 Issue" }).click();

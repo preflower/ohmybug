@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
+import { Bot, ClipboardCheck, Folder, Plug } from "lucide-react";
 
 import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
@@ -13,10 +14,11 @@ import {
 } from "../components/ui/select.js";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
 import { Textarea } from "../components/ui/textarea.js";
-import type { ConfigValue, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../api/types.js";
+import type { ConfigValue, IntegrationHealth, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../api/types.js";
 import { ConfigFields } from "./config-fields.js";
 import { GitWorkspaceFields } from "./git-workspace-fields.js";
 import { IntegrationFields } from "./integration-fields.js";
+import { IntegrationHealthStatus } from "./integration-health.js";
 
 export interface ProjectIntegrationFormValue {
   enabled: boolean;
@@ -50,12 +52,14 @@ interface ProjectFormProps {
     path: string,
     providerId: string,
   ): Promise<WorkspaceBranchDiscoveryDto>;
-  onSave(project: ProjectFormValue): Promise<ProjectDto | void>;
-  onSaveSecrets?(projectId: string, pluginId: string, patch: Record<string, string | null>): Promise<ProjectDto>;
+  health?: Record<string, IntegrationHealth>;
+  onSave(
+    project: ProjectFormValue,
+    secretPatches: Record<string, Record<string, string | null>>,
+  ): Promise<ProjectDto | void>;
 }
 
 type ProjectField = "name" | "key" | "path";
-type Feedback = { saving: boolean; error: string; message: string };
 type EvidenceCaptureMode = "agent" | "browser" | "electron" | "command";
 
 const localWorkspaceProvider: WorkspaceProviderManifest = {
@@ -64,7 +68,7 @@ const localWorkspaceProvider: WorkspaceProviderManifest = {
   configFields: [],
 };
 
-export function ProjectForm({ manifests, workspaceProviders = [localWorkspaceProvider], initial, inspection, onCancel, onSelectDirectory, onRefreshWorkspaceBranches, onSave, onSaveSecrets }: ProjectFormProps) {
+export function ProjectForm({ manifests, workspaceProviders = [localWorkspaceProvider], initial, inspection, onCancel, onSelectDirectory, onRefreshWorkspaceBranches, health = {}, onSave }: ProjectFormProps) {
   const allManifests = useMemo(() => withUnavailableManifests(manifests, initial), [manifests, initial]);
   const allWorkspaceProviders = useMemo(
     () => withUnavailableWorkspaceProviders(workspaceProviders, initial),
@@ -76,7 +80,8 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
   const [activeTab, setActiveTab] = useState("project");
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ProjectField, string>>>({});
   const [secretValues, setSecretValues] = useState<Record<string, Record<string, string>>>({});
-  const [feedback, setFeedback] = useState<Record<string, Feedback>>({});
+  const [editingSecrets, setEditingSecrets] = useState<Record<string, Record<string, boolean>>>({});
+  const [integrationErrors, setIntegrationErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(Boolean(initial));
@@ -127,6 +132,13 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
       setActiveTab("project");
       return;
     }
+    const integrationValidation = validateIntegrations(project, manifests, secretValues);
+    if (integrationValidation) {
+      setIntegrationErrors({ [integrationValidation.pluginId]: integrationValidation.message });
+      setActiveTab(integrationValidation.pluginId);
+      setTimeout(() => focusIntegrationField(formRef.current, integrationValidation.fieldKey), 0);
+      return;
+    }
     setSaving(true);
     setSaved(false);
     setSaveError("");
@@ -135,31 +147,21 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
         ...project,
         key: project.key.trim().toUpperCase(),
         commands: normalizeCommands(project.commands),
+        integrations: normalizeIntegrations(project.integrations, manifests),
       };
-      const next = await onSave(normalized);
+      const next = await onSave(normalized, collectSecretPatches(secretValues));
       setProject(next
         ? initialValue(allManifests, allWorkspaceProviders, next, projectInspection)
         : normalized);
+      setSecretValues({});
+      setEditingSecrets({});
+      setIntegrationErrors({});
       setSaved(true);
       setSaveConfirmed(true);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "保存项目失败");
+      setSaveError(error instanceof Error ? error.message : "保存更改失败");
     } finally {
       setSaving(false);
-    }
-  };
-
-  const saveSecrets = async (manifest: IntegrationPluginManifest) => {
-    if (!project.id || !onSaveSecrets) return;
-    const patch = Object.fromEntries(Object.entries(secretValues[manifest.id] ?? {}).filter(([, value]) => value.length > 0));
-    setFeedback((current) => ({ ...current, [manifest.id]: { saving: true, error: "", message: "" } }));
-    try {
-      const next = await onSaveSecrets(project.id, manifest.id, patch);
-      setProject(initialValue(allManifests, allWorkspaceProviders, next));
-      setSecretValues((current) => ({ ...current, [manifest.id]: {} }));
-      setFeedback((current) => ({ ...current, [manifest.id]: { saving: false, error: "", message: "凭证已保存到系统钥匙串" } }));
-    } catch (error) {
-      setFeedback((current) => ({ ...current, [manifest.id]: { saving: false, error: error instanceof Error ? error.message : "保存凭证失败", message: "" } }));
     }
   };
 
@@ -167,11 +169,11 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
     <Tabs className="project-settings-tabs" orientation="vertical" value={activeTab} onValueChange={setActiveTab}>
       <TabsList aria-label="项目配置" className="project-settings-nav" variant="line">
         <span className="project-settings-nav-label" role="presentation">项目设置</span>
-        <TabsTrigger value="project">项目</TabsTrigger>
-        <TabsTrigger value="agent">Agent</TabsTrigger>
-        <TabsTrigger value="commands">命令与验收</TabsTrigger>
+        <TabsTrigger value="project"><Folder aria-hidden="true" />项目</TabsTrigger>
+        <TabsTrigger value="agent"><Bot aria-hidden="true" />Agent</TabsTrigger>
+        <TabsTrigger value="commands"><ClipboardCheck aria-hidden="true" />命令与验收</TabsTrigger>
         <span className="project-settings-nav-label project-settings-nav-label-integrations" role="presentation">集成</span>
-        {allManifests.map((manifest) => <TabsTrigger key={manifest.id} value={manifest.id}>{manifest.name}</TabsTrigger>)}
+        {allManifests.map((manifest) => <TabsTrigger key={manifest.id} value={manifest.id}><Plug aria-hidden="true" />{manifest.name}</TabsTrigger>)}
       </TabsList>
       <div className="project-settings-main"><div className="project-settings-content">
         {activeTab === "project" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel project-overview-panel"><div className="section-heading"><div><h2>项目</h2><p>Agent 在这个本机项目目录中工作。</p></div></div><div className="form-grid">
@@ -245,21 +247,22 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
         </div></section></div> : null}
         {allManifests.map((manifest) => {
           const value = project.integrations[manifest.id] ?? { enabled: false, config: {}, secretConfigured: {} };
-          const state = feedback[manifest.id] ?? { saving: false, error: "", message: "" };
           const unavailable = initial?.integrations?.[manifest.id]?.unavailable;
           return activeTab === manifest.id ? <div className="flex-1 text-sm outline-none" key={manifest.id} role="tabpanel"><section className="project-settings-panel">
-            <div className="section-heading integration-heading"><div><h2>{manifest.name}</h2>{unavailable ? <p>{unavailable}</p> : null}</div><label className="switch-row"><Checkbox checked={value.enabled} disabled={Boolean(unavailable)} onCheckedChange={(checked) => updateProject((current) => ({
+            <div className="section-heading integration-heading"><div><h2>{manifest.name}</h2>{manifest.description ? <p>{manifest.description}</p> : null}{unavailable ? <p>{unavailable}</p> : null}<IntegrationHealthStatus enabled={value.enabled} health={project.id ? health[`${project.id}:${manifest.id}`] : undefined} /></div><div className="switch-row"><span>{value.enabled ? "已启用" : "已停用"}</span><Checkbox aria-label="启用" checked={value.enabled} className="integration-enabled-toggle" disabled={Boolean(unavailable)} onCheckedChange={(checked) => updateProject((current) => ({
               ...current,
               integrations: {
                 ...current.integrations,
                 [manifest.id]: { ...value, enabled: Boolean(checked) },
               },
-            }))} />启用</label></div>
+            }))} /></div></div>
+            {integrationErrors[manifest.id] ? <Alert className="integration-validation-alert" variant="destructive"><AlertDescription>{integrationErrors[manifest.id]}</AlertDescription></Alert> : null}
             <IntegrationFields
               manifest={manifest}
               config={value.config}
               secretConfigured={value.secretConfigured}
               secretValues={secretValues[manifest.id] ?? {}}
+              editingSecrets={editingSecrets[manifest.id] ?? {}}
               onConfigChange={(key, configValue) => updateProject((current) => ({
                 ...current,
                 integrations: {
@@ -270,15 +273,23 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
                   },
                 },
               }))}
-              onSecretChange={(key, secretValue) => setSecretValues((current) => ({
+              onSecretChange={(key, secretValue) => {
+                setSaved(false);
+                setSaveConfirmed(false);
+                setIntegrationErrors((current) => ({ ...current, [manifest.id]: "" }));
+                setSecretValues((current) => ({
+                  ...current,
+                  [manifest.id]: { ...current[manifest.id], [key]: secretValue },
+                }));
+              }}
+              onEditSecret={(key, editing) => setEditingSecrets((current) => ({
                 ...current,
-                [manifest.id]: { ...current[manifest.id], [key]: secretValue },
+                [manifest.id]: { ...current[manifest.id], [key]: editing },
               }))}
             />
-            {project.id && manifest.secretFields.length > 0 ? <div className="credential-save-block"><Button disabled={state.saving || !onSaveSecrets} size="sm" type="button" variant="outline" onClick={() => { void saveSecrets(manifest); }}>{state.saving ? "保存中…" : `保存 ${manifest.name} 凭证`}</Button>{state.error ? <Alert variant="destructive"><AlertDescription>{state.error}</AlertDescription></Alert> : null}{state.message ? <p role="status">{state.message}</p> : null}</div> : null}
           </section></div> : null;
         })}
-      </div>{saveError ? <Alert className="project-save-alert" variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert> : null}<footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存项目"}</Button></div></footer></div>
+      </div>{saveError ? <Alert className="project-save-alert" variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert> : null}<footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存更改"}</Button></div></footer></div>
     </Tabs>
   </form>;
 }
@@ -370,6 +381,87 @@ function withUnavailableWorkspaceProviders(
 function withUnavailableManifests(manifests: IntegrationPluginManifest[], initial?: ProjectDto): IntegrationPluginManifest[] {
   const installed = new Set(manifests.map((manifest) => manifest.id));
   return [...manifests, ...Object.keys(initial?.integrations ?? {}).flatMap((id) => installed.has(id) ? [] : [{ id, name: id, configFields: [], secretFields: [] }])];
+}
+
+function validateIntegrations(
+  project: ProjectFormValue,
+  manifests: IntegrationPluginManifest[],
+  secretValues: Record<string, Record<string, string>>,
+): { pluginId: string; fieldKey: string; message: string } | undefined {
+  for (const manifest of manifests) {
+    const integration = project.integrations[manifest.id];
+    if (!integration?.enabled) continue;
+    for (const field of manifest.configFields) {
+      const value = integration.config[field.key] ?? field.defaultValue;
+      if (field.type === "string[]") {
+        const normalized = Array.isArray(value)
+          ? value.map((entry) => entry.trim()).filter(Boolean)
+          : [];
+        if (field.required && normalized.length === 0) {
+          return { pluginId: manifest.id, fieldKey: field.key, message: `请至少添加一个${field.label}` };
+        }
+        if (new Set(normalized).size !== normalized.length) {
+          return { pluginId: manifest.id, fieldKey: field.key, message: `${field.label}不能重复` };
+        }
+      } else if (field.required && field.type === "string" && String(value ?? "").trim().length === 0) {
+        return { pluginId: manifest.id, fieldKey: field.key, message: `请输入${field.label}` };
+      }
+    }
+    for (const field of manifest.secretFields) {
+      const draft = secretValues[manifest.id]?.[field.key] ?? "";
+      if (field.required && !integration.secretConfigured[field.key] && draft.trim().length === 0) {
+        return { pluginId: manifest.id, fieldKey: field.key, message: `请输入${field.label}` };
+      }
+    }
+  }
+  return undefined;
+}
+
+function normalizeIntegrations(
+  integrations: ProjectFormValue["integrations"],
+  manifests: IntegrationPluginManifest[],
+): ProjectFormValue["integrations"] {
+  const installed = new Map(manifests.map((manifest) => [manifest.id, manifest]));
+  return Object.fromEntries(Object.entries(integrations).map(([pluginId, integration]) => {
+    const manifest = installed.get(pluginId);
+    if (!manifest) return [pluginId, integration];
+    const config = Object.fromEntries(manifest.configFields.flatMap((field) => {
+      const value = integration.config[field.key] ?? field.defaultValue;
+      if (field.type === "string") {
+        const normalized = String(value ?? "").trim();
+        return normalized ? [[field.key, normalized]] : [];
+      }
+      if (field.type === "string[]") {
+        const normalized = Array.isArray(value)
+          ? value.map((entry) => entry.trim()).filter(Boolean)
+          : [];
+        return normalized.length > 0 ? [[field.key, normalized]] : [];
+      }
+      return value === undefined ? [] : [[field.key, value]];
+    }));
+    return [pluginId, { ...integration, config }];
+  }));
+}
+
+function collectSecretPatches(
+  values: Record<string, Record<string, string>>,
+): Record<string, Record<string, string | null>> {
+  return Object.fromEntries(Object.entries(values).flatMap(([pluginId, fields]) => {
+    const patch = Object.fromEntries(Object.entries(fields).filter(([, value]) => value.length > 0));
+    return Object.keys(patch).length > 0 ? [[pluginId, patch]] : [];
+  }));
+}
+
+function focusIntegrationField(form: HTMLFormElement | null, fieldKey: string) {
+  if (!form) return;
+  const wrapper = [...form.querySelectorAll<HTMLElement>("[data-config-key], [data-secret-key]")]
+    .find((element) => element.dataset.configKey === fieldKey || element.dataset.secretKey === fieldKey);
+  if (!wrapper) return;
+  wrapper.closest("details")?.setAttribute("open", "");
+  const control = wrapper.matches("input, button, [tabindex]")
+    ? wrapper
+    : wrapper.querySelector<HTMLElement>("input, button, [tabindex]");
+  control?.focus();
 }
 
 function commandLabel(key: "install" | "test" | "start" | "acceptanceUrl"): string {

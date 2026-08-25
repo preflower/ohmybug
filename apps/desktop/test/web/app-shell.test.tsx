@@ -89,7 +89,7 @@ describe("application shell", () => {
 
   it("keeps visible save confirmation after manually creating the project", async () => {
     stubEmptyControlCenter();
-    vi.spyOn(api, "createProject").mockResolvedValue({
+    vi.spyOn(api, "saveProjectSettings").mockResolvedValue({
       id: "project-1",
       name: "Checkout",
       key: "CHK",
@@ -108,7 +108,7 @@ describe("application shell", () => {
     fireEvent.change(screen.getByLabelText("项目名称"), { target: { value: "Checkout" } });
     fireEvent.change(screen.getByLabelText("项目标识"), { target: { value: "CHK" } });
     fireEvent.change(screen.getByLabelText("本机项目路径"), { target: { value: "/work/checkout" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent("已保存");
   });
