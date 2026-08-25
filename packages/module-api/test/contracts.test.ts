@@ -40,7 +40,7 @@ describe("internal module contracts", () => {
     const provider: WorkspaceProvider = {
       id: "fixture",
       acquire: async () => ({ projectPath: "/repo", resourceId: "fixture:1" }),
-      publish: async () => undefined,
+      publish: async () => ({ kind: "PUBLISHED" }),
       release: async () => undefined,
       observeRepair: async () => observation,
       validateRepair: async () => ({
@@ -84,7 +84,7 @@ describe("internal module contracts", () => {
     const provider: WorkspaceProvider = {
       id: "fixture",
       acquire: async () => ({ projectPath: "/repo", resourceId: "fixture:1" }),
-      publish: async () => undefined,
+      publish: async () => ({ kind: "PUBLISHED" }),
       release: async () => undefined,
       prepareFinalizationRecovery: async () => ({
         fingerprintRef: "fingerprint-1",
@@ -129,7 +129,7 @@ describe("internal module contracts", () => {
       create: () => ({
         id: "fixture",
         acquire: async () => ({ projectPath: "/repo", resourceId: "fixture:1" }),
-        publish: async () => undefined,
+        publish: async () => ({ kind: "PUBLISHED" }),
         release: async () => undefined,
       }),
       inspectProject: async () => ({
@@ -158,7 +158,7 @@ describe("internal module contracts", () => {
       create: () => ({
         id: "fixture",
         acquire: async () => ({ projectPath: "/repo", resourceId: "fixture:1" }),
-        publish: async () => undefined,
+        publish: async () => ({ kind: "PUBLISHED" }),
         release: async () => undefined,
       }),
       inspectProjectBranches: async (_path, input) => ({

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   beginFinalizationRecovery,
+  recordBaseIntegrationStale,
   recordAgentSession,
   recordAssessment,
   recordAssessmentFailure,
@@ -300,6 +301,42 @@ describe("Issue workflow results", () => {
       fingerprintRef: "fingerprint-2",
       context,
     }, now)).toThrow("FINALIZATION_RECOVERY_BUDGET_SPENT");
+  });
+
+  it("returns stale accepted integration to a fresh Repair iteration", () => {
+    const finalizing: Issue = {
+      ...issueAt("FINALIZING"),
+      assessment,
+      agentSession: { agent: "codex", sessionId: "logical-1" },
+      repair: {
+        iteration: 2,
+        deliveryDraft: { ...draft, integration: integrationSnapshot },
+        delivery,
+      },
+      resolution: "FIXED",
+      finalizationRecovery: { automaticAttempts: 1 },
+      lastFailure: { stage: "FINALIZATION_RECOVERY", code: "OLD" },
+    };
+
+    const stale = recordBaseIntegrationStale(finalizing, "c".repeat(40), now);
+
+    expect(stale).toMatchObject({
+      status: "REPAIRING",
+      assessment,
+      agentSession: finalizing.agentSession,
+      repair: {
+        iteration: 3,
+        feedback: expect.stringContaining("c".repeat(40)),
+      },
+      revision: finalizing.revision + 1,
+    });
+    expect(stale.repair).not.toHaveProperty("deliveryDraft");
+    expect(stale.repair).not.toHaveProperty("delivery");
+    expect(stale).not.toHaveProperty("resolution");
+    expect(stale).not.toHaveProperty("finalizationRecovery");
+    expect(stale).not.toHaveProperty("lastFailure");
+    expect(() => recordBaseIntegrationStale(issueAt("REPAIRING"), "base", now))
+      .toThrow(/Illegal Issue transition/);
   });
 
   it.each([

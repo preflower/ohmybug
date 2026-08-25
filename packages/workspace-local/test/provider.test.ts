@@ -29,7 +29,9 @@ describe("LocalWorkspace", () => {
         verification: [{ command: "pnpm test", outcome: "PASSED", summary: "Passed" }],
       },
     })).resolves.toMatchObject({ kind: "DELIVERY_READY" });
-    await expect(provider.publish({ issue, resourceId })).resolves.toBeUndefined();
+    await expect(provider.publish({ issue, resourceId })).resolves.toEqual({
+      kind: "PUBLISHED",
+    });
     await expect(provider.release({ issue, resourceId })).resolves.toBeUndefined();
   });
 });

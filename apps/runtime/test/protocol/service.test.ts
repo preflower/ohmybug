@@ -184,7 +184,7 @@ describe("RuntimeService", () => {
       create: () => ({
         id: "branches",
         acquire: async () => ({ projectPath: "/repo", resourceId: "branches:1" }),
-        publish: async () => undefined,
+        publish: async () => ({ kind: "PUBLISHED" as const }),
         release: async () => undefined,
       }),
     };
@@ -289,7 +289,7 @@ describe("RuntimeService", () => {
       create: () => ({
         id,
         acquire: async () => ({ projectPath: projectDirectory, resourceId: `${id}:1` }),
-        publish: async () => undefined,
+        publish: async () => ({ kind: "PUBLISHED" as const }),
         release: async () => undefined,
       }),
       inspectProject,

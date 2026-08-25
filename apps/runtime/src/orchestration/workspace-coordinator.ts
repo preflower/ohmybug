@@ -1,5 +1,6 @@
 import {
   beginFinalizationRecovery,
+  recordBaseIntegrationStale,
   recordFinalizationRecoveryResult,
   transitionIssue,
   workspaceFinalizationDiagnosticSchema,
@@ -219,10 +220,29 @@ export class WorkspaceCoordinator {
         throw new Error("WORKSPACE_BINDING_NOT_READY");
       }
       provider = this.dependencies.registry.create(binding.providerId, {});
-      const branch = await provider.publish({
+      const publication = await provider.publish({
         issue,
         resourceId: binding.resourceId,
       });
+      if (publication.kind === "BASE_STALE") {
+        const staleAt = this.dependencies.now();
+        const stale = recordBaseIntegrationStale(
+          issue,
+          publication.currentBaseCommit,
+          staleAt,
+        );
+        this.dependencies.store.transaction((transaction) => {
+          const current = this.dependencies.store.getIssue(issue.id);
+          if (!current || current.revision !== issue.revision) return;
+          transaction.updateIssue(stale, current.revision, "REPAIR");
+          transaction.appendEvent(this.event(issue.id, "BASE_INTEGRATION_STALE", {
+            currentBaseCommit: publication.currentBaseCommit,
+            revision: stale.revision,
+            iteration: stale.repair?.iteration,
+          }));
+        });
+        return;
+      }
       await provider.release({ issue, resourceId: binding.resourceId });
 
       const completedAt = this.dependencies.now();
@@ -238,10 +258,14 @@ export class WorkspaceCoordinator {
         event: this.event(issue.id, "ISSUE_COMPLETED", {
           providerId: binding.providerId,
           resourceId: binding.resourceId,
-          ...(branch ? { branch } : {}),
+          ...(publication.branch ? { branch: publication.branch } : {}),
         }),
       });
-      this.emitLifecycle("issue.completed", { issue: completed, project, branch });
+      this.emitLifecycle("issue.completed", {
+        issue: completed,
+        project,
+        branch: publication.branch,
+      });
     } catch (error) {
       const latest = this.dependencies.store.getIssue(issue.id);
       if (

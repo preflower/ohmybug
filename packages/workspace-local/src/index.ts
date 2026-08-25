@@ -32,7 +32,7 @@ export const localWorkspaceFactory: WorkspaceProviderFactory = {
           },
         };
       },
-      async publish() { return undefined; },
+      async publish() { return { kind: "PUBLISHED" as const }; },
       async release() {},
     };
   },

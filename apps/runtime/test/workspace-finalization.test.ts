@@ -35,7 +35,10 @@ describe("Workspace finalization", () => {
           },
           async publish() {
             await publishing;
-            return { name: "ohmybug/omb-1", commit: "abc123" };
+            return {
+              kind: "PUBLISHED" as const,
+              branch: { name: "ohmybug/omb-1", commit: "abc123" },
+            };
           },
           async release() {},
         };
@@ -141,6 +144,87 @@ describe("Workspace finalization", () => {
     expect(store.readEvents(assessed.id).map((event) => event.type)).toContain("ISSUE_COMPLETED");
   });
 
+  it("returns a stale accepted base to the same Agent for a new Repair iteration", async () => {
+    const agent = new FakeAgent();
+    const fixture = createHarness(agent);
+    let releases = 0;
+    fixture.workspaceRegistry.register({
+      id: "stale-base",
+      manifest: { id: "stale-base", name: "Stale base", configFields: [] },
+      validate() {},
+      create() {
+        return {
+          id: "stale-base",
+          async acquire({ issue, project: runtimeProject }) {
+            return {
+              projectPath: runtimeProject.path,
+              resourceId: `stale-base:${issue.id}`,
+            };
+          },
+          async publish() {
+            return {
+              kind: "BASE_STALE" as const,
+              currentBaseCommit: "c".repeat(40),
+            };
+          },
+          async release() { releases += 1; },
+        };
+      },
+    });
+    fixture.workspacePersistence.setProjectConfiguration(project.id, {
+      provider: "stale-base",
+      config: {},
+    });
+    const worker = new RuntimeWorker({
+      store: fixture.store,
+      agents: fixture.agents,
+      evidence: fixture.evidence,
+      workspaces: fixture.workspaces,
+      hooks: fixture.hooks,
+      id: eventIds("stale-base"),
+      now: () => now,
+    });
+    const created = await fixture.commands.submitManual(project.id, {
+      commandId: "stale-base",
+      content: "Checkout fails",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+    await worker.drain();
+    fixture.commands.approveAssessment(created.issue.id, {
+      assessmentRevision: assessment.revision,
+      assessmentContentHash: assessment.contentHash,
+      title: assessment.suggestedTitle,
+    });
+    await worker.drain();
+    const accepted = fixture.commands.approveDelivery(created.issue.id);
+    const originalSession = accepted.agentSession;
+
+    await worker.drainOne();
+
+    const stale = fixture.store.getIssue(created.issue.id)!;
+    expect(stale).toMatchObject({
+      status: "REPAIRING",
+      agentSession: originalSession,
+      repair: {
+        iteration: 2,
+        feedback: expect.stringContaining("c".repeat(40)),
+      },
+    });
+    expect(stale.repair).not.toHaveProperty("delivery");
+    expect(stale.repair).not.toHaveProperty("deliveryDraft");
+    expect(stale).not.toHaveProperty("resolution");
+    expect(stale).not.toHaveProperty("lastFailure");
+    expect(fixture.store.listPendingOperations()).toEqual([{
+      issue: stale,
+      operation: "REPAIR",
+    }]);
+    expect(fixture.store.readEvents(stale.id)).toContainEqual(expect.objectContaining({
+      type: "BASE_INTEGRATION_STALE",
+      data: expect.objectContaining({ currentBaseCommit: "c".repeat(40) }),
+    }));
+    expect(releases).toBe(0);
+  });
+
   it("keeps an approved issue retryable when publishing fails", async () => {
     const agent = new FakeAgent();
     const {
@@ -171,7 +255,10 @@ describe("Workspace finalization", () => {
           async publish() {
             publishAttempts += 1;
             if (publishAttempts === 1) throw new Error("PIPELINE_UNAVAILABLE");
-            return { name: "ohmybug/omb-1", commit: "abc123" };
+            return {
+              kind: "PUBLISHED" as const,
+              branch: { name: "ohmybug/omb-1", commit: "abc123" },
+            };
           },
           async release() { releases += 1; },
         };

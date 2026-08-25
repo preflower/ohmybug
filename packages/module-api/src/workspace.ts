@@ -129,7 +129,7 @@ export interface WorkspaceProvider {
   publish(input: {
     issue: Issue;
     resourceId: string;
-  }): Promise<BranchInfo | undefined>;
+  }): Promise<WorkspacePublishResult>;
   prepareFinalizationRecovery?(input: {
     issue: Issue;
     resourceId: string;

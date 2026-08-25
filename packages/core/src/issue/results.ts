@@ -478,3 +478,23 @@ export function recordRepairFailure(
     { stage: "REPAIR", code },
   );
 }
+
+export function recordBaseIntegrationStale(
+  issue: Issue,
+  currentBaseCommitInput: string,
+  now: string,
+): Issue {
+  const currentBaseCommit = required(currentBaseCommitInput, "BASE_COMMIT_REQUIRED");
+  if (currentBaseCommit.length > 200) throw new Error("BASE_COMMIT_TOO_LONG");
+  const next: Issue = {
+    ...transitionIssue(issue, "BASE_INTEGRATION_STALE", now),
+    repair: {
+      iteration: (issue.repair?.iteration ?? 0) + 1,
+      feedback: `The baseline advanced to ${currentBaseCommit}. Integrate this exact base, rerun verification, and produce new evidence.`,
+    },
+  };
+  delete next.resolution;
+  delete next.finalizationRecovery;
+  delete next.lastFailure;
+  return next;
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chmod, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { WorkspacePublishResult } from "@oh-my-bug/module-api";
 
 import { WorkspaceFinalizationError } from "../src/finalization-recovery.js";
 import { gitWorkspaceFactory } from "../src/provider.js";
@@ -9,6 +10,11 @@ import {
   parseMergeTreeConflictOutput,
 } from "../src/merge-recovery.js";
 import { createGitFixture, git } from "./helpers.js";
+
+function publishedCommit(result: WorkspacePublishResult): string {
+  if (result.kind !== "PUBLISHED" || !result.branch) throw new Error("PUBLISHED_BRANCH_REQUIRED");
+  return result.branch.commit;
+}
 
 describe("Git merge recovery diagnostics", () => {
   it("decodes versioned persisted recovery state and strips unknown fields", () => {
@@ -722,9 +728,9 @@ describe("Git merge recovery diagnostics", () => {
         "show",
         "-s",
         "--format=%P",
-        published!.commit,
+        publishedCommit(published),
       )).split(" ")).toEqual([issueCommit, baseCommit]);
-      expect(await git(prepared.repository, "rev-parse", "main")).toBe(published!.commit);
+      expect(await git(prepared.repository, "rev-parse", "main")).toBe(publishedCommit(published));
     } finally {
       await prepared.cleanup();
     }
@@ -781,9 +787,9 @@ describe("Git merge recovery diagnostics", () => {
         resourceId: "git:issue-1",
       });
 
-      expect(await git(prepared.repository, "show", `${published!.commit}:README.md`))
+      expect(await git(prepared.repository, "show", `${publishedCommit(published)}:README.md`))
         .toBe("repaired resolution");
-      expect(await git(prepared.repository, "show", `${published!.commit}:unrelated.txt`))
+      expect(await git(prepared.repository, "show", `${publishedCommit(published)}:unrelated.txt`))
         .toBe("accepted support edit");
     } finally {
       await prepared.cleanup();

@@ -19,6 +19,7 @@ import type {
   WorkspaceProvider,
   WorkspaceProviderFactory,
   WorkspaceProviderInspection,
+  WorkspacePublishResult,
   WorkspaceRepairObservation,
 } from "@oh-my-bug/module-api";
 import { z } from "zod";
@@ -433,6 +434,77 @@ class GitWorkspaceProvider implements WorkspaceProvider {
   async publish(input: {
     issue: Issue;
     resourceId: string;
+  }): Promise<WorkspacePublishResult> {
+    const state = this.getSavedState(input.issue, input.resourceId);
+    if (state.branchInfo) return { kind: "PUBLISHED", branch: state.branchInfo };
+    if (input.issue.status !== "FINALIZING") {
+      throw new Error("GIT_WORKSPACE_NOT_FINALIZING");
+    }
+    if (state.finalizationRecovery !== undefined) {
+      const branch = await this.publishLegacyRecoveredDelivery(input);
+      return { kind: "PUBLISHED", branch };
+    }
+
+    let step: WorkspaceFinalizationStep = "status";
+    try {
+      await assertWorktreeAndSubmodulesClean(state.worktreePath);
+      const commit = await runGit(state.worktreePath, ["rev-parse", "HEAD"]);
+      if (state.mergeToBaseBranch) {
+        const integration = input.issue.repair?.deliveryDraft?.integration;
+        if (!integration) throw new Error("GIT_PUBLISH_INTEGRATION_REQUIRED");
+        if (
+          integration.issueBranch !== state.branch ||
+          integration.issueCommit !== commit
+        ) throw new Error("GIT_PUBLISH_HEAD_MISMATCH");
+        if (await tryRunGit(
+          state.repositoryPath,
+          ["merge-base", "--is-ancestor", integration.baseCommit, commit],
+          [1],
+        ) === undefined) throw new Error("GIT_PUBLISH_INTEGRATION_INVALID");
+        step = "merge";
+        const currentBaseCommit = await fastForwardIntegratedBase(state, commit);
+        if (currentBaseCommit) {
+          return { kind: "BASE_STALE", currentBaseCommit };
+        }
+      }
+
+      const pushToRemote = shouldPushToRemote(state);
+      if (pushToRemote) {
+        step = "push";
+        await runGit(state.worktreePath, [
+          "push",
+          state.remote!,
+          `refs/heads/${state.branch}:refs/heads/${state.branch}`,
+        ]);
+      }
+      const branchInfo: BranchInfo = {
+        name: state.branch,
+        commit,
+        ...(pushToRemote ? { remote: state.remote } : {}),
+      };
+      const {
+        finalizationRecovery: _recovery,
+        lastMergeFailure: _lastMergeFailure,
+        ...completedState
+      } = state;
+      this.options.state.set(MODULE_ID, input.resourceId, {
+        ...completedState,
+        branchInfo,
+      });
+      return { kind: "PUBLISHED", branch: branchInfo };
+    } catch (error) {
+      throw finalizationError({
+        error,
+        providerId: this.id,
+        step,
+        worktreePath: state.worktreePath,
+      });
+    }
+  }
+
+  private async publishLegacyRecoveredDelivery(input: {
+    issue: Issue;
+    resourceId: string;
   }): Promise<BranchInfo> {
     const state = this.getSavedState(input.issue, input.resourceId);
     if (state.branchInfo) return state.branchInfo;
@@ -815,6 +887,57 @@ function recoveryDeliveryToken(issue: Issue): string | undefined {
 
 const MAX_BASE_ADVANCE_ATTEMPTS = 3;
 
+async function fastForwardIntegratedBase(
+  state: GitWorkspaceState,
+  issueCommit: string,
+): Promise<string | undefined> {
+  const baseRef = `refs/heads/${state.baseBranch}`;
+  if (!(await gitRefExists(state.repositoryPath, baseRef))) {
+    throw new Error("GIT_PUBLISH_REQUIRES_LOCAL_BASE_BRANCH");
+  }
+  const currentBase = await runGit(state.repositoryPath, ["rev-parse", baseRef]);
+  if (await tryRunGit(
+    state.repositoryPath,
+    ["merge-base", "--is-ancestor", issueCommit, currentBase],
+    [1],
+  ) !== undefined) return undefined;
+  if (await tryRunGit(
+    state.repositoryPath,
+    ["merge-base", "--is-ancestor", currentBase, issueCommit],
+    [1],
+  ) === undefined) return currentBase;
+
+  const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
+  const checkedOutPath = worktreePathForBranch(listed, baseRef);
+  if (checkedOutPath) {
+    await assertBaseCheckoutMergeSafe(
+      state.repositoryPath,
+      checkedOutPath,
+      currentBase,
+      issueCommit,
+    );
+    try {
+      await runGit(checkedOutPath, ["merge", "--ff-only", issueCommit]);
+      return undefined;
+    } catch (error) {
+      const latest = await runGit(state.repositoryPath, ["rev-parse", baseRef]);
+      if (latest !== currentBase) return latest;
+      throw error;
+    }
+  }
+  try {
+    await runGit(state.repositoryPath, [
+      "update-ref",
+      baseRef,
+      issueCommit,
+      currentBase,
+    ]);
+    return undefined;
+  } catch {
+    return runGit(state.repositoryPath, ["rev-parse", baseRef]);
+  }
+}
+
 export async function retryOnBaseAdvance<T>(
   readBase: () => Promise<string>,
   attempt: (baseCommit: string) => Promise<T>,
@@ -1121,25 +1244,16 @@ async function assertNoIgnoredMergeCollisions(
   resultCommit: string,
 ): Promise<void> {
   const changedPaths = await getChangedPaths(repositoryPath, baseCommit, resultCommit);
-  const pathsAndParents = new Set<string>();
-  for (const path of changedPaths) {
-    const segments = path.split("/");
-    for (let index = 1; index <= segments.length; index += 1) {
-      pathsAndParents.add(segments.slice(0, index).join("/"));
-    }
-  }
-  const pathspecs = [...pathsAndParents].map((path) => `:(literal)${path}`);
-  for (let offset = 0; offset < pathspecs.length; offset += 128) {
-    const ignored = await runGit(worktreePath, [
-      "ls-files",
-      "--others",
-      "--ignored",
-      "--exclude-standard",
-      "-z",
-      "--",
-      ...pathspecs.slice(offset, offset + 128),
-    ]);
-    if (ignored) throw new Error("GIT_WORKTREE_NOT_CLEAN");
+  const ignoredPaths = parseNulPaths(await runGit(worktreePath, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "-z",
+  ]));
+  if (ignoredPaths.some((localPath) =>
+    changedPaths.some((changedPath) => gitPathsOverlap(localPath, changedPath)))) {
+    throw new Error("GIT_WORKTREE_NOT_CLEAN");
   }
 }
 

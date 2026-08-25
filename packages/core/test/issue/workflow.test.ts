@@ -97,6 +97,11 @@ describe("Issue workflow", () => {
       status: "COMPLETED",
       resolution: "FIXED",
     });
+    expect(transitionIssue(finalizing, "BASE_INTEGRATION_STALE", now)).toMatchObject({
+      status: "REPAIRING",
+    });
+    expect(() => transitionIssue(issueAt("REPAIRING"), "BASE_INTEGRATION_STALE", now))
+      .toThrow(/Illegal Issue transition/);
   });
 
   it("preserves the automatic recovery budget on an automatic retry", () => {
