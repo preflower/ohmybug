@@ -165,12 +165,27 @@ export async function validateGitFinalizationRecovery(input: {
   if (current.repositoryStateHash !== before.repositoryStateHash) {
     return unsafe("FINALIZATION_RECOVERY_REPOSITORY_STATE_CHANGED");
   }
-  if (before.diagnosticRoots.some((root) => !root.entirelyUntracked)) {
-    return unsafe("FINALIZATION_RECOVERY_DIAGNOSTIC_ROOT_TRACKED");
-  }
+  const generatedTrackedPaths = before.tracked
+    .map((entry) => entry.path)
+    .filter((path) => before.diagnosticRoots.some((root) => withinRoot(path, root.path)));
+  const generatedTrackedSet = new Set(generatedTrackedPaths);
   const trackedChanges = changedEntries(before.tracked, current.tracked);
-  if (trackedChanges.length > 0) {
-    return { kind: "CHANGED", changedPaths: trackedChanges };
+  const approvedTrackedChanges = trackedChanges
+    .filter((path) => !generatedTrackedSet.has(path));
+  if (approvedTrackedChanges.length > 0) {
+    return { kind: "CHANGED", changedPaths: approvedTrackedChanges };
+  }
+  const remainingTrackedArtifacts: string[] = [];
+  for (const path of generatedTrackedPaths) {
+    if (!(await pathMatchesHead(input.worktreePath, path))) {
+      remainingTrackedArtifacts.push(path);
+    }
+  }
+  if (remainingTrackedArtifacts.length > 0) {
+    return unsafe(
+      "FINALIZATION_RECOVERY_GENERATED_TRACKED_ARTIFACT_REMAINS",
+      remainingTrackedArtifacts,
+    );
   }
   const untrackedChanges = changedEntries(before.untracked, current.untracked);
   const beforeUntracked = new Set(before.untracked.map((entry) => entry.path));
@@ -292,6 +307,14 @@ async function captureFingerprint(input: {
 
 async function repositoryStateHash(worktreePath: string): Promise<string> {
   return digest(await runGit(worktreePath, ["config", "--local", "--null", "--list"]));
+}
+
+async function pathMatchesHead(worktreePath: string, path: string): Promise<boolean> {
+  return await tryRunGit(
+    worktreePath,
+    ["diff", "--quiet", "HEAD", "--", `:(literal)${path}`],
+    [1],
+  ) !== undefined;
 }
 
 function assertRecoverableGitDiagnostic(
