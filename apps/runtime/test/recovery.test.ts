@@ -23,6 +23,7 @@ describe("Runtime recovery", () => {
         operation: "REPAIR",
         resumeStatus: "REPAIRING",
         pausedAt: now,
+        ready: true,
       },
     });
     store.transaction((transaction) => transaction.insertIssue(paused, "REPAIR"));

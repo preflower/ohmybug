@@ -46,6 +46,7 @@ import type {
   RuntimeLifecycleHooks,
 } from "../modules/lifecycle-hooks.js";
 import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
+import { IssueOperationCoordinator } from "./issue-operation-coordinator.js";
 import { publicCapabilityRequest } from "./capability-request.js";
 import {
   assessmentReview,
@@ -70,6 +71,7 @@ export interface RuntimeWorkerDependencies {
   hooks?: RuntimeLifecycleHooks;
   id: () => string;
   now: () => string;
+  operations?: IssueOperationCoordinator;
 }
 
 export interface RuntimeWorkerOptions {
@@ -91,6 +93,7 @@ export class RuntimeWorker {
   private wakeRequested = false;
   private wakeScheduler?: () => void;
   private readonly maxConcurrentIssues: number;
+  private readonly operations: IssueOperationCoordinator;
 
   constructor(
     private readonly dependencies: RuntimeWorkerDependencies,
@@ -102,6 +105,7 @@ export class RuntimeWorker {
       throw new Error("INVALID_MAX_CONCURRENT_ISSUES");
     }
     this.maxConcurrentIssues = maxConcurrentIssues;
+    this.operations = dependencies.operations ?? new IssueOperationCoordinator();
   }
 
   kick(): void {
@@ -145,13 +149,21 @@ export class RuntimeWorker {
   private async runPendingOperation(
     pending: ReturnType<RuntimeStore["listPendingOperations"]>[number],
   ): Promise<void> {
+    return this.operations.run(pending.issue.id, (signal) =>
+      this.executePendingOperation(pending, signal));
+  }
+
+  private async executePendingOperation(
+    pending: ReturnType<RuntimeStore["listPendingOperations"]>[number],
+    signal: AbortSignal,
+  ): Promise<void> {
     if (pending.operation === "PREPARE") {
       return this.dependencies.workspaces.prepare(pending.issue);
     }
     if (pending.operation === "ASSESS") return this.assess(pending.issue);
     if (pending.operation === "REPAIR") return this.repair(pending.issue);
     if (pending.operation === "CAPTURE_EVIDENCE") {
-      return this.captureEvidence(pending.issue);
+      return this.captureEvidence(pending.issue, signal);
     }
     if (pending.operation === "EVIDENCE") return this.inspectEvidence(pending.issue);
     if (pending.operation === "FINALIZE") {
@@ -503,7 +515,7 @@ export class RuntimeWorker {
     }
   }
 
-  private async captureEvidence(pending: Issue): Promise<void> {
+  private async captureEvidence(pending: Issue, signal: AbortSignal): Promise<void> {
     const project = this.dependencies.store.getProject(pending.projectId);
     if (!project) throw new Error("PROJECT_NOT_FOUND");
     if (
@@ -544,7 +556,7 @@ export class RuntimeWorker {
       let evidence: RepairEvidencePath[];
       try {
         if (project.commands?.evidenceCapture) {
-          evidence = [await this.captureWithHost(project, claimed, intake.directory)];
+          evidence = [await this.captureWithHost(project, claimed, intake.directory, signal)];
         } else {
           const agent = this.dependencies.agents.forSession(claimed.agentSession!);
           const result = await agent.captureEvidence(claimed.agentSession!, {
@@ -559,6 +571,10 @@ export class RuntimeWorker {
           evidence = result.evidence;
         }
       } catch (error) {
+        if (signal.aborted) {
+          if (error === signal.reason) return;
+          throw error;
+        }
         if (this.pauseForCapability(
           claimed,
           error,
@@ -574,6 +590,8 @@ export class RuntimeWorker {
         );
         return;
       }
+
+      if (signal.aborted) return;
 
       try {
         const delivered = await this.importDelivery(claimed, intake, evidence);
@@ -594,6 +612,7 @@ export class RuntimeWorker {
     project: NonNullable<ReturnType<RuntimeStore["getProject"]>>,
     issue: Issue,
     intakeDirectory: string,
+    signal: AbortSignal,
   ): Promise<RepairEvidencePath> {
     const capture = project.commands?.evidenceCapture;
     if (!capture || !this.dependencies.capture) {
@@ -609,6 +628,7 @@ export class RuntimeWorker {
       intakeDirectory,
       commands: project.commands ?? {},
       capture,
+      signal,
     });
     const [actualDirectory, actualArtifact] = await Promise.all([
       realpath(intakeDirectory),

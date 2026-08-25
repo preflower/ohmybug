@@ -249,6 +249,7 @@ describe("control center workbench", () => {
         operation: "REPAIR",
         resumeStatus: "REPAIRING",
         pausedAt: activeIssue.updatedAt,
+        ready: true,
       },
     };
     vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);

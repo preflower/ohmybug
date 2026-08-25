@@ -203,6 +203,7 @@ const pauseContextSchema = z.object({
     "FINALIZATION_RECOVERY",
   ]),
   pausedAt: z.iso.datetime(),
+  ready: z.boolean().default(false),
 }).strict();
 
 const pausePairs = new Set([

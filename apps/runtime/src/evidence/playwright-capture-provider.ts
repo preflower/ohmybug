@@ -2,7 +2,13 @@ import { mkdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 
-import { _electron, chromium, type Browser, type ElectronApplication } from "playwright";
+import {
+  _electron,
+  chromium,
+  type Browser,
+  type BrowserServer,
+  type ElectronApplication,
+} from "playwright";
 
 import {
   EvidenceCaptureError,
@@ -20,6 +26,7 @@ interface OwnedProcess {
 
 export class PlaywrightEvidenceCaptureProvider implements EvidenceCaptureProvider {
   async capture(input: EvidenceCaptureRequest): Promise<EvidenceCaptureArtifact> {
+    input.signal?.throwIfAborted();
     await mkdir(input.intakeDirectory, { recursive: true });
     const outputPath = resolveInside(input.intakeDirectory, "evidence.png");
 
@@ -35,6 +42,7 @@ export class PlaywrightEvidenceCaptureProvider implements EvidenceCaptureProvide
         break;
     }
 
+    input.signal?.throwIfAborted();
     await verifyOutput(input, outputPath);
     return {
       type: "screenshot",
@@ -64,22 +72,42 @@ export class PlaywrightEvidenceCaptureProvider implements EvidenceCaptureProvide
 
     const owned = startOwned(start, input.workspaceDirectory, process.env);
     let browser: Browser | undefined;
+    let server: BrowserServer | undefined;
+    let captureError: unknown;
     try {
-      await waitForReady(url, input.capture.timeoutMs ?? 15_000);
-      browser = await chromium.launch({ headless: true });
+      await waitForReady(url, input.capture.timeoutMs ?? 15_000, input.signal);
+      server = await chromium.launchServer({ headless: true });
+      browser = await chromium.connect(server.wsEndpoint());
+      input.signal?.throwIfAborted();
       const page = await browser.newPage();
-      await page.goto(url.href, {
+      await abortable(page.goto(url.href, {
         waitUntil: "networkidle",
         timeout: input.capture.timeoutMs ?? 15_000,
-      });
-      await page.screenshot({ path: outputPath, fullPage: true });
+      }), input.signal);
+      await abortable(page.screenshot({ path: outputPath, fullPage: true }), input.signal);
     } catch (error) {
-      if (error instanceof EvidenceCaptureError) throw error;
-      throw failure("EVIDENCE_TARGET_UNREACHABLE", input, browserTarget(url), error);
-    } finally {
-      await browser?.close().catch(() => undefined);
-      await owned.stop();
+      captureError = input.signal?.aborted
+        ? input.signal.reason
+        : error instanceof EvidenceCaptureError
+          ? error
+          : failure("EVIDENCE_TARGET_UNREACHABLE", input, browserTarget(url), error);
     }
+    const cleanupFailures: unknown[] = [];
+    const activeServer = server;
+    if (activeServer) {
+      try {
+        await closeManagedProcess(() => activeServer.close(), activeServer.process());
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+    try {
+      await owned.stop();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    if (cleanupFailures.length > 0) throw cleanupFailures[0];
+    if (captureError) throw captureError;
   }
 
   private async captureElectron(
@@ -88,20 +116,31 @@ export class PlaywrightEvidenceCaptureProvider implements EvidenceCaptureProvide
   ): Promise<void> {
     const entry = resolveElectronEntry(input.workspaceDirectory, input.capture.electronEntry, input);
     let application: ElectronApplication | undefined;
+    let captureError: unknown;
     try {
       application = await _electron.launch({ args: [entry], cwd: input.workspaceDirectory });
-      const window = await withTimeout(
+      input.signal?.throwIfAborted();
+      const window = await abortable(withTimeout(
         application.firstWindow(),
         input.capture.timeoutMs ?? 15_000,
         () => failure("EVIDENCE_TARGET_UNREACHABLE", input, "electron-window"),
-      );
-      await window.screenshot({ path: outputPath });
+      ), input.signal);
+      await abortable(window.screenshot({ path: outputPath }), input.signal);
     } catch (error) {
-      if (error instanceof EvidenceCaptureError) throw error;
-      throw failure(mapSystemFailure(error), input, "electron-entry", error);
-    } finally {
-      await application?.close().catch(() => undefined);
+      captureError = input.signal?.aborted
+        ? input.signal.reason
+        : error instanceof EvidenceCaptureError
+          ? error
+          : failure(mapSystemFailure(error), input, "electron-entry", error);
     }
+    const activeApplication = application;
+    if (activeApplication) {
+      await closeManagedProcess(
+        () => activeApplication.close(),
+        activeApplication.process(),
+      );
+    }
+    if (captureError) throw captureError;
   }
 
   private async captureCommand(
@@ -114,11 +153,11 @@ export class PlaywrightEvidenceCaptureProvider implements EvidenceCaptureProvide
       OH_MY_BUG_EVIDENCE_DIRECTORY: input.intakeDirectory,
     });
     try {
-      const result = await withTimeout(
+      const result = await abortable(withTimeout(
         owned.exited,
         input.capture.timeoutMs ?? 15_000,
         () => failure("EVIDENCE_TARGET_UNREACHABLE", input, "configured-command"),
-      );
+      ), input.signal);
       if (result.code === 126) {
         throw failure("EVIDENCE_CAPTURE_PERMISSION_DENIED", input, "configured-command");
       }
@@ -126,6 +165,7 @@ export class PlaywrightEvidenceCaptureProvider implements EvidenceCaptureProvide
         throw failure("EVIDENCE_CAPTURE_PROCESS_FAILED", input, "configured-command");
       }
     } catch (error) {
+      if (input.signal?.aborted) throw input.signal.reason;
       if (error instanceof EvidenceCaptureError) throw error;
       throw failure(mapSystemFailure(error), input, "configured-command", error);
     } finally {
@@ -139,7 +179,7 @@ function startOwned(command: string, cwd: string, env: NodeJS.ProcessEnv): Owned
     cwd,
     env,
     shell: true,
-    detached: false,
+    detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
@@ -152,22 +192,202 @@ function startOwned(command: string, cwd: string, env: NodeJS.ProcessEnv): Owned
     child,
     exited,
     async stop() {
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      child.kill("SIGTERM");
-      await Promise.race([exited.catch(() => undefined), delay(2_000)]);
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      const pid = child.pid;
+      if (!pid) {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        await exited.catch(() => undefined);
+        return;
+      }
+      if (process.platform === "win32") {
+        if (child.exitCode !== null || child.signalCode !== null) return;
+        await stopWindowsProcessTree(pid);
+        await withTimeout(
+          exited.catch(() => ({ code: null, signal: null })),
+          2_000,
+          () => new Error("EVIDENCE_PROCESS_TREE_STOP_FAILED"),
+        );
+        return;
+      }
+      signalProcessGroup(pid, "SIGTERM");
+      if (!await waitForProcessGroupExit(pid, 2_000)) {
+        signalProcessGroup(pid, "SIGKILL");
+        if (!await waitForProcessGroupExit(pid, 2_000)) {
+          throw new Error("EVIDENCE_PROCESS_TREE_STOP_FAILED");
+        }
+      }
+      await exited.catch(() => undefined);
     },
   };
 }
 
-async function waitForReady(url: URL, timeoutMs: number): Promise<void> {
+async function closeManagedProcess(
+  close: () => Promise<void>,
+  child: ChildProcess,
+): Promise<void> {
+  const pid = child.pid;
+  if (!pid) {
+    await withTimeout(close(), 2_000, processStopFailure);
+    return;
+  }
+  const tracked = process.platform === "win32"
+    ? [pid]
+    : [pid, ...await listDescendantPids(pid)];
+  try {
+    await withTimeout(close(), 2_000, processStopFailure);
+  } catch {
+    if (await waitForPidsExit(tracked, 100)) return;
+    await forceStopManagedProcessTree(child, tracked);
+    return;
+  }
+  if (!await waitForPidsExit(tracked, 500)) {
+    await forceStopManagedProcessTree(child, tracked);
+  }
+}
+
+async function forceStopManagedProcessTree(
+  child: ChildProcess,
+  tracked: number[],
+): Promise<void> {
+  const pid = child.pid;
+  if (!pid) throw processStopFailure();
+  if (process.platform === "win32") {
+    await stopWindowsProcessTree(pid);
+    if (!await waitForPidsExit(tracked, 2_000)) throw processStopFailure();
+    return;
+  }
+  const descendants = [...new Set([
+    ...tracked.filter((candidate) => candidate !== pid),
+    ...await listDescendantPids(pid),
+  ])];
+  signalProcesses([...descendants.reverse(), pid], "SIGTERM");
+  if (await waitForPidsExit([pid, ...descendants], 1_000)) return;
+  signalProcesses([...descendants, pid], "SIGKILL");
+  if (!await waitForPidsExit([pid, ...descendants], 2_000)) throw processStopFailure();
+}
+
+async function listDescendantPids(rootPid: number): Promise<number[]> {
+  const output = await new Promise<string>((resolveList, rejectList) => {
+    const listing = spawn("ps", ["-A", "-o", "pid=,ppid="], {
+      shell: false,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let stdout = "";
+    listing.stdout?.setEncoding("utf8");
+    listing.stdout?.on("data", (chunk: string) => { stdout += chunk; });
+    listing.once("error", rejectList);
+    listing.once("exit", (code) => {
+      if (code === 0) resolveList(stdout);
+      else rejectList(processStopFailure());
+    });
+  });
+  const children = new Map<number, number[]>();
+  for (const line of output.split("\n")) {
+    const [pidText, parentText] = line.trim().split(/\s+/);
+    const pid = Number(pidText);
+    const parent = Number(parentText);
+    if (!Number.isInteger(pid) || !Number.isInteger(parent)) continue;
+    children.set(parent, [...(children.get(parent) ?? []), pid]);
+  }
+  const descendants: number[] = [];
+  const pending = [...(children.get(rootPid) ?? [])];
+  while (pending.length > 0) {
+    const pid = pending.shift()!;
+    descendants.push(pid);
+    pending.push(...(children.get(pid) ?? []));
+  }
+  return descendants;
+}
+
+function signalProcesses(pids: number[], signal: NodeJS.Signals): void {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, signal);
+    } catch (error) {
+      if (nodeErrorCode(error) !== "ESRCH") throw error;
+    }
+  }
+}
+
+async function waitForPidsExit(pids: number[], timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (pids.every((pid) => !isPidAlive(pid))) return true;
+    await delay(25);
+  }
+  return pids.every((pid) => !isPidAlive(pid));
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return nodeErrorCode(error) !== "ESRCH";
+  }
+}
+
+function processStopFailure(): Error {
+  return new Error("EVIDENCE_PROCESS_TREE_STOP_FAILED");
+}
+
+async function stopWindowsProcessTree(pid: number): Promise<void> {
+  await new Promise<void>((resolveStop, rejectStop) => {
+    const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
+      shell: false,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    killer.once("error", rejectStop);
+    killer.once("exit", (code) => {
+      if (code === 0) resolveStop();
+      else rejectStop(new Error("EVIDENCE_PROCESS_TREE_STOP_FAILED"));
+    });
+  });
+}
+
+function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if (nodeErrorCode(error) !== "ESRCH") throw error;
+  }
+}
+
+async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isProcessGroupAlive(pid)) return true;
+    await delay(25);
+  }
+  return !isProcessGroupAlive(pid);
+}
+
+function isProcessGroupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return nodeErrorCode(error) !== "ESRCH";
+  }
+}
+
+async function waitForReady(
+  url: URL,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
+      const response = await abortable(
+        fetch(url, { signal: AbortSignal.timeout(1_000) }),
+        signal,
+      );
       if (response.ok) return;
     } catch {
-      await delay(100);
+      signal?.throwIfAborted();
+      await abortable(delay(100), signal);
     }
   }
   throw new EvidenceCaptureError(
@@ -175,6 +395,21 @@ async function waitForReady(url: URL, timeoutMs: number): Promise<void> {
     "browser",
     browserTarget(url),
   );
+}
+
+async function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  signal.throwIfAborted();
+  let abort!: () => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
 }
 
 function resolveElectronEntry(

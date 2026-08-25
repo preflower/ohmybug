@@ -31,6 +31,7 @@ export interface EvidenceCaptureRequest {
   intakeDirectory: string;
   commands: ProjectCommands;
   capture: ProjectEvidenceCapture;
+  signal?: AbortSignal;
 }
 
 export interface EvidenceCaptureArtifact {

@@ -95,21 +95,24 @@ export function IssueActions({
   } else if (pauseable.has(issue.status)) {
     if (!onPause) return null;
     content = <ActionRow
-      description="暂停只会结束当前 Agent 回合；工作目录和阶段上下文会保留，可以稍后继续。"
-      title="Agent 正在执行"
+      description="暂停会停止当前执行；工作目录和阶段上下文会保留，可以稍后继续。"
+      title="Issue 正在执行"
     >
       <Button disabled={Boolean(busy)} type="button" variant="secondary" onClick={() => void run("pause", onPause, "暂停失败")}>
         <Pause aria-hidden="true" size={13} />{busy === "pause" ? "暂停中…" : "暂停 Agent"}
       </Button>
     </ActionRow>;
   } else if (issue.status === "PAUSED") {
+    const pauseReady = issue.pauseContext?.ready === true;
     content = <ActionRow
-      description="继续会回到暂停前的阶段；取消则会让 Issue 进入不可继续的终态。"
-      title="Agent 已暂停"
+      description={pauseReady
+        ? "继续会回到暂停前的阶段；取消则会让 Issue 进入不可继续的终态。"
+        : "正在等待当前执行安全收尾；完成前不能继续，但仍可取消整个 Issue。"}
+      title={pauseReady ? "Agent 已暂停" : "正在完成暂停"}
     >
       {cancel ? <CancelIssueButton disabled={Boolean(busy)} onCancel={cancel} /> : null}
-      {onResume ? <Button disabled={Boolean(busy)} type="button" onClick={() => void run("resume", onResume, "继续执行失败")}>
-        <Play aria-hidden="true" size={13} />{busy === "resume" ? "继续中…" : "继续执行"}
+      {onResume ? <Button disabled={Boolean(busy) || !pauseReady} type="button" onClick={() => void run("resume", onResume, "继续执行失败")}>
+        <Play aria-hidden="true" size={13} />{busy === "resume" ? "继续中…" : pauseReady ? "继续执行" : "等待暂停完成"}
       </Button> : null}
     </ActionRow>;
   } else if (issue.status === "FINALIZATION_FAILED" && onApproveDelivery) {

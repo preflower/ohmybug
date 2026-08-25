@@ -65,6 +65,7 @@ function installRuntimeProtocolFixture() {
       operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION";
       resumeStatus: "ASSESSING" | "REPAIRING" | "EVIDENCE_CAPTURE" | "FINALIZATION_RECOVERY";
       pausedAt: string;
+      ready: boolean;
     };
     lastFailure?: { stage: "ASSESSMENT" | "REPAIR"; code: string };
     revision: number;
@@ -303,7 +304,7 @@ function installRuntimeProtocolFixture() {
       return saveIssue({
         ...current,
         status: "PAUSED",
-        pauseContext: { ...pauseContext, pausedAt: now() },
+        pauseContext: { ...pauseContext, pausedAt: now(), ready: true },
         revision: current.revision + 1,
         updatedAt: now(),
       });

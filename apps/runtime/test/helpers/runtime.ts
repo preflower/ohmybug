@@ -19,6 +19,7 @@ import { AgentRegistry } from "../../src/agents/registry.js";
 import { RuntimeLifecycleHooks } from "../../src/modules/lifecycle-hooks.js";
 import { WorkspaceRegistry } from "../../src/modules/workspace-registry.js";
 import { RuntimeCommands } from "../../src/orchestration/commands.js";
+import type { IssueOperationCoordinator } from "../../src/orchestration/issue-operation-coordinator.js";
 import { assessmentReview, deliveryReview } from "../../src/orchestration/reviews.js";
 import { WorkspaceCoordinator } from "../../src/orchestration/workspace-coordinator.js";
 import {
@@ -42,7 +43,13 @@ export function eventIds(prefix = "event") {
   return () => `${prefix}-${++sequence}`;
 }
 
-export function createHarness(agent: AgentAdapter = new FakeAgent()) {
+export function createHarness(
+  agent: AgentAdapter = new FakeAgent(),
+  options: {
+    operations?: IssueOperationCoordinator;
+    pauseCancellationTimeoutMs?: number;
+  } = {},
+) {
   let wakes = 0;
   let sequence = 0;
   const id = () => `generated-${++sequence}`;
@@ -74,6 +81,8 @@ export function createHarness(agent: AgentAdapter = new FakeAgent()) {
     id,
     now: () => now,
     wake: () => { wakes += 1; },
+    operations: options.operations,
+    pauseCancellationTimeoutMs: options.pauseCancellationTimeoutMs,
   });
   commands.registerProject(project);
   return {

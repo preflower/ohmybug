@@ -314,6 +314,7 @@ describe("Issue persistence schema", () => {
         operation: "REPAIR" as const,
         resumeStatus: "REPAIRING" as const,
         pausedAt: issue.updatedAt,
+        ready: false,
       },
     };
 

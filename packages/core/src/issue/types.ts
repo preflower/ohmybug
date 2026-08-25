@@ -166,6 +166,7 @@ export interface IssuePauseContext {
     | "EVIDENCE_CAPTURE"
     | "FINALIZATION_RECOVERY";
   pausedAt: string;
+  ready: boolean;
 }
 
 export interface Issue {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  completeIssuePause,
   transitionIssue,
   type Issue,
   type IssueStatus,
@@ -170,12 +171,15 @@ describe("Issue workflow", () => {
     const paused = transitionIssue(active, "PAUSE", now);
     expect(paused).toMatchObject({
       status: "PAUSED",
-      pauseContext: { operation, resumeStatus: status, pausedAt: now },
+      pauseContext: { operation, resumeStatus: status, pausedAt: now, ready: false },
       agentSession: active.agentSession,
       repair: active.repair,
     });
 
-    const resumed = transitionIssue(paused, "RESUME", now);
+    expect(() => transitionIssue(paused, "RESUME", now))
+      .toThrow("ISSUE_PAUSE_IN_PROGRESS");
+    const ready = completeIssuePause(paused, now);
+    const resumed = transitionIssue(ready, "RESUME", now);
     expect(resumed).toMatchObject({
       status,
       agentSession: active.agentSession,

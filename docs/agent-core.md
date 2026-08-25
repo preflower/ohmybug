@@ -34,7 +34,7 @@ Issue 详情只对该错误显示“重建 Agent 会话”。用户确认后，R
 
 ## 暂停、继续与取消
 
-`pauseIssue` 先持久化 `PAUSED + pauseContext`，再以 `USER_PAUSED` 中断当前 Agent 回合。`pauseContext` 记录原操作和恢复状态，因此 Runtime 重启不会自动运行已暂停 Issue，也不需要猜测暂停前的阶段。
+`pauseIssue` 先持久化 `PAUSED + pauseContext`，再以 `USER_PAUSED` 中断当前 Agent 回合；若正在运行配置的宿主证据抓取，也会中止并等待该操作完全收尾。`pauseContext` 记录原操作、恢复状态和持久化的 `ready` 门闩，因此 Runtime 重启不会自动运行已暂停 Issue，也不需要猜测暂停前的阶段。只有当前操作安全退出后 `ready` 才会变为 `true`；暂停清理完成前或清理失败后，`resumeIssue` 会返回 `ISSUE_PAUSE_IN_PROGRESS`，避免同一 Issue 启动重叠任务。
 
 `resumeIssue` 消费 `pauseContext`，重新排队原操作，并把 `USER_RESUMED` continuation 交给同一个逻辑会话。工作目录、Assessment、Repair iteration、Delivery draft 和恢复诊断保持不变；暂停前回合的迟到结果因 revision 与状态校验不能覆盖暂停快照。
 

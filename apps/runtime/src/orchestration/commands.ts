@@ -1,5 +1,6 @@
 import {
   acceptIntegrationInput as acceptCoreInput,
+  completeIssuePause,
   grantCapabilityRequest,
   replaceAgentSession,
   retryEvidence,
@@ -26,6 +27,7 @@ import {
   applyReviewSideEffects,
   reviewResponseDuplicate,
 } from "./reviews.js";
+import type { IssueOperationCoordinator } from "./issue-operation-coordinator.js";
 
 export interface ManualSubmission {
   commandId: string;
@@ -51,12 +53,26 @@ export interface RuntimeCommandDependencies {
   id: () => string;
   now: () => string;
   wake: () => void;
+  operations?: Pick<IssueOperationCoordinator, "interrupt" | "isActive">;
+  pauseCancellationTimeoutMs?: number;
 }
+
+const DEFAULT_PAUSE_CANCELLATION_TIMEOUT_MS = 5_000;
 
 export class RuntimeCommands {
   private accepting = true;
+  private readonly pausing = new Set<string>();
+  private operations?: Pick<IssueOperationCoordinator, "interrupt" | "isActive">;
 
-  constructor(private readonly dependencies: RuntimeCommandDependencies) {}
+  constructor(private readonly dependencies: RuntimeCommandDependencies) {
+    this.operations = dependencies.operations;
+  }
+
+  coordinateIssueOperations(
+    operations: Pick<IssueOperationCoordinator, "interrupt" | "isActive">,
+  ): void {
+    this.operations = operations;
+  }
 
   stopAccepting(): void { this.accepting = false; }
 
@@ -307,25 +323,51 @@ export class RuntimeCommands {
       }));
       return next;
     });
-    if (!paused.agentSession) return paused;
-
+    this.pausing.add(issueId);
     try {
-      await this.dependencies.agents.forSession(paused.agentSession).cancel(
-        paused.agentSession,
-        "USER_PAUSED",
-      );
-    } catch (error) {
-      this.dependencies.store.transaction((transaction) => transaction.appendEvent(
-        this.event(issueId, "AGENT_PAUSE_FAILED", {
-          message: publicModuleError(error),
-        }),
-      ));
+      const interruption = settle(Promise.resolve().then(() =>
+        this.operations?.interrupt(issueId)));
+      const session = paused.agentSession;
+      const cancellation = settle(withDeadline(session
+        ? Promise.resolve().then(() =>
+            this.dependencies.agents.forSession(session).cancel(session, "USER_PAUSED"))
+        : Promise.resolve(),
+      this.dependencies.pauseCancellationTimeoutMs
+        ?? DEFAULT_PAUSE_CANCELLATION_TIMEOUT_MS));
+      const cancellationResult = await cancellation;
+      if (!cancellationResult.ok) this.recordPauseFailure(issueId, cancellationResult.error);
+
+      if (!cancellationResult.ok) {
+        if (this.operations?.isActive(issueId)) {
+          void interruption.then((result) => {
+            if (result.ok) this.markPauseReady(issueId, paused.pauseContext!.pausedAt);
+            else this.recordPauseFailure(issueId, result.error);
+          }).catch(() => undefined);
+          return this.getIssue(issueId);
+        }
+        if (isPauseTimeout(cancellationResult.error)) return this.getIssue(issueId);
+        const idleResult = await interruption;
+        if (!idleResult.ok) {
+          this.recordPauseFailure(issueId, idleResult.error);
+          return this.getIssue(issueId);
+        }
+        return this.markPauseReady(issueId, paused.pauseContext!.pausedAt);
+      }
+
+      const interruptionResult = await interruption;
+      if (!interruptionResult.ok) {
+        this.recordPauseFailure(issueId, interruptionResult.error);
+        return this.getIssue(issueId);
+      }
+      return this.markPauseReady(issueId, paused.pauseContext!.pausedAt);
+    } finally {
+      this.pausing.delete(issueId);
     }
-    return paused;
   }
 
   resumeIssue(issueId: string): Issue {
     this.assertAccepting();
+    if (this.pausing.has(issueId)) throw new Error("ISSUE_PAUSE_IN_PROGRESS");
     const resumed = this.dependencies.store.transaction((transaction) => {
       const current = this.getIssue(issueId);
       const operation = current.pauseContext?.operation;
@@ -341,6 +383,39 @@ export class RuntimeCommands {
     });
     this.dependencies.wake();
     return resumed;
+  }
+
+  private markPauseReady(issueId: string, pausedAt: string): Issue {
+    return this.dependencies.store.transaction((transaction) => {
+      const current = this.getIssue(issueId);
+      if (
+        current.status !== "PAUSED"
+        || current.pauseContext?.pausedAt !== pausedAt
+        || current.pauseContext.ready
+      ) return current;
+      const ready = completeIssuePause(current, this.dependencies.now());
+      transaction.updateIssue(ready, current.revision, null);
+      transaction.appendEvent({
+        id: this.dependencies.id(),
+        issueId,
+        type: "ISSUE_PAUSE_READY",
+        actor: "SYSTEM",
+        data: { revision: ready.revision },
+        occurredAt: this.dependencies.now(),
+      });
+      return ready;
+    });
+  }
+
+  private recordPauseFailure(issueId: string, error: unknown): void {
+    this.dependencies.store.transaction((transaction) => transaction.appendEvent({
+      id: this.dependencies.id(),
+      issueId,
+      type: "AGENT_PAUSE_FAILED",
+      actor: "SYSTEM",
+      data: { message: publicModuleError(error) },
+      occurredAt: this.dependencies.now(),
+    }));
   }
 
   async cancelIssue(issueId: string): Promise<Issue> {
@@ -482,4 +557,35 @@ export class RuntimeCommands {
 
 function publicModuleError(error: unknown): string {
   return error instanceof Error ? error.message : "MODULE_HOOK_FAILED";
+}
+
+function settle<T>(promise: Promise<T>): Promise<
+  | { ok: true; value: T }
+  | { ok: false; error: unknown }
+> {
+  return promise.then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+}
+
+async function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("AGENT_PAUSE_TIMEOUT")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function isPauseTimeout(error: unknown): boolean {
+  return error instanceof Error && error.message === "AGENT_PAUSE_TIMEOUT";
 }

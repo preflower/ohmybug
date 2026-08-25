@@ -358,12 +358,30 @@ describe("Issue detail", () => {
         operation: "REPAIR",
         resumeStatus: "REPAIRING",
         pausedAt: issue.updatedAt,
+        ready: true,
       },
     }} onRefresh={async () => undefined} onResume={async () => undefined} onCancel={async () => undefined} />);
 
     const actions = screen.getByRole("region", { name: "Issue 操作" });
     expect(within(actions).getByRole("button", { name: "继续执行" })).toBeVisible();
     expect(within(actions).getByRole("button", { name: "取消 Issue" })).toBeVisible();
+  });
+
+  it("keeps resume disabled until paused work has safely settled", () => {
+    render(<IssueDetail issue={{
+      ...issue,
+      status: "PAUSED",
+      resolution: undefined,
+      pauseContext: {
+        operation: "REPAIR",
+        resumeStatus: "REPAIRING",
+        pausedAt: issue.updatedAt,
+        ready: false,
+      },
+    }} onRefresh={async () => undefined} onResume={async () => undefined} onCancel={async () => undefined} />);
+
+    expect(screen.getByRole("button", { name: "等待暂停完成" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "取消 Issue" })).toBeEnabled();
   });
 
   it("renders the unified Assessment review and cancels through the generic control", async () => {

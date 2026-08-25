@@ -105,6 +105,9 @@ function applyTransition(
   action: IssueAction,
   now: string,
 ): Issue {
+  if (action === "RESUME" && issue.pauseContext?.ready !== true) {
+    throw new Error("ISSUE_PAUSE_IN_PROGRESS");
+  }
   const nextStatus = action === "RESUME" && issue.status === "PAUSED"
     ? issue.pauseContext?.resumeStatus
     : transitions[issue.status][action];
@@ -138,7 +141,7 @@ function applyTransition(
   if (action === "PAUSE") {
     const pause = pauseByStatus[issue.status as keyof typeof pauseByStatus];
     if (!pause) throw new Error("PAUSE_CONTEXT_NOT_AVAILABLE");
-    nextIssue.pauseContext = { ...pause, pausedAt: now };
+    nextIssue.pauseContext = { ...pause, pausedAt: now, ready: false };
   }
   if (action === "RESUME") delete nextIssue.pauseContext;
   if (
@@ -167,4 +170,17 @@ export function transitionIssue(
   now: string,
 ): Issue {
   return applyTransition(issue, action, now);
+}
+
+export function completeIssuePause(issue: Issue, now: string): Issue {
+  if (issue.status !== "PAUSED" || !issue.pauseContext) {
+    throw new Error("PAUSE_CONTEXT_REQUIRED");
+  }
+  if (issue.pauseContext.ready) return issue;
+  return {
+    ...issue,
+    pauseContext: { ...issue.pauseContext, ready: true },
+    revision: issue.revision + 1,
+    updatedAt: now,
+  };
 }

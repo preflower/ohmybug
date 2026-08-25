@@ -6,6 +6,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { EvidenceCaptureError } from "../src/evidence/capture-provider.js";
+import { IssueOperationCoordinator } from "../src/orchestration/issue-operation-coordinator.js";
 import { RuntimeWorker } from "../src/orchestration/worker.js";
 import { FakeAgent } from "./helpers/fakes.js";
 import { assessment, createHarness, eventIds, now, project } from "./helpers/runtime.js";
@@ -106,8 +107,9 @@ describe("Runtime evidence worker", () => {
     };
     const draining = harness.worker.drainOne();
     await started;
-    await harness.commands.pauseIssue(harness.issue.id);
+    const pausing = harness.commands.pauseIssue(harness.issue.id);
     releaseEvidence(harness.agent.nextEvidenceResult);
+    await pausing;
     await draining;
 
     expect(harness.store.getIssue(harness.issue.id)).toMatchObject({
@@ -118,6 +120,63 @@ describe("Runtime evidence worker", () => {
     expect(harness.store.getIssue(harness.issue.id)?.repair).not.toHaveProperty("delivery");
     expect(harness.store.readEvents(harness.issue.id).map((event) => event.type))
       .not.toContain("DELIVERY_READY");
+  });
+
+  it("aborts and settles configured host capture before pause completes", async () => {
+    const harness = setup("host");
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    let aborted = false;
+    harness.capture.capture = async (input) => {
+      harness.capture.inputs.push(input);
+      markStarted();
+      await new Promise<void>((resolve) => {
+        input.signal?.addEventListener("abort", () => {
+          aborted = true;
+          resolve();
+        }, { once: true });
+      });
+      throw input.signal?.reason;
+    };
+    const draining = harness.worker.drainOne();
+    await started;
+
+    await harness.commands.pauseIssue(harness.issue.id);
+
+    expect(aborted).toBe(true);
+    await expect(draining).resolves.toBeUndefined();
+    expect(harness.store.getIssue(harness.issue.id)).toMatchObject({
+      status: "PAUSED",
+      pauseContext: { operation: "CAPTURE_EVIDENCE", resumeStatus: "EVIDENCE_CAPTURE" },
+    });
+    expect(harness.store.readEvents(harness.issue.id).map((event) => event.type))
+      .not.toContain("EVIDENCE_CAPTURE_FAILED");
+  });
+
+  it("keeps resume locked when configured host capture cleanup fails", async () => {
+    const harness = setup("host");
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    harness.capture.capture = async (input) => {
+      markStarted();
+      await new Promise<void>((resolve) => {
+        input.signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+      throw new Error("EVIDENCE_PROCESS_TREE_STOP_FAILED");
+    };
+    const draining = harness.worker.drainOne();
+    await started;
+
+    const paused = await harness.commands.pauseIssue(harness.issue.id);
+
+    expect(paused).toMatchObject({ status: "PAUSED", pauseContext: { ready: false } });
+    await expect(draining).rejects.toThrow("EVIDENCE_PROCESS_TREE_STOP_FAILED");
+    expect(() => harness.commands.resumeIssue(harness.issue.id))
+      .toThrow("ISSUE_PAUSE_IN_PROGRESS");
+    expect(harness.store.readEvents(harness.issue.id)).toContainEqual(expect.objectContaining({
+      type: "AGENT_PAUSE_FAILED",
+      actor: "SYSTEM",
+    }));
   });
 
   it("requeues an interrupted evidence turn without consuming a retry", async () => {
@@ -191,7 +250,8 @@ describe("Runtime evidence worker", () => {
 
 function setup(mode: "host" | "agent") {
   const agent = new FakeAgent();
-  const harness = createHarness(agent);
+  const operations = new IssueOperationCoordinator();
+  const harness = createHarness(agent, { operations });
   if (mode === "host") {
     const currentProject = harness.store.getProject(project.id)!;
     harness.store.updateProject({
@@ -217,6 +277,7 @@ function setup(mode: "host" | "agent") {
       evidence: harness.evidence,
       capture: harness.capture,
       workspaces: harness.workspaces,
+      operations,
       id: eventIds(`evidence-${mode}`),
       now: () => now,
     }),

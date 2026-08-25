@@ -40,6 +40,7 @@ import { ModuleHost } from "./modules/module-host.js";
 import { WorkspaceRegistry } from "./modules/workspace-registry.js";
 import { workspaceModule } from "./modules/workspace-module.js";
 import { RuntimeCommands } from "./orchestration/commands.js";
+import { IssueOperationCoordinator } from "./orchestration/issue-operation-coordinator.js";
 import { WorkspaceCoordinator } from "./orchestration/workspace-coordinator.js";
 import { OhMyBugRuntime } from "./runtime.js";
 import { RuntimeService } from "./service.js";
@@ -358,6 +359,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     },
   });
   const manual = new ManualIntegrationAdapter({ id, now: () => new Date(now()) });
+  const operations = new IssueOperationCoordinator();
   let wake: () => void = () => undefined;
   const commands = new RuntimeCommands({
     store,
@@ -367,6 +369,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     id,
     now,
     wake: () => wake(),
+    operations,
   });
   const integrations = new IntegrationManager({
     registry: options.integrationRegistry,
@@ -390,6 +393,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     modules,
     id,
     now,
+    operations,
   });
   wake = () => runtime.kick();
   return {

@@ -53,6 +53,7 @@ const eventLabels: Record<string, string> = {
   AGENT_TEMP_CLEANUP_FAILED: "临时目录清理失败",
   AGENT_ERROR: "Codex 运行失败",
   ISSUE_PAUSED: "Issue 已暂停",
+  ISSUE_PAUSE_READY: "暂停已安全完成",
   ISSUE_RESUMED: "Issue 已继续执行",
   AGENT_PAUSE_FAILED: "Agent 暂停请求未正常结束",
   ISSUE_CANCELED: "任务已取消",
