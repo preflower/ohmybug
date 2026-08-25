@@ -565,6 +565,26 @@ function shouldPushToRemote(state: GitWorkspaceState): boolean {
   return state.pushToRemote ?? state.delivery === "remote";
 }
 
+const MAX_BASE_ADVANCE_ATTEMPTS = 3;
+
+export async function retryOnBaseAdvance<T>(
+  readBase: () => Promise<string>,
+  attempt: (baseCommit: string) => Promise<T>,
+  maxAttempts = MAX_BASE_ADVANCE_ATTEMPTS,
+): Promise<T> {
+  let lastError: unknown;
+  for (let number = 0; number < maxAttempts; number += 1) {
+    const observedBase = await readBase();
+    try {
+      return await attempt(observedBase);
+    } catch (error) {
+      if (await readBase() === observedBase) throw error;
+      lastError = error;
+    }
+  }
+  throw new Error("GIT_AUTO_MERGE_FAILED", { cause: lastError });
+}
+
 async function mergeIntoBaseBranch(
   state: GitWorkspaceState,
   commit: string,
@@ -574,63 +594,65 @@ async function mergeIntoBaseBranch(
   if (!(await gitRefExists(state.repositoryPath, baseRef))) {
     throw new Error("GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH");
   }
-  if (await tryRunGit(
-    state.repositoryPath,
-    ["merge-base", "--is-ancestor", commit, baseRef],
-  ) !== undefined) {
-    return;
-  }
-
-  const baseCommit = await runGit(state.repositoryPath, ["rev-parse", baseRef]);
-  const resultCommit = await createAutomaticMergeCommit(
-    state.repositoryPath,
-    baseCommit,
-    commit,
-    state.branch,
-    state.baseBranch,
-  );
   const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
   const checkedOutPath = worktreePathForBranch(listed, baseRef);
 
-  if (checkedOutPath !== undefined) {
-    try {
-      await assertWorktreeAndSubmodulesClean(checkedOutPath);
-      await assertNoIgnoredMergeCollisions(
+  await retryOnBaseAdvance(
+    () => runGit(state.repositoryPath, ["rev-parse", baseRef]),
+    async (baseCommit) => {
+      if (await tryRunGit(
         state.repositoryPath,
-        checkedOutPath,
-        baseCommit,
-        resultCommit,
-      );
-      await assertNoInitializedGitlinkUpdates(
-        state.repositoryPath,
-        checkedOutPath,
-        baseCommit,
-        resultCommit,
-      );
-    } catch (error) {
-      if (error instanceof Error && error.message === "GIT_WORKTREE_NOT_CLEAN") {
-        throw new Error("GIT_AUTO_MERGE_BASE_DIRTY", { cause: error });
+        ["merge-base", "--is-ancestor", commit, baseCommit],
+      ) !== undefined) {
+        return;
       }
-      throw error;
-    }
-    try {
-      await runGit(checkedOutPath, ["merge", "--ff-only", resultCommit]);
-    } catch (error) {
-      throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
-    }
-    return;
-  }
-
-  try {
-    await runGit(state.repositoryPath, [
-      "update-ref",
-      baseRef,
-      resultCommit,
-      baseCommit,
-    ]);
-  } catch (error) {
-    throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
-  }
+      const resultCommit = await createAutomaticMergeCommit(
+        state.repositoryPath,
+        baseCommit,
+        commit,
+        state.branch,
+        state.baseBranch,
+      );
+      if (checkedOutPath !== undefined) {
+        try {
+          await assertWorktreeAndSubmodulesClean(checkedOutPath);
+          await assertNoIgnoredMergeCollisions(
+            state.repositoryPath,
+            checkedOutPath,
+            baseCommit,
+            resultCommit,
+          );
+          await assertNoInitializedGitlinkUpdates(
+            state.repositoryPath,
+            checkedOutPath,
+            baseCommit,
+            resultCommit,
+          );
+        } catch (error) {
+          if (error instanceof Error && error.message === "GIT_WORKTREE_NOT_CLEAN") {
+            throw new Error("GIT_AUTO_MERGE_BASE_DIRTY", { cause: error });
+          }
+          throw error;
+        }
+        try {
+          await runGit(checkedOutPath, ["merge", "--ff-only", resultCommit]);
+        } catch (error) {
+          throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
+        }
+        return;
+      }
+      try {
+        await runGit(state.repositoryPath, [
+          "update-ref",
+          baseRef,
+          resultCommit,
+          baseCommit,
+        ]);
+      } catch (error) {
+        throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
+      }
+    },
+  );
 }
 
 async function assertGitSupportsAutomaticMerge(repositoryPath: string): Promise<void> {
