@@ -10,6 +10,7 @@ describe("IntegrationPlugin manifest", () => {
     const manifest: IntegrationPluginManifest = {
       id: "fixture",
       name: "Fixture",
+      icon: "messageCircle",
       configFields: [
         { key: "workspace", type: "string", label: "Workspace", required: true },
         { key: "channels", type: "string[]", label: "Channels", required: true },
@@ -46,15 +47,17 @@ describe("IntegrationPlugin manifest", () => {
       description: "Receive fixture events.",
       sections: [
         { id: "credentials", label: "Credentials", description: "Stored locally." },
+        { id: "rules", label: "Rules", summary: { label: "Scope", value: "Selected groups" } },
         { id: "advanced", label: "Advanced", collapsed: true },
       ],
       configFields: [{
-        key: "filter",
-        type: "string",
-        label: "Filter",
+        key: "filters",
+        type: "string[]",
+        label: "Filters",
         required: false,
         section: "advanced",
         placeholder: "error",
+        addLabel: "Add filter",
       }],
       secretFields: [{
         key: "token",

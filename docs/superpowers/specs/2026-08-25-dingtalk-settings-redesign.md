@@ -59,12 +59,14 @@ interface IntegrationSection {
   id: string;
   label: string;
   description?: string;
+  summary?: { label: string; value: string };
   collapsed?: boolean;
 }
 
 interface IntegrationPluginManifest {
   id: string;
   name: string;
+  icon?: "plug" | "messageCircle" | "webhook";
   description?: string;
   sections?: IntegrationSection[];
   configFields: ConfigField[];
@@ -74,10 +76,11 @@ interface IntegrationPluginManifest {
 interface IntegrationFieldPresentation {
   section?: string;
   placeholder?: string;
+  addLabel?: string;
 }
 ```
 
-`section` 与 `placeholder` 作为 config/secret 字段的可选展示属性加入既有 schema。若字段引用不存在的 section，Manifest 校验失败。分组顺序由 `sections` 决定，未分组字段最后按 Manifest 原始顺序显示。
+`icon`、section `summary`、字段 `section` / `placeholder` 与数组字段 `addLabel` 都是可选的通用展示属性。若字段引用不存在的 section，Manifest 校验失败。分组顺序由 `sections` 决定，未分组字段最后按 Manifest 原始顺序显示。
 
 这次不加入通用条件表达式或任意 UI schema。DingTalk 始终要求群白名单，因此没有需要条件显示的“允许全部群聊”选项。YAGNI 保持 Manifest 扩展边界清晰。
 

@@ -126,7 +126,7 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     await page.getByRole("checkbox", { name: "启用" }).click();
     await page.getByLabel("Client ID").fill("ding-client-id");
     await page.getByLabel("Client Secret").fill("ding-client-secret");
-    await page.getByRole("button", { name: "添加群聊 ID" }).click();
+    await page.getByRole("button", { name: "添加群聊" }).click();
     await page.getByRole("textbox", { name: "群聊 ID 1", exact: true }).fill("cid-acceptance-group");
 
     await expect(page.getByRole("button", { name: "保存更改" })).toHaveCount(1);
@@ -135,6 +135,29 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     await expect(page.getByText("已连接", { exact: true })).toBeVisible();
     await expect(page.getByText("已配置")).toHaveCount(2);
     await expect(page.locator("details").filter({ hasText: "高级设置" })).not.toHaveAttribute("open");
+
+    await page.getByRole("textbox", { name: "群聊 ID 1", exact: true })
+      .fill("dingtalk1234567890abcdef1234567890abcdef");
+    await expect(page.getByText("有未保存的更改")).toBeVisible();
+    await expect(page.getByText("接收范围")).toBeVisible();
+    await expect(page.getByText("指定群聊", { exact: true })).toBeVisible();
+    await page.locator(".integration-heading h2").click();
+
+    const visualContract = await page.locator(".project-settings-tabs").evaluate((root) => {
+      const css = (selector: string) => getComputedStyle(root.querySelector(selector)!);
+      return {
+        navRowHeight: Math.round(root.querySelector('[role="tab"]')!.getBoundingClientRect().height),
+        titleSize: Number.parseFloat(css(".integration-heading h2").fontSize),
+        inputHeight: Math.round(root.querySelector('[aria-label="群聊 ID 1"]')!.getBoundingClientRect().height),
+        footerHeight: Math.round(root.querySelector(".project-settings-actions")!.getBoundingClientRect().height),
+      };
+    });
+    expect(visualContract).toEqual({
+      navRowHeight: 60,
+      titleSize: 34,
+      inputHeight: 50,
+      footerHeight: 108,
+    });
 
     const outputDir = resolve(".artifacts", "visual-diff", "dingtalk-settings");
     await mkdir(outputDir, { recursive: true });
@@ -173,7 +196,7 @@ test("fills the desktop project workspace without a trailing blank region", asyn
   });
 });
 
-test("matches the project settings active tab to the primary navigation selection", async ({ page }) => {
+test("uses the design-reference active surface for project settings navigation", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/projects");
   await page.getByRole("button", { name: "高级：手动输入路径" }).click();
@@ -188,18 +211,31 @@ test("matches the project settings active tab to the primary navigation selectio
         color: style.color,
         indicatorColor: indicator.backgroundColor,
         indicatorLeft: indicator.left,
+        indicatorWidth: indicator.width,
       };
     };
+    const probe = document.createElement("div");
+    probe.style.background = "var(--surface-hover)";
+    document.body.append(probe);
+    const surfaceHover = getComputedStyle(probe).backgroundColor;
+    probe.remove();
     return {
       primary: read(document.querySelector('[aria-current="page"]')!),
       settings: read(document.querySelector('[role="tab"][data-active]')!),
+      surfaceHover,
     };
   });
 
-  expect(selectedStyles.settings).toEqual(selectedStyles.primary);
+  expect(selectedStyles.settings).toEqual({
+    backgroundColor: selectedStyles.surfaceHover,
+    color: selectedStyles.primary.color,
+    indicatorColor: selectedStyles.primary.indicatorColor,
+    indicatorLeft: "0px",
+    indicatorWidth: "5px",
+  });
 
   await page.setViewportSize({ width: 720, height: 900 });
-  await expect(settingsSelection).toHaveCSS("background-color", selectedStyles.primary.backgroundColor);
+  await expect(settingsSelection).toHaveCSS("background-color", selectedStyles.surfaceHover);
   expect(await settingsSelection.evaluate((element) => getComputedStyle(element, "::before").display)).toBe("none");
 });
 

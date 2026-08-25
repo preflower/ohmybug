@@ -39,11 +39,11 @@ const groupedManifest: IntegrationPluginManifest = {
   description: "从指定群聊接收消息并创建 Issue。",
   sections: [
     { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
-    { id: "rules", label: "接收规则" },
+    { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
     { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
   ],
   configFields: [
-    { key: "conversationIds", type: "string[]", label: "群聊 ID", required: true, section: "rules" },
+    { key: "conversationIds", type: "string[]", label: "群聊 ID", required: true, section: "rules", addLabel: "添加群聊" },
     { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
   ],
   secretFields: [
@@ -128,6 +128,9 @@ describe("Project configuration", () => {
     expect(screen.getByRole("heading", { name: "应用凭证" })).toBeVisible();
     expect(screen.getByText("凭证仅保存在这台电脑的系统钥匙串中。")).toBeVisible();
     expect(screen.getAllByText("已配置")).toHaveLength(2);
+    expect(screen.getByText("接收范围")).toBeVisible();
+    expect(screen.getByText("指定群聊")).toBeVisible();
+    expect(screen.getByRole("button", { name: "添加群聊" })).toBeVisible();
     expect(screen.queryByLabelText("Client ID")).not.toBeInTheDocument();
     expect(screen.getByText("高级设置").closest("details")).not.toHaveAttribute("open");
 
@@ -177,8 +180,8 @@ describe("Project configuration", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
     expect(await screen.findByText("请至少添加一个群聊 ID")).toBeVisible();
     expect(screen.getByRole("tab", { name: "DingTalk" })).toHaveAttribute("aria-selected", "true");
-    await waitFor(() => expect(screen.getByRole("button", { name: "添加群聊 ID" })).toHaveFocus());
-    fireEvent.click(screen.getByRole("button", { name: "添加群聊 ID" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "添加群聊" })).toHaveFocus());
+    fireEvent.click(screen.getByRole("button", { name: "添加群聊" }));
     await waitFor(() => expect(screen.getByLabelText("群聊 ID 1")).toHaveFocus());
     expect(onSave).not.toHaveBeenCalled();
   });

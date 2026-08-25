@@ -22,6 +22,7 @@ export interface DingTalkPluginOptions {
 const manifest = {
   id: "dingtalk",
   name: "DingTalk",
+  icon: "messageCircle",
   description: "从指定群聊接收消息并创建 Issue。",
   sections: [
     {
@@ -29,7 +30,11 @@ const manifest = {
       label: "应用凭证",
       description: "凭证仅保存在这台电脑的系统钥匙串中。",
     },
-    { id: "rules", label: "接收规则" },
+    {
+      id: "rules",
+      label: "接收规则",
+      summary: { label: "接收范围", value: "指定群聊" },
+    },
     {
       id: "advanced",
       label: "高级设置",
@@ -45,6 +50,7 @@ const manifest = {
       description: "仅处理来自这些群聊且 @ 机器人的消息。",
       required: true,
       section: "rules",
+      addLabel: "添加群聊",
     },
     {
       key: "messageRule",

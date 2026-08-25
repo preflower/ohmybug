@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { Bot, ClipboardCheck, Folder, Plug } from "lucide-react";
+import { Bot, ClipboardCheck, Folder, MessageCircle, Plug, Webhook } from "lucide-react";
 
 import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
@@ -173,7 +173,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
         <TabsTrigger value="agent"><Bot aria-hidden="true" />Agent</TabsTrigger>
         <TabsTrigger value="commands"><ClipboardCheck aria-hidden="true" />命令与验收</TabsTrigger>
         <span className="project-settings-nav-label project-settings-nav-label-integrations" role="presentation">集成</span>
-        {allManifests.map((manifest) => <TabsTrigger key={manifest.id} value={manifest.id}><Plug aria-hidden="true" />{manifest.name}</TabsTrigger>)}
+        {allManifests.map((manifest) => <TabsTrigger key={manifest.id} value={manifest.id}><IntegrationNavIcon icon={manifest.icon} />{manifest.name}</TabsTrigger>)}
       </TabsList>
       <div className="project-settings-main"><div className="project-settings-content">
         {activeTab === "project" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel project-overview-panel"><div className="section-heading"><div><h2>项目</h2><p>Agent 在这个本机项目目录中工作。</p></div></div><div className="form-grid">
@@ -325,6 +325,11 @@ function initialValue(manifests: IntegrationPluginManifest[], workspaceProviders
     integrations,
     workspace: inspection ? mergeWorkspaceInspection(workspace, inspection) : workspace,
   };
+}
+
+function IntegrationNavIcon({ icon }: { icon?: IntegrationPluginManifest["icon"] }) {
+  const Icon = icon === "messageCircle" ? MessageCircle : icon === "webhook" ? Webhook : Plug;
+  return <Icon aria-hidden="true" />;
 }
 
 function mergeWorkspaceInspection(

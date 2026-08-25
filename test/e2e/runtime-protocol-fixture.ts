@@ -69,7 +69,7 @@ function installRuntimeProtocolFixture() {
   const now = () => new Date().toISOString();
   const manifests = [
     {
-      id: "sentry", name: "Sentry",
+      id: "sentry", name: "Sentry", icon: "webhook",
       configFields: [
         { key: "organization", type: "string", label: "Organization", required: true },
         { key: "project", type: "string", label: "Project", required: true },
@@ -79,14 +79,22 @@ function installRuntimeProtocolFixture() {
       secretFields: [{ key: "token", label: "Auth token", required: true }],
     },
     {
-      id: "dingtalk", name: "DingTalk", description: "从指定群聊接收消息并创建 Issue。",
+      id: "dingtalk", name: "DingTalk", icon: "messageCircle", description: "从指定群聊接收消息并创建 Issue。",
       sections: [
         { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
-        { id: "rules", label: "接收规则" },
+        { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
         { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
       ],
       configFields: [
-        { key: "conversationIds", type: "string[]", label: "群聊 ID", required: true, section: "rules" },
+        {
+          key: "conversationIds",
+          type: "string[]",
+          label: "群聊 ID",
+          description: "仅处理来自这些群聊且 @ 机器人的消息。",
+          required: true,
+          section: "rules",
+          addLabel: "添加群聊",
+        },
         { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
         { key: "threadKeyField", type: "string", label: "消息归并字段", required: false, section: "advanced" },
       ],

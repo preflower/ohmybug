@@ -3,6 +3,7 @@ import type {
   WorkspaceProviderInspection,
   WorkspaceProviderManifest,
 } from "../api/types.js";
+import { Trash2 } from "lucide-react";
 
 import { Button } from "../components/ui/button.js";
 import { Checkbox } from "../components/ui/checkbox.js";
@@ -41,7 +42,7 @@ export function ConfigFields({ fields, config, idPrefix = "config", inspection, 
         <legend>{field.label}</legend>
         {values.map((value, index) => <div className="credential-row" key={`${field.key}-${index}`}>
           <Input aria-label={`${field.label} ${index + 1}`} required={field.required} value={value} onChange={(event) => onChange(field.key, values.map((entry, entryIndex) => entryIndex === index ? event.target.value : entry))} />
-          <Button aria-label={`删除 ${field.label} ${index + 1}`} size="sm" type="button" variant="outline" onClick={() => onChange(field.key, values.filter((_entry, entryIndex) => entryIndex !== index))}>删除</Button>
+          <Button aria-label={`删除 ${field.label} ${index + 1}`} size="sm" type="button" variant="outline" onClick={() => onChange(field.key, values.filter((_entry, entryIndex) => entryIndex !== index))}><Trash2 aria-hidden="true" /></Button>
         </div>)}
         <Button size="sm" type="button" variant="outline" onClick={(event) => {
           const fieldset = event.currentTarget.closest("fieldset");
@@ -50,7 +51,7 @@ export function ConfigFields({ fields, config, idPrefix = "config", inspection, 
             const inputs = fieldset?.querySelectorAll<HTMLInputElement>("input");
             inputs?.item(inputs.length - 1).focus();
           }, 0);
-        }}>添加{field.label}</Button>
+        }}>{field.addLabel ?? `添加${field.label}`}</Button>
         {field.description ? <small id={description}>{field.description}</small> : null}
       </fieldset>;
     }

@@ -18,6 +18,7 @@ export interface SentryPluginOptions {
 const manifest = {
   id: "sentry",
   name: "Sentry",
+  icon: "webhook",
   configFields: [
     { key: "organization", type: "string", label: "Organization", required: true },
     { key: "project", type: "string", label: "Project", required: true },

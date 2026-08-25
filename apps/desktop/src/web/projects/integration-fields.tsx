@@ -62,8 +62,12 @@ export function IntegrationFields({
             <summary><div><h3>{section.label}</h3>{section.description ? <p>{section.description}</p> : null}</div></summary>
             {content}
           </details>
-        : <section className="integration-section" key={section.id}>
+        : <section className="integration-section" data-integration-section={section.id} key={section.id}>
             <header><h3>{section.label}</h3>{section.description ? <p>{section.description}</p> : null}</header>
+            {section.summary ? <div className="integration-section-summary">
+              <span>{section.summary.label}</span>
+              <strong><i aria-hidden="true" />{section.summary.value}</strong>
+            </div> : null}
             {content}
           </section>;
     })}

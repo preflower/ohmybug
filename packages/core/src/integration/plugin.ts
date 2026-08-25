@@ -18,7 +18,12 @@ const fieldBase = {
 
 export const configFieldSchema = z.discriminatedUnion("type", [
   z.object({ ...fieldBase, type: z.literal("string"), defaultValue: z.string().optional() }).strict(),
-  z.object({ ...fieldBase, type: z.literal("string[]"), defaultValue: z.array(z.string()).optional() }).strict(),
+  z.object({
+    ...fieldBase,
+    type: z.literal("string[]"),
+    defaultValue: z.array(z.string()).optional(),
+    addLabel: z.string().trim().min(1).optional(),
+  }).strict(),
   z.object({ ...fieldBase, type: z.literal("number"), defaultValue: z.number().optional() }).strict(),
   z.object({ ...fieldBase, type: z.literal("boolean"), defaultValue: z.boolean().optional() }).strict(),
 ]);
@@ -36,12 +41,17 @@ export const integrationSectionSchema = z.object({
   id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
   label: z.string().trim().min(1),
   description: z.string().trim().min(1).optional(),
+  summary: z.object({
+    label: z.string().trim().min(1),
+    value: z.string().trim().min(1),
+  }).strict().optional(),
   collapsed: z.boolean().optional(),
 }).strict();
 
 export const integrationPluginManifestSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]*$/),
   name: z.string().trim().min(1),
+  icon: z.enum(["plug", "messageCircle", "webhook"]).optional(),
   description: z.string().trim().min(1).optional(),
   sections: z.array(integrationSectionSchema).optional(),
   configFields: z.array(configFieldSchema),
