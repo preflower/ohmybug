@@ -19,6 +19,7 @@ const statusVariants: Record<IssueDto["status"], BadgeVariant> = {
   FINALIZING: "default",
   FINALIZATION_RECOVERY: "review",
   FINALIZATION_FAILED: "destructive",
+  PAUSED: "review",
   COMPLETED: "success",
   CLOSED: "neutral",
   CANCELED: "neutral",

@@ -35,6 +35,8 @@ export function createDesktopTransport(bridge: Readonly<DesktopApi>): ProductTra
     requestReassessment: (id, feedback) => bridge.requestReassessment(id, feedback),
     rejectDelivery: (id, feedback) => bridge.rejectDelivery(id, feedback),
     approveDelivery: (id) => bridge.approveDelivery(id),
+    pause: (id) => bridge.pauseIssue(id),
+    resume: (id) => bridge.resumeIssue(id),
     cancel: (id) => bridge.cancelIssue(id),
     retry: (id) => bridge.retryIssue(id),
     rebuildSession: (id, expectedRevision) => bridge.rebuildAgentSession(id, expectedRevision),

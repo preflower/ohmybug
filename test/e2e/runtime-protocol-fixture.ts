@@ -285,6 +285,37 @@ function installRuntimeProtocolFixture() {
       const next = { ...current, status: stage === "ASSESSMENT" ? "ASSESSING" : "REPAIRING", lastFailure: undefined, revision: current.revision + 1, updatedAt: now() };
       return saveIssue(next);
     },
+    pauseIssue: async (id: string) => {
+      const current = requireIssue(id);
+      const byStatus = {
+        ASSESSING: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+        REPAIRING: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+        EVIDENCE_CAPTURE: { operation: "CAPTURE_EVIDENCE", resumeStatus: "EVIDENCE_CAPTURE" },
+        FINALIZATION_RECOVERY: { operation: "RECOVER_FINALIZATION", resumeStatus: "FINALIZATION_RECOVERY" },
+      } as const;
+      const pauseContext = byStatus[current.status as keyof typeof byStatus];
+      if (!pauseContext) throw new Error("PAUSE_NOT_AVAILABLE");
+      return saveIssue({
+        ...current,
+        status: "PAUSED",
+        pauseContext: { ...pauseContext, pausedAt: now() },
+        revision: current.revision + 1,
+        updatedAt: now(),
+      });
+    },
+    resumeIssue: async (id: string) => {
+      const current = requireIssue(id);
+      if (current.status !== "PAUSED" || !current.pauseContext) {
+        throw new Error("PAUSE_CONTEXT_REQUIRED");
+      }
+      const { pauseContext: _pauseContext, ...rest } = current;
+      return saveIssue({
+        ...rest,
+        status: current.pauseContext.resumeStatus,
+        revision: current.revision + 1,
+        updatedAt: now(),
+      });
+    },
     cancelIssue: async (id: string) => saveIssue({ ...requireIssue(id), status: "CANCELED", resolution: "CANCELED", updatedAt: now() }),
     readEvidence: async (_issueId: string, requestedEvidenceId: string) => {
       const canvas = document.createElement("canvas");

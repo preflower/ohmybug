@@ -62,6 +62,8 @@ export interface ProductTransport {
   requestReassessment(id: string, feedback: string): Promise<IssueDto>;
   rejectDelivery(id: string, feedback: string): Promise<IssueDto>;
   approveDelivery(id: string): Promise<ApprovalResultDto>;
+  pause(id: string): Promise<IssueDto>;
+  resume(id: string): Promise<IssueDto>;
   cancel(id: string): Promise<IssueDto>;
   retry(id: string): Promise<IssueDto>;
   rebuildSession(id: string, expectedRevision: number): Promise<IssueDto>;
