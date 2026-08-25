@@ -36,14 +36,15 @@ const manifests: IntegrationPluginManifest[] = [{
 const groupedManifest: IntegrationPluginManifest = {
   id: "dingtalk",
   name: "DingTalk",
-  description: "从指定群聊接收消息并创建 Issue。",
+  description: "从群聊接收 @ 机器人的消息并创建 Issue。",
   sections: [
     { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
-    { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
+    { id: "rules", label: "接收规则" },
     { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
   ],
   configFields: [
-    { key: "conversationIds", type: "string[]", label: "群聊 ID", required: true, section: "rules", addLabel: "添加群聊" },
+    { key: "conversationFilterEnabled", type: "boolean", label: "群聊过滤", description: "开启后仅处理指定群聊；关闭时处理任意群聊中 @ 机器人的消息。", required: false, defaultValue: false, section: "rules" },
+    { key: "conversationIds", type: "string[]", label: "群聊 ID", required: true, section: "rules", addLabel: "添加群聊", visibleWhen: { key: "conversationFilterEnabled", equals: true } },
     { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
   ],
   secretFields: [
@@ -115,7 +116,7 @@ describe("Project configuration", () => {
   it("renders manifest sections, keeps advanced settings collapsed, and replaces configured secrets on demand", () => {
     const onEditSecret = vi.fn();
     const { rerender } = render(<IntegrationFields
-      config={{ conversationIds: ["cid-a"] }}
+      config={{ conversationFilterEnabled: true, conversationIds: ["cid-a"] }}
       editingSecrets={{}}
       manifest={groupedManifest}
       secretConfigured={{ clientId: true, clientSecret: true }}
@@ -128,8 +129,7 @@ describe("Project configuration", () => {
     expect(screen.getByRole("heading", { name: "应用凭证" })).toBeVisible();
     expect(screen.getByText("凭证仅保存在这台电脑的系统钥匙串中。")).toBeVisible();
     expect(screen.getAllByText("已配置")).toHaveLength(2);
-    expect(screen.getByText("接收范围")).toBeVisible();
-    expect(screen.getByText("指定群聊")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "群聊过滤" })).toBeChecked();
     expect(screen.getByRole("button", { name: "添加群聊" })).toBeVisible();
     expect(screen.queryByLabelText("Client ID")).not.toBeInTheDocument();
     expect(screen.getByText("高级设置").closest("details")).not.toHaveAttribute("open");
@@ -137,7 +137,7 @@ describe("Project configuration", () => {
     fireEvent.click(screen.getByRole("button", { name: "替换 Client ID" }));
     expect(onEditSecret).toHaveBeenCalledWith("clientId", true);
     rerender(<IntegrationFields
-      config={{ conversationIds: ["cid-a"] }}
+      config={{ conversationFilterEnabled: true, conversationIds: ["cid-a"] }}
       editingSecrets={{ clientId: true }}
       manifest={groupedManifest}
       secretConfigured={{ clientId: true, clientSecret: true }}
@@ -149,15 +149,68 @@ describe("Project configuration", () => {
     expect(screen.getByLabelText("Client ID")).toHaveAttribute("type", "password");
   });
 
+  it("shows the group ID editor only while group filtering is enabled", () => {
+    const onConfigChange = vi.fn();
+    const props = {
+      editingSecrets: {},
+      manifest: groupedManifest,
+      secretConfigured: {},
+      secretValues: {},
+      onConfigChange,
+      onEditSecret: vi.fn(),
+      onSecretChange: vi.fn(),
+    };
+    const { rerender } = render(<IntegrationFields
+      {...props}
+      config={{ conversationFilterEnabled: false, conversationIds: ["cid-a"] }}
+    />);
+
+    expect(screen.getByRole("checkbox", { name: "群聊过滤" })).not.toBeChecked();
+    expect(screen.queryByRole("button", { name: "添加群聊" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "群聊过滤" }));
+    expect(onConfigChange).toHaveBeenCalledWith("conversationFilterEnabled", true);
+
+    rerender(<IntegrationFields
+      {...props}
+      config={{ conversationFilterEnabled: true, conversationIds: ["cid-a"] }}
+    />);
+    expect(screen.getByRole("button", { name: "添加群聊" })).toBeVisible();
+  });
+
   it.each([
     [true, { state: "connected" as const }, "已连接"],
     [true, { state: "connecting" as const }, "正在连接"],
     [true, { state: "backoff" as const, lastError: "凭证无效" }, "连接失败，正在重试：凭证无效"],
     [true, { state: "stopped" as const }, "已停用"],
-    [false, undefined, "已停用"],
   ])("shows integration health for enabled=%s as %s", (enabled, health, label) => {
     render(<IntegrationHealthStatus enabled={enabled} health={health} />);
     expect(screen.getByRole("status")).toHaveTextContent(label);
+  });
+
+  it("omits redundant health when an integration is disabled", () => {
+    render(<IntegrationHealthStatus enabled={false} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("hydrates legacy group IDs as an enabled filter", () => {
+    render(<ProjectForm
+      initial={{
+        ...configuredProject,
+        integrations: {
+          dingtalk: {
+            enabled: true,
+            config: { conversationIds: ["legacy-group"] },
+            secretConfigured: { clientId: true, clientSecret: true },
+          },
+        },
+      }}
+      manifests={[groupedManifest]}
+      onSave={vi.fn(async () => undefined)}
+    />);
+
+    selectTab("DingTalk");
+    expect(screen.getByRole("checkbox", { name: "群聊过滤" })).toBeChecked();
+    expect(screen.getByLabelText("群聊 ID 1")).toHaveValue("legacy-group");
   });
 
   it("activates the integration tab and focuses the first missing required field", async () => {
@@ -168,7 +221,7 @@ describe("Project configuration", () => {
         integrations: {
           dingtalk: {
             enabled: true,
-            config: { conversationIds: [] },
+            config: { conversationFilterEnabled: true, conversationIds: [] },
             secretConfigured: { clientId: true, clientSecret: true },
           },
         },
@@ -213,7 +266,7 @@ describe("Project configuration", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       integrations: expect.objectContaining({
-        dingtalk: expect.objectContaining({ config: { conversationIds: ["cid-a", "cid-b"] } }),
+        dingtalk: expect.objectContaining({ config: { conversationFilterEnabled: true, conversationIds: ["cid-a", "cid-b"] } }),
       }),
     }), {}));
   });

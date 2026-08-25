@@ -8,6 +8,7 @@ import { Trash2 } from "lucide-react";
 import { Button } from "../components/ui/button.js";
 import { Checkbox } from "../components/ui/checkbox.js";
 import { Input } from "../components/ui/input.js";
+import { isConfigFieldVisible } from "./config-field-visibility.js";
 
 interface ConfigFieldsProps {
   fields: WorkspaceProviderManifest["configFields"];
@@ -18,7 +19,7 @@ interface ConfigFieldsProps {
 }
 
 export function ConfigFields({ fields, config, idPrefix = "config", inspection, onChange }: ConfigFieldsProps) {
-  return <>{fields.map((field) => {
+  return <>{fields.filter((field) => isConfigFieldVisible(field, fields, config)).map((field) => {
     const description = field.description ? `${idPrefix}-${field.key}-description` : undefined;
     const state = inspection?.fields?.[field.key];
     const stateReason = state?.reason ? `${idPrefix}-${field.key}-availability` : undefined;

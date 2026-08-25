@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
 import { Textarea } from "../components/ui/textarea.js";
 import type { ConfigValue, IntegrationHealth, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../api/types.js";
 import { ConfigFields } from "./config-fields.js";
+import { isConfigFieldVisible, withConditionalConfigDefaults } from "./config-field-visibility.js";
 import { GitWorkspaceFields } from "./git-workspace-fields.js";
 import { IntegrationFields } from "./integration-fields.js";
 import { IntegrationHealthStatus } from "./integration-health.js";
@@ -298,7 +299,11 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
 function initialValue(manifests: IntegrationPluginManifest[], workspaceProviders: WorkspaceProviderManifest[], initial?: ProjectDto, inspection?: ProjectInspection): ProjectFormValue {
   const integrations = Object.fromEntries(manifests.map((manifest) => {
     const stored = initial?.integrations?.[manifest.id];
-    return [manifest.id, { enabled: stored?.enabled ?? false, config: stored?.config ?? defaults(manifest), secretConfigured: stored?.secretConfigured ?? {} }];
+    return [manifest.id, {
+      enabled: stored?.enabled ?? false,
+      config: withConditionalConfigDefaults(manifest.configFields, stored?.config ?? {}),
+      secretConfigured: stored?.secretConfigured ?? {},
+    }];
   }));
   const workspace = initial?.workspace
     ? {
@@ -400,6 +405,7 @@ function validateIntegrations(
     const integration = project.integrations[manifest.id];
     if (!integration?.enabled) continue;
     for (const field of manifest.configFields) {
+      if (!isConfigFieldVisible(field, manifest.configFields, integration.config)) continue;
       const value = integration.config[field.key] ?? field.defaultValue;
       if (field.type === "string[]") {
         const normalized = Array.isArray(value)
