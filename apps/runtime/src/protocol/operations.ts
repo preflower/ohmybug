@@ -22,6 +22,7 @@ import {
   productProjectSchema,
   projectInspectionSchema,
   runtimeHealthSchema,
+  saveProjectSettingsInputSchema,
   updateProjectInputSchema,
   workspaceBranchDiscoverySchema,
 } from "./schema-definitions.js";
@@ -95,6 +96,12 @@ export const runtimeOperations = {
     output: productProjectSchema,
     renderer: true,
     invoke: (service, input) => service.getProject(input),
+  }),
+  saveProjectSettings: operation({
+    input: saveProjectSettingsInputSchema,
+    output: productProjectSchema,
+    renderer: true,
+    invoke: (service, input) => service.saveProjectSettings(input),
   }),
   createProject: operation({
     input: createProjectInputSchema,

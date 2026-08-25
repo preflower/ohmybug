@@ -21,8 +21,8 @@ test("opens the first project through the native directory workflow", async ({ d
 
     await desktop.page.getByRole("tab", { name: "命令与验收" }).click();
     await desktop.page.getByLabel("测试命令").fill("node --test");
-    await expect(desktop.page.getByRole("button", { name: "保存项目" })).toHaveAttribute("data-slot", "button");
-    await desktop.page.getByRole("button", { name: "保存项目" }).click();
+    await expect(desktop.page.getByRole("button", { name: "保存更改" })).toHaveAttribute("data-slot", "button");
+    await desktop.page.getByRole("button", { name: "保存更改" }).click();
     await expect(desktop.page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
     await desktop.page.getByRole("tab", { name: "Sentry" }).click();
     await expect(desktop.page.getByLabel("Auth token")).toBeVisible();

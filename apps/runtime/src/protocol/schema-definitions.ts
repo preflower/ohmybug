@@ -81,6 +81,24 @@ const projectFields = {
 };
 
 export const createProjectInputSchema = z.object(projectFields).strict();
+export const integrationSecretPatchesSchema = z.record(
+  identifierSchema,
+  z.record(identifierSchema, z.string().min(1).nullable()),
+);
+export const saveProjectSettingsInputSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("create"),
+    project: createProjectInputSchema,
+    secretPatches: integrationSecretPatchesSchema,
+  }).strict(),
+  z.object({
+    mode: z.literal("update"),
+    id: identifierSchema,
+    expectedRevision: z.number().int().positive(),
+    project: createProjectInputSchema,
+    secretPatches: integrationSecretPatchesSchema,
+  }).strict(),
+]);
 export const updateProjectInputSchema = z.object({
   expectedRevision: z.number().int().positive(),
   path: projectFields.path.optional(),

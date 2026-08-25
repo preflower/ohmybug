@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../../src/web/api/types.js";
 import { GitBranchCombobox } from "../../src/web/projects/git-branch-combobox.js";
+import { IntegrationFields } from "../../src/web/projects/integration-fields.js";
+import { IntegrationHealthStatus } from "../../src/web/projects/integration-health.js";
 import { ProjectForm } from "../../src/web/projects/project-form.js";
 
 class ResizeObserverMock {
@@ -30,6 +32,25 @@ const manifests: IntegrationPluginManifest[] = [{
     { key: "signingKey", label: "Signing key", required: false },
   ],
 }];
+
+const groupedManifest: IntegrationPluginManifest = {
+  id: "dingtalk",
+  name: "DingTalk",
+  description: "从指定群聊接收消息并创建 Issue。",
+  sections: [
+    { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
+    { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
+    { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
+  ],
+  configFields: [
+    { key: "conversationIds", type: "string[]", label: "群聊 ID", required: true, section: "rules", addLabel: "添加群聊" },
+    { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
+  ],
+  secretFields: [
+    { key: "clientId", label: "Client ID", required: true, section: "credentials" },
+    { key: "clientSecret", label: "Client Secret", required: true, section: "credentials" },
+  ],
+};
 
 const workspaceProviders: WorkspaceProviderManifest[] = [
   { id: "local", name: "本机目录", configFields: [] },
@@ -91,6 +112,112 @@ function selectTab(name: string) {
 }
 
 describe("Project configuration", () => {
+  it("renders manifest sections, keeps advanced settings collapsed, and replaces configured secrets on demand", () => {
+    const onEditSecret = vi.fn();
+    const { rerender } = render(<IntegrationFields
+      config={{ conversationIds: ["cid-a"] }}
+      editingSecrets={{}}
+      manifest={groupedManifest}
+      secretConfigured={{ clientId: true, clientSecret: true }}
+      secretValues={{}}
+      onConfigChange={vi.fn()}
+      onEditSecret={onEditSecret}
+      onSecretChange={vi.fn()}
+    />);
+
+    expect(screen.getByRole("heading", { name: "应用凭证" })).toBeVisible();
+    expect(screen.getByText("凭证仅保存在这台电脑的系统钥匙串中。")).toBeVisible();
+    expect(screen.getAllByText("已配置")).toHaveLength(2);
+    expect(screen.getByText("接收范围")).toBeVisible();
+    expect(screen.getByText("指定群聊")).toBeVisible();
+    expect(screen.getByRole("button", { name: "添加群聊" })).toBeVisible();
+    expect(screen.queryByLabelText("Client ID")).not.toBeInTheDocument();
+    expect(screen.getByText("高级设置").closest("details")).not.toHaveAttribute("open");
+
+    fireEvent.click(screen.getByRole("button", { name: "替换 Client ID" }));
+    expect(onEditSecret).toHaveBeenCalledWith("clientId", true);
+    rerender(<IntegrationFields
+      config={{ conversationIds: ["cid-a"] }}
+      editingSecrets={{ clientId: true }}
+      manifest={groupedManifest}
+      secretConfigured={{ clientId: true, clientSecret: true }}
+      secretValues={{}}
+      onConfigChange={vi.fn()}
+      onEditSecret={onEditSecret}
+      onSecretChange={vi.fn()}
+    />);
+    expect(screen.getByLabelText("Client ID")).toHaveAttribute("type", "password");
+  });
+
+  it.each([
+    [true, { state: "connected" as const }, "已连接"],
+    [true, { state: "connecting" as const }, "正在连接"],
+    [true, { state: "backoff" as const, lastError: "凭证无效" }, "连接失败，正在重试：凭证无效"],
+    [true, { state: "stopped" as const }, "已停用"],
+    [false, undefined, "已停用"],
+  ])("shows integration health for enabled=%s as %s", (enabled, health, label) => {
+    render(<IntegrationHealthStatus enabled={enabled} health={health} />);
+    expect(screen.getByRole("status")).toHaveTextContent(label);
+  });
+
+  it("activates the integration tab and focuses the first missing required field", async () => {
+    const onSave = vi.fn(async () => undefined);
+    render(<ProjectForm
+      initial={{
+        ...configuredProject,
+        integrations: {
+          dingtalk: {
+            enabled: true,
+            config: { conversationIds: [] },
+            secretConfigured: { clientId: true, clientSecret: true },
+          },
+        },
+      }}
+      manifests={[groupedManifest]}
+      onSave={onSave}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+    expect(await screen.findByText("请至少添加一个群聊 ID")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "DingTalk" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("button", { name: "添加群聊" })).toHaveFocus());
+    fireEvent.click(screen.getByRole("button", { name: "添加群聊" }));
+    await waitFor(() => expect(screen.getByLabelText("群聊 ID 1")).toHaveFocus());
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate list values and prunes legacy or blank fields before saving", async () => {
+    const onSave = vi.fn(async () => undefined);
+    render(<ProjectForm
+      initial={{
+        ...configuredProject,
+        integrations: {
+          dingtalk: {
+            enabled: true,
+            config: {
+              conversationIds: [" cid-a ", "cid-a"],
+              messageRule: "   ",
+              mention: "@legacy-bot",
+            },
+            secretConfigured: { clientId: true, clientSecret: true },
+          },
+        },
+      }}
+      manifests={[groupedManifest]}
+      onSave={onSave}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+    expect(await screen.findByText("群聊 ID不能重复")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("群聊 ID 2"), { target: { value: " cid-b " } });
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      integrations: expect.objectContaining({
+        dingtalk: expect.objectContaining({ config: { conversationIds: ["cid-a", "cid-b"] } }),
+      }),
+    }), {}));
+  });
+
   it("shows local branches first, then appends searchable remote branches", async () => {
     let resolveRefresh!: (value: WorkspaceBranchDiscoveryDto) => void;
     const refresh = vi.fn(() => new Promise<WorkspaceBranchDiscoveryDto>((resolve) => {
@@ -205,11 +332,11 @@ describe("Project configuration", () => {
         target: { value: expected.command },
       });
     }
-    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       commands: expect.objectContaining({ evidenceCapture: expected }),
-    })));
+    }), {}));
   });
 
   it("keeps Local as default and renders Git fields from its manifest", async () => {
@@ -259,7 +386,7 @@ describe("Project configuration", () => {
     expect(merge).not.toBeChecked();
 
     fireEvent.click(merge);
-    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       workspace: {
@@ -270,7 +397,7 @@ describe("Project configuration", () => {
           mergeToBaseBranch: true,
         },
       },
-    })));
+    }), {}));
   });
 
   it("prefills a new project from directory inspection without assuming Git", () => {
@@ -307,9 +434,24 @@ describe("Project configuration", () => {
     expect(screen.getByLabelText("Channels 1")).toHaveValue("alerts");
     expect(screen.getByLabelText("Batch size")).toHaveValue(50);
     expect(screen.getByRole("checkbox", { name: "Include archived" })).toBeChecked();
-    expect(screen.getByLabelText("API token")).toHaveAttribute("type", "password");
-    expect(screen.getByLabelText("API token")).toHaveAttribute("placeholder", "已配置；输入新值可替换");
+    expect(screen.getByText("已配置")).toBeVisible();
+    expect(screen.getByRole("button", { name: "替换 API token" })).toBeVisible();
+    expect(screen.queryByLabelText("API token")).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue(/token/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the Sentry and DingTalk brand marks in integration navigation", () => {
+    render(<ProjectForm
+      initial={configuredProject}
+      manifests={[
+        { id: "sentry", name: "Sentry", icon: "sentry", configFields: [], secretFields: [] },
+        { id: "dingtalk", name: "DingTalk", icon: "dingtalk", configFields: [], secretFields: [] },
+      ]}
+      onSave={async () => undefined}
+    />);
+
+    expect(screen.getByRole("tab", { name: "Sentry" }).querySelector('[data-brand-icon="sentry"]')).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "DingTalk" }).querySelector('[data-brand-icon="dingtalk"]')).toBeInTheDocument();
   });
 
   it("shows the inspected remote path read-only and stores its internal name", async () => {
@@ -353,7 +495,7 @@ describe("Project configuration", () => {
     expect(screen.queryByDisplayValue("origin")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "基线分支" })).toHaveValue("main");
     fireEvent.click(screen.getByRole("switch", { name: "完成后推送到远程" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       workspace: {
@@ -365,7 +507,7 @@ describe("Project configuration", () => {
           remote: "origin",
         },
       },
-    })));
+    }), {}));
   });
 
   it("keeps a configured publication remote separate from the tracked Fetch remote", async () => {
@@ -411,14 +553,14 @@ describe("Project configuration", () => {
 
     expect(screen.getByText("git@example.com:me/project.git")).toBeVisible();
     expect(screen.queryByText("git@example.com:team/project.git")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       workspace: {
         provider: "git",
         config: { baseBranch: "main", pushToRemote: true, remote: "origin" },
       },
-    })));
+    }), {}));
   });
 
   it("reselects a directory without saving and ignores picker cancellation", async () => {
@@ -464,7 +606,7 @@ describe("Project configuration", () => {
     expect(screen.queryByLabelText(/model|timeout/i)).not.toBeInTheDocument();
     selectTab("Example source");
     fireEvent.change(screen.getByLabelText("Workspace slug"), { target: { value: "new-workspace" } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "保存项目" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "保存更改" })); });
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       name: "Checkout Web",
       path: "/work/checkout",
@@ -472,14 +614,14 @@ describe("Project configuration", () => {
       integrations: expect.objectContaining({
         example: expect.objectContaining({ config: expect.objectContaining({ workspace: "new-workspace" }) }),
       }),
-    }));
+    }), {});
   });
 
   it("keeps invalid project fields visible with inline errors", async () => {
     const onSave = vi.fn(async () => undefined);
     render(<ProjectForm inspection={inspection} manifests={manifests} onSave={onSave} />);
     fireEvent.change(screen.getByLabelText("本机项目路径"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
     const path = await screen.findByLabelText("本机项目路径");
     expect(path).toHaveValue("");
     expect(screen.getByText("请输入本机项目路径")).toBeVisible();
@@ -489,7 +631,7 @@ describe("Project configuration", () => {
   it("shows a request error above the save footer without clearing the form", async () => {
     render(<ProjectForm inspection={inspection} manifests={manifests} onSave={async () => Promise.reject(new Error("目录不可用"))} />);
     fireEvent.change(screen.getByLabelText("项目名称"), { target: { value: "Broken" } });
-    const saveButton = screen.getByRole("button", { name: "保存项目" });
+    const saveButton = screen.getByRole("button", { name: "保存更改" });
     fireEvent.click(saveButton);
     const alert = await screen.findByRole("alert");
     expect(Boolean(alert.compareDocumentPosition(saveButton) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
@@ -499,11 +641,11 @@ describe("Project configuration", () => {
 
   it("confirms a successful save beside the persistent action", async () => {
     render(<ProjectForm inspection={inspection} manifests={manifests} onSave={async () => undefined} />);
-    fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
     expect(await screen.findByRole("status")).toHaveTextContent("已保存");
   });
 
-  it("saves all changed secrets for one plugin as a single patch", async () => {
+  it("saves project fields and changed secrets through the single persistent action", async () => {
     const saved: ProjectDto = {
       ...configuredProject,
       revision: 4,
@@ -514,29 +656,30 @@ describe("Project configuration", () => {
         },
       },
     };
-    const onSaveSecrets = vi.fn(async () => saved);
-    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={async () => undefined} onSaveSecrets={onSaveSecrets} />);
+    const onSave = vi.fn(async () => saved);
+    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />);
     selectTab("Example source");
+    fireEvent.click(screen.getByRole("button", { name: "替换 API token" }));
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "secret-token" } });
     fireEvent.change(screen.getByLabelText("Signing key"), { target: { value: "signing-key" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存 Example source 凭证" }));
-    await waitFor(() => expect(onSaveSecrets).toHaveBeenCalledWith("project-1", "example", {
-      apiToken: "secret-token",
-      signingKey: "signing-key",
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: "project-1" }), {
+      example: { apiToken: "secret-token", signingKey: "signing-key" },
     }));
-    expect(await screen.findByRole("status")).toHaveTextContent("凭证已保存到系统钥匙串");
-    expect(screen.getByLabelText("API token")).toHaveValue("");
+    expect(await screen.findByText("所有更改已保存")).toBeVisible();
+    expect(screen.queryByLabelText("API token")).not.toBeInTheDocument();
   });
 
-  it("shows batch credential failures beneath their save action", async () => {
-    const onSaveSecrets = vi.fn(async () => Promise.reject(new Error("系统钥匙串不可用")));
-    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={async () => undefined} onSaveSecrets={onSaveSecrets} />);
+  it("keeps secret drafts when the unified save fails", async () => {
+    const onSave = vi.fn(async () => Promise.reject(new Error("系统钥匙串不可用")));
+    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />);
     selectTab("Example source");
+    fireEvent.click(screen.getByRole("button", { name: "替换 API token" }));
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "secret-token" } });
-    const saveSecrets = screen.getByRole("button", { name: "保存 Example source 凭证" });
-    fireEvent.click(saveSecrets);
+    const save = screen.getByRole("button", { name: "保存更改" });
+    fireEvent.click(save);
     const alert = await screen.findByRole("alert");
-    expect(Boolean(saveSecrets.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(alert.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(alert).toHaveTextContent("系统钥匙串不可用");
     expect(screen.getByLabelText("API token")).toHaveValue("secret-token");
   });
