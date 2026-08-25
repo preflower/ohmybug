@@ -36,6 +36,7 @@ import {
   assertPublicationPreflight,
   finalizationError,
   prepareGitFinalizationRecovery,
+  readGitWorkspaceStatus,
   validateGitFinalizationRecovery,
   type GitFinalizationFingerprint,
 } from "./finalization-recovery.js";
@@ -508,16 +509,46 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     const state = this.getSavedState(input.issue, input.resourceId);
     const fingerprintRef = `${input.resourceId}:finalization:${input.attemptId}`;
     if (input.diagnostic.step === "merge") {
-      const prepared = await prepareGitMergeRecovery({
-        worktreePath: state.worktreePath,
-        baseBranch: state.baseBranch,
-        issueBranch: state.branch,
-        diagnostic: input.diagnostic,
-        attemptId: input.attemptId,
-        fingerprintRef,
-        lastMergeFailure: state.lastMergeFailure,
-        existing: state.finalizationRecovery,
-      });
+      let prepared;
+      try {
+        prepared = await prepareGitMergeRecovery({
+          worktreePath: state.worktreePath,
+          baseBranch: state.baseBranch,
+          issueBranch: state.branch,
+          diagnostic: input.diagnostic,
+          attemptId: input.attemptId,
+          fingerprintRef,
+          lastMergeFailure: state.lastMergeFailure,
+          existing: state.finalizationRecovery,
+        });
+      } catch (error) {
+        if (!isInvalidMergeRecoveryState(error)) throw error;
+        const [issueCommit, baseCommit, workspaceStatus] = await Promise.all([
+          runGit(state.worktreePath, ["rev-parse", "HEAD"]),
+          tryRunGit(
+            state.worktreePath,
+            ["rev-parse", `refs/heads/${state.baseBranch}`],
+            [128],
+          ),
+          readGitWorkspaceStatus(state.worktreePath),
+        ]);
+        return {
+          fingerprintRef,
+          workspaceStatus,
+          fingerprintSummary: "persisted merge recovery state is malformed",
+          recoveryKind: "MERGE_ENVIRONMENT",
+          merge: {
+            kind: "MERGE_ENVIRONMENT",
+            baseBranch: state.baseBranch,
+            ...(baseCommit ? { baseCommit } : {}),
+            issueBranch: state.branch,
+            issueCommit,
+            conflictPaths: input.diagnostic.relatedPaths.slice(0, 50),
+            mergeMessages: ["Persisted merge recovery state could not be decoded"],
+            mergePrepared: false,
+          },
+        };
+      }
       this.options.state.set(MODULE_ID, input.resourceId, {
         ...state,
         finalizationRecovery: prepared.recovery,
@@ -548,7 +579,17 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     result: FinalizationRecoveryResult;
   }): Promise<WorkspaceFinalizationRecoveryValidation> {
     const state = this.getSavedState(input.issue, input.resourceId);
-    const recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
+    let recovery;
+    try {
+      recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
+    } catch (error) {
+      if (!isInvalidMergeRecoveryState(error)) throw error;
+      return {
+        kind: "UNSAFE",
+        changedPaths: [],
+        reason: "GIT_MERGE_RECOVERY_STATE_INVALID",
+      };
+    }
     if (
       recovery?.kind === "MERGE_CONFLICT"
       && recovery.session.fingerprintRef === input.fingerprintRef
@@ -651,6 +692,10 @@ function parseConfiguration(config: Record<string, ConfigValue>): GitWorkspaceCo
 
 function shouldPushToRemote(state: GitWorkspaceState): boolean {
   return state.pushToRemote ?? state.delivery === "remote";
+}
+
+function isInvalidMergeRecoveryState(error: unknown): boolean {
+  return error instanceof Error && error.message === "GIT_MERGE_RECOVERY_STATE_INVALID";
 }
 
 async function mergeIntoBaseBranch(

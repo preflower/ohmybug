@@ -4,10 +4,99 @@ import { join } from "node:path";
 
 import { WorkspaceFinalizationError } from "../src/finalization-recovery.js";
 import { gitWorkspaceFactory } from "../src/provider.js";
-import { parseMergeTreeConflictOutput } from "../src/merge-recovery.js";
+import {
+  normalizeGitFinalizationRecoveryState,
+  parseMergeTreeConflictOutput,
+} from "../src/merge-recovery.js";
 import { createGitFixture, git } from "./helpers.js";
 
 describe("Git merge recovery diagnostics", () => {
+  it("decodes versioned persisted recovery state and strips unknown fields", () => {
+    const recovery = normalizeGitFinalizationRecoveryState({
+      version: 1,
+      kind: "MERGE_ENVIRONMENT",
+      unknownFutureField: true,
+      fingerprint: fingerprintFixture(),
+      merge: {
+        kind: "MERGE_ENVIRONMENT",
+        baseBranch: "main",
+        issueBranch: "ohmybug/omb-1",
+        issueCommit: "issue-commit",
+        conflictPaths: [],
+        mergeMessages: [],
+        mergePrepared: false,
+        unknownFutureField: true,
+      },
+    });
+
+    expect(recovery).not.toHaveProperty("unknownFutureField");
+    expect(recovery).not.toHaveProperty("merge.unknownFutureField");
+  });
+
+  it("rejects malformed active merge recovery state", () => {
+    expect(() => normalizeGitFinalizationRecoveryState({
+      version: 1,
+      kind: "MERGE_CONFLICT",
+      session: { attemptId: "missing-required-session-fields" },
+    })).toThrow("GIT_MERGE_RECOVERY_STATE_INVALID");
+  });
+
+  it("preserves malformed persisted state while still giving merge failure an Agent context", async () => {
+    const fixture = await createGitFixture();
+    try {
+      const provider = gitWorkspaceFactory({
+        state: fixture.state,
+        worktreeRoot: fixture.worktreeRoot,
+      }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+      const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+      const saved = fixture.state.get<Record<string, unknown>>("workspace-git", "git:issue-1")!;
+      const malformed = {
+        ...saved,
+        finalizationRecovery: {
+          version: 1,
+          kind: "MERGE_CONFLICT",
+          session: { attemptId: "incomplete" },
+        },
+      };
+      fixture.state.set("workspace-git", "git:issue-1", malformed);
+
+      await expect(provider.prepareFinalizationRecovery?.({
+        issue: { ...fixture.issue, projectPath: acquired.projectPath, status: "FINALIZING" },
+        resourceId: "git:issue-1",
+        diagnostic: {
+          providerId: "git",
+          step: "merge",
+          code: "GIT_AUTO_MERGE_FAILED",
+          message: "merge state could not be decoded",
+          relatedPaths: [],
+        },
+        attemptId: "recovery-malformed",
+      })).resolves.toMatchObject({
+        recoveryKind: "MERGE_ENVIRONMENT",
+        merge: { mergePrepared: false },
+      });
+      expect(fixture.state.get("workspace-git", "git:issue-1")).toEqual(malformed);
+      expect(await git(acquired.projectPath, "status", "--porcelain")).toBe("");
+
+      await expect(provider.validateFinalizationRecovery?.({
+        issue: { ...fixture.issue, projectPath: acquired.projectPath, status: "FINALIZATION_RECOVERY" },
+        resourceId: "git:issue-1",
+        fingerprintRef: "git:issue-1:finalization:recovery-malformed",
+        result: {
+          summary: "Persisted merge state is malformed",
+          diagnosis: "Recovery cannot safely resume",
+          disposition: "UNSAFE",
+          affectedPaths: [],
+        },
+      })).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_MERGE_RECOVERY_STATE_INVALID",
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it("extracts bounded repository-relative conflict paths", () => {
     const parsed = parseMergeTreeConflictOutput([
       "deadbeef",
@@ -318,6 +407,22 @@ describe("Git merge recovery diagnostics", () => {
     }
   });
 });
+
+function fingerprintFixture() {
+  return {
+    fingerprintRef: "fingerprint-ref",
+    attemptId: "attempt-id",
+    head: "head",
+    headRef: "refs/heads/ohmybug/omb-1",
+    index: "",
+    indexFlags: "",
+    repositoryStateHash: "hash",
+    tracked: [],
+    untracked: [],
+    diagnosticEntries: [],
+    diagnosticRoots: [],
+  };
+}
 
 async function createPreparedConflict(options: { pushToRemote?: boolean } = {}) {
   const fixture = await createGitFixture();

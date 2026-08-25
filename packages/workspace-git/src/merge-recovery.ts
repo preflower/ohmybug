@@ -11,6 +11,7 @@ import type {
   WorkspaceFinalizationRecoveryContext,
   WorkspaceFinalizationRecoveryValidation,
 } from "@oh-my-bug/module-api";
+import { z } from "zod";
 
 import {
   assertPublicationPreflight,
@@ -23,6 +24,81 @@ import { GitCommandError, runGit, tryRunGit } from "./git-client.js";
 const MAX_CONFLICT_PATHS = 50;
 const MAX_MERGE_MESSAGES = 20;
 const MAX_MERGE_MESSAGE_LENGTH = 1_000;
+
+const repositoryPathSchema = z.string().refine(
+  (value) => safeRepositoryPath(value) === value,
+  "GIT_MERGE_RECOVERY_PATH_INVALID",
+);
+const contentFingerprintSchema = z.object({
+  path: repositoryPathSchema,
+  kind: z.enum(["file", "symlink", "directory", "missing"]),
+  mode: z.number().int().nonnegative(),
+  hash: z.string(),
+});
+const finalizationFingerprintSchema = z.object({
+  fingerprintRef: z.string().min(1),
+  attemptId: z.string().min(1),
+  head: z.string().min(1),
+  headRef: z.string().min(1),
+  index: z.string(),
+  indexFlags: z.string(),
+  repositoryStateHash: z.string().min(1),
+  tracked: z.array(contentFingerprintSchema),
+  untracked: z.array(contentFingerprintSchema),
+  diagnosticEntries: z.array(contentFingerprintSchema),
+  diagnosticRoots: z.array(z.object({
+    path: repositoryPathSchema,
+    entirelyUntracked: z.boolean(),
+  })),
+});
+const mergeContextSchema = z.object({
+  kind: z.enum(["MERGE_CONFLICT", "MERGE_ENVIRONMENT"]),
+  baseBranch: z.string().min(1),
+  baseCommit: z.string().min(1).optional(),
+  issueBranch: z.string().min(1),
+  issueCommit: z.string().min(1),
+  conflictPaths: z.array(repositoryPathSchema).max(MAX_CONFLICT_PATHS),
+  mergeMessages: z.array(z.string().max(MAX_MERGE_MESSAGE_LENGTH)).max(MAX_MERGE_MESSAGES),
+  mergePrepared: z.boolean(),
+});
+const mergeSessionSchema = z.object({
+  version: z.literal(1),
+  attemptId: z.string().min(1),
+  fingerprintRef: z.string().min(1),
+  baseBranch: z.string().min(1),
+  baseCommit: z.string().min(1),
+  issueBranch: z.string().min(1),
+  issueCommit: z.string().min(1),
+  conflictPaths: z.array(repositoryPathSchema).min(1).max(MAX_CONFLICT_PATHS),
+  mergeMessages: z.array(z.string().max(MAX_MERGE_MESSAGE_LENGTH)).max(MAX_MERGE_MESSAGES),
+  mergeHead: z.string().min(1),
+  conflictStages: z.string().min(1),
+  preparedFingerprint: finalizationFingerprintSchema,
+  candidateTree: z.string().min(1).optional(),
+  validatedPaths: z.array(repositoryPathSchema).min(1).max(MAX_CONFLICT_PATHS).optional(),
+  mergeCommit: z.string().min(1).optional(),
+}).refine(
+  (session) => (session.candidateTree === undefined) === (session.validatedPaths === undefined),
+  "GIT_MERGE_RECOVERY_CANDIDATE_INVALID",
+);
+const finalizationRecoveryStateSchema = z.discriminatedUnion("kind", [
+  z.object({
+    version: z.literal(1),
+    kind: z.literal("GENERATED_ARTIFACT_CLEANUP"),
+    fingerprint: finalizationFingerprintSchema,
+  }),
+  z.object({
+    version: z.literal(1),
+    kind: z.literal("MERGE_CONFLICT"),
+    session: mergeSessionSchema,
+  }),
+  z.object({
+    version: z.literal(1),
+    kind: z.literal("MERGE_ENVIRONMENT"),
+    fingerprint: finalizationFingerprintSchema,
+    merge: mergeContextSchema,
+  }),
+]);
 
 export interface ParsedMergeConflictOutput {
   conflictPaths: string[];
@@ -86,11 +162,22 @@ export type GitFinalizationRecoveryState =
     };
 
 export function normalizeGitFinalizationRecoveryState(
-  value: GitFinalizationRecoveryState | GitFinalizationFingerprint | undefined,
+  value: unknown,
 ): GitFinalizationRecoveryState | undefined {
   if (!value) return undefined;
-  if ("version" in value) return value;
-  return { version: 1, kind: "GENERATED_ARTIFACT_CLEANUP", fingerprint: value };
+  const parsed = typeof value === "object" && value !== null && "version" in value
+    ? finalizationRecoveryStateSchema.safeParse(value)
+    : finalizationFingerprintSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error("GIT_MERGE_RECOVERY_STATE_INVALID", { cause: parsed.error });
+  }
+  return "version" in parsed.data
+    ? parsed.data as GitFinalizationRecoveryState
+    : {
+        version: 1,
+        kind: "GENERATED_ARTIFACT_CLEANUP",
+        fingerprint: parsed.data as GitFinalizationFingerprint,
+      };
 }
 
 export async function prepareGitMergeRecovery(input: {
