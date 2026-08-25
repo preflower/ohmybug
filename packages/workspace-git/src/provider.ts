@@ -454,7 +454,13 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       }
       if (state.mergeToBaseBranch) {
         step = "merge";
-        await mergeIntoBaseBranch(state, commit);
+        await mergeIntoBaseBranch(
+          state,
+          commit,
+          recovery?.kind === "MERGE_CONFLICT"
+            ? recovery.session.baseCommit
+            : undefined,
+        );
       }
 
       const branchInfo: BranchInfo = {
@@ -650,6 +656,7 @@ function shouldPushToRemote(state: GitWorkspaceState): boolean {
 async function mergeIntoBaseBranch(
   state: GitWorkspaceState,
   commit: string,
+  expectedBaseCommit?: string,
 ): Promise<void> {
   await assertGitSupportsAutomaticMerge(state.repositoryPath);
   const baseRef = `refs/heads/${state.baseBranch}`;
@@ -664,6 +671,9 @@ async function mergeIntoBaseBranch(
   }
 
   const baseCommit = await runGit(state.repositoryPath, ["rev-parse", baseRef]);
+  if (expectedBaseCommit !== undefined && baseCommit !== expectedBaseCommit) {
+    throw new Error("GIT_AUTO_MERGE_BASE_MOVED");
+  }
   const resultCommit = await createAutomaticMergeCommit(
     state.repositoryPath,
     baseCommit,

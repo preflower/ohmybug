@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { writeFile } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { WorkspaceFinalizationError } from "../src/finalization-recovery.js";
@@ -271,14 +271,71 @@ describe("Git merge recovery diagnostics", () => {
       await prepared.cleanup();
     }
   });
+
+  it("rejects a base move between recovered merge creation and base publication", async () => {
+    const prepared = await createPreparedConflict({ pushToRemote: true });
+    try {
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+      await prepared.provider.validateFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Combined both changes",
+          diagnosis: "Both branches changed README.md",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      });
+      const baseCommit = prepared.context.merge!.baseCommit!;
+      const baseTree = await git(prepared.repository, "rev-parse", `${baseCommit}^{tree}`);
+      const movedBase = await git(
+        prepared.repository,
+        "commit-tree",
+        baseTree,
+        "-p",
+        baseCommit,
+        "-m",
+        "advance base during push",
+      );
+      const hooks = join(prepared.root, "hooks");
+      await mkdir(hooks);
+      const prePush = join(hooks, "pre-push");
+      await writeFile(prePush, [
+        "#!/bin/sh",
+        `git -C ${JSON.stringify(prepared.repository)} update-ref refs/heads/main ${movedBase} ${baseCommit}`,
+      ].join("\n"));
+      await chmod(prePush, 0o755);
+      await git(prepared.repository, "config", "core.hooksPath", hooks);
+
+      await expect(prepared.provider.publish({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+      })).rejects.toThrow("GIT_AUTO_MERGE_BASE_MOVED");
+      expect(await git(prepared.repository, "rev-parse", "main")).toBe(movedBase);
+    } finally {
+      await prepared.cleanup();
+    }
+  });
 });
 
-async function createPreparedConflict() {
+async function createPreparedConflict(options: { pushToRemote?: boolean } = {}) {
   const fixture = await createGitFixture();
+  if (options.pushToRemote) {
+    const bare = join(fixture.root, "delivery.git");
+    await mkdir(bare);
+    await git(bare, "init", "--bare");
+    await git(fixture.repository, "remote", "add", "delivery", bare);
+  }
   const provider = gitWorkspaceFactory({
     state: fixture.state,
     worktreeRoot: fixture.worktreeRoot,
-  }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+  }).create({
+    baseBranch: "main",
+    pushToRemote: options.pushToRemote ?? false,
+    mergeToBaseBranch: true,
+    ...(options.pushToRemote ? { remote: "delivery" } : {}),
+  });
   const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
   await writeFile(join(acquired.projectPath, "README.md"), "issue change\n");
   await writeFile(join(fixture.repository, "README.md"), "base change\n");
