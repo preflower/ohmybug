@@ -115,6 +115,9 @@ export function IssueDetail({
     && !assessment?.suspectedDuplicateOf
     && Boolean(onRequestReassessment);
   const sessionUnavailable = issue.lastFailure?.code === "AGENT_SESSION_UNAVAILABLE";
+  const mergeRecovery = issue.finalizationRecovery?.context?.recoveryKind === "MERGE_CONFLICT"
+    || issue.finalizationRecovery?.context?.recoveryKind === "MERGE_ENVIRONMENT"
+    || issue.finalizationRecovery?.diagnostic?.step === "merge";
   const retryLabel = sessionUnavailable
     ? undefined
     : issue.status === "ASSESSMENT_FAILED"
@@ -140,6 +143,7 @@ export function IssueDetail({
             <IssueStatusBadge
               status={issue.status}
               recoveryKind={issue.finalizationRecovery?.context?.recoveryKind}
+              recoveryStep={issue.finalizationRecovery?.diagnostic?.step}
             />
           </div>
         </div>
@@ -170,7 +174,9 @@ export function IssueDetail({
                 ? "AI 正在解析合并问题"
                 : issue.finalizationRecovery.context?.recoveryKind === "MERGE_ENVIRONMENT"
                   ? "AI 正在诊断合并环境"
-                  : "AI 正在修复交付阻塞"}</strong>
+                  : mergeRecovery
+                    ? "AI 正在解析合并问题"
+                    : "AI 正在修复交付阻塞"}</strong>
               <span>第 {issue.finalizationRecovery.automaticAttempts}/1 次自动恢复</span>
             </div>
           </div>

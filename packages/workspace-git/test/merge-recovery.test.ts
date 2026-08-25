@@ -252,6 +252,114 @@ describe("Git merge recovery diagnostics", () => {
     }
   });
 
+  it("keeps an unresolved merge environment failure unsafe after the Agent turn", async () => {
+    const fixture = await createGitFixture();
+    try {
+      const provider = gitWorkspaceFactory({
+        state: fixture.state,
+        worktreeRoot: fixture.worktreeRoot,
+      }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+      const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+      const issue = { ...fixture.issue, projectPath: acquired.projectPath, status: "FINALIZING" as const };
+      const context = await provider.prepareFinalizationRecovery!({
+        issue,
+        resourceId: "git:issue-1",
+        diagnostic: {
+          providerId: "git",
+          step: "merge",
+          code: "GIT_AUTO_MERGE_FAILED",
+          message: "A policy hook rejected the merge",
+          relatedPaths: [],
+        },
+        attemptId: "recovery-env-unsafe",
+      });
+
+      await expect(provider.validateFinalizationRecovery!({
+        issue: {
+          ...issue,
+          status: "FINALIZATION_RECOVERY",
+          finalizationRecovery: {
+            automaticAttempts: 1,
+            diagnostic: {
+              providerId: "git",
+              step: "merge",
+              code: "GIT_AUTO_MERGE_FAILED",
+              message: "A policy hook rejected the merge",
+              relatedPaths: [],
+            },
+          },
+        },
+        resourceId: "git:issue-1",
+        fingerprintRef: context.fingerprintRef,
+        result: {
+          summary: "The policy obstruction remains",
+          diagnosis: "The Issue Worktree cannot change repository policy",
+          disposition: "RECOVERED",
+          affectedPaths: [],
+        },
+      })).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_MERGE_ENVIRONMENT_UNRESOLVED",
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("retries only after a dirty base checkout is proven clean", async () => {
+    const fixture = await createGitFixture();
+    try {
+      const provider = gitWorkspaceFactory({
+        state: fixture.state,
+        worktreeRoot: fixture.worktreeRoot,
+      }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+      const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+      const localPath = join(fixture.repository, "local-only.txt");
+      await writeFile(localPath, "dirty base\n");
+      const diagnostic = {
+        providerId: "git",
+        step: "merge" as const,
+        code: "GIT_AUTO_MERGE_BASE_DIRTY",
+        message: "The checked-out base branch is dirty",
+        relatedPaths: [],
+      };
+      const issue = { ...fixture.issue, projectPath: acquired.projectPath, status: "FINALIZING" as const };
+      const context = await provider.prepareFinalizationRecovery!({
+        issue,
+        resourceId: "git:issue-1",
+        diagnostic,
+        attemptId: "recovery-dirty-base",
+      });
+      const validationInput = {
+        issue: {
+          ...issue,
+          status: "FINALIZATION_RECOVERY" as const,
+          finalizationRecovery: { automaticAttempts: 1 as const, diagnostic },
+        },
+        resourceId: "git:issue-1",
+        fingerprintRef: context.fingerprintRef,
+        result: {
+          summary: "Checked whether the base checkout is clean",
+          diagnosis: "The local file blocks merge publication",
+          disposition: "RECOVERED" as const,
+          affectedPaths: [],
+        },
+      };
+
+      await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_AUTO_MERGE_BASE_DIRTY",
+      });
+      await rm(localPath);
+      await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toEqual({
+        kind: "UNCHANGED",
+        changedPaths: [],
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it("validates a resolved merge through a temporary index without staging the real index", async () => {
     const prepared = await createPreparedConflict();
     try {

@@ -490,6 +490,33 @@ describe("Issue detail", () => {
     expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
   });
 
+  it("uses merge recovery copy for older persisted Issues without context", () => {
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "FINALIZATION_RECOVERY",
+        resolution: "FIXED",
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-legacy-merge",
+          fingerprintRef: "fingerprint-legacy-merge",
+          diagnostic: {
+            providerId: "git",
+            step: "merge",
+            code: "GIT_AUTO_MERGE_CONFLICT",
+            message: "旧版本保存的合并冲突",
+            relatedPaths: ["src/conflict.ts"],
+          },
+        },
+      }}
+      onCancel={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("AI 正在修复合并")).toBeVisible();
+    expect(screen.getByText("AI 正在解析合并问题")).toBeVisible();
+  });
+
   it("retries only a failed finalization", async () => {
     const onApproveDelivery = vi.fn(async () => undefined);
     render(<IssueDetail

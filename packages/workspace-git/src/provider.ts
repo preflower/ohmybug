@@ -620,10 +620,20 @@ class GitWorkspaceProvider implements WorkspaceProvider {
         reason: "FINALIZATION_RECOVERY_FINGERPRINT_NOT_FOUND",
       };
     }
-    return validateGitFinalizationRecovery({
+    const validation = await validateGitFinalizationRecovery({
       worktreePath: state.worktreePath,
       fingerprint,
     });
+    if (recovery?.kind !== "MERGE_ENVIRONMENT" || validation.kind === "UNSAFE") {
+      return validation;
+    }
+    const unresolvedReason = await unresolvedMergeEnvironmentReason(
+      state,
+      input.issue.finalizationRecovery?.diagnostic?.code,
+    );
+    return unresolvedReason
+      ? { kind: "UNSAFE", changedPaths: validation.changedPaths, reason: unresolvedReason }
+      : validation;
   }
 
   async bindFinalizationRecoveryDelivery(input: {
@@ -809,6 +819,41 @@ async function assertGitSupportsAutomaticMerge(repositoryPath: string): Promise<
   if (!gitVersionSupportsAutomaticMerge(version)) {
     throw new Error("GIT_AUTO_MERGE_REQUIRES_GIT_2_38");
   }
+}
+
+async function unresolvedMergeEnvironmentReason(
+  state: GitWorkspaceState,
+  diagnosticCode: string | undefined,
+): Promise<string | undefined> {
+  const baseRef = `refs/heads/${state.baseBranch}`;
+  if (diagnosticCode === "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH") {
+    return await gitRefExists(state.repositoryPath, baseRef)
+      ? undefined
+      : diagnosticCode;
+  }
+  if (diagnosticCode === "GIT_AUTO_MERGE_REQUIRES_GIT_2_38") {
+    try {
+      await assertGitSupportsAutomaticMerge(state.repositoryPath);
+      return undefined;
+    } catch {
+      return diagnosticCode;
+    }
+  }
+  if (diagnosticCode === "GIT_AUTO_MERGE_BASE_DIRTY") {
+    if (!(await gitRefExists(state.repositoryPath, baseRef))) {
+      return "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH";
+    }
+    const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
+    const checkedOutPath = worktreePathForBranch(listed, baseRef);
+    if (!checkedOutPath) return undefined;
+    try {
+      await assertWorktreeAndSubmodulesClean(checkedOutPath);
+      return undefined;
+    } catch {
+      return diagnosticCode;
+    }
+  }
+  return "GIT_MERGE_ENVIRONMENT_UNRESOLVED";
 }
 
 export function gitVersionSupportsAutomaticMerge(versionOutput: string): boolean {
