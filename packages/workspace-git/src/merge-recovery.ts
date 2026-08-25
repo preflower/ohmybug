@@ -73,7 +73,7 @@ const mergeSessionSchema = z.object({
   conflictPaths: z.array(repositoryPathSchema).max(MAX_CONFLICT_PATHS),
   mergeMessages: z.array(z.string().max(MAX_MERGE_MESSAGE_LENGTH)).max(MAX_MERGE_MESSAGES),
   mergeHead: z.string().min(1),
-  conflictStages: z.string().min(1),
+  conflictStages: z.string(),
   preparedFingerprint: finalizationFingerprintSchema,
   repositoryStateWithoutBaseHash: z.string().min(1).optional(),
   candidateTree: z.string().min(1).optional(),

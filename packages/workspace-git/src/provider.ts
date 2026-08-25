@@ -407,6 +407,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
 
     let step: WorkspaceFinalizationStep = "status";
     try {
+      if (looksLikePersistedMergeRecovery(state.finalizationRecovery)) step = "merge";
       const recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
       let commit: string;
       if (recovery?.kind === "MERGE_CONFLICT" && recovery.session.candidateTree) {
@@ -729,6 +730,13 @@ function shouldPushToRemote(state: GitWorkspaceState): boolean {
 
 function isInvalidMergeRecoveryState(error: unknown): boolean {
   return error instanceof Error && error.message === "GIT_MERGE_RECOVERY_STATE_INVALID";
+}
+
+function looksLikePersistedMergeRecovery(value: unknown): boolean {
+  return typeof value === "object"
+    && value !== null
+    && "kind" in value
+    && (value.kind === "MERGE_CONFLICT" || value.kind === "MERGE_ENVIRONMENT");
 }
 
 function recoveryDeliveryToken(issue: Issue): string | undefined {

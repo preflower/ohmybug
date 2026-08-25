@@ -60,6 +60,22 @@ describe("Git merge recovery diagnostics", () => {
       };
       fixture.state.set("workspace-git", "git:issue-1", malformed);
 
+      await expect(provider.publish({
+        issue: {
+          ...fixture.issue,
+          projectPath: acquired.projectPath,
+          status: "FINALIZING",
+          resolution: "FIXED",
+        },
+        resourceId: "git:issue-1",
+      })).rejects.toMatchObject({
+        diagnostic: {
+          step: "merge",
+          code: "GIT_MERGE_RECOVERY_STATE_INVALID",
+        },
+      });
+      expect(fixture.state.get("workspace-git", "git:issue-1")).toEqual(malformed);
+
       await expect(provider.prepareFinalizationRecovery?.({
         issue: { ...fixture.issue, projectPath: acquired.projectPath, status: "FINALIZING" },
         resourceId: "git:issue-1",
@@ -783,6 +799,17 @@ describe("Git merge recovery diagnostics", () => {
       expect(restarted.merge?.issueCommit).not.toBe(prepared.context.merge!.issueCommit);
       expect(await git(prepared.acquired.projectPath, "rev-parse", "MERGE_HEAD"))
         .toBe(prepared.movedBase);
+      await expect(prepared.provider.validateFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: restarted.fingerprintRef,
+        result: {
+          summary: "The advanced base merged without a new content conflict",
+          diagnosis: "The provider recomputed the merge against the latest base",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: [],
+        },
+      })).resolves.toEqual({ kind: "CHANGED", changedPaths: [] });
     } finally {
       await prepared.cleanup();
     }
