@@ -360,10 +360,58 @@ function EventLogLine({ line }: { line: EventLine }) {
   </div>;
 }
 
+function ActivityTurn({
+  expanded,
+  group,
+  onToggle,
+}: {
+  expanded: boolean;
+  group: ActivityGroup;
+  onToggle: () => void;
+}) {
+  const bodyId = `activity-turn-body-${group.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  return <section aria-label={group.label} className={`activity-turn activity-turn-${group.status}`} role="group">
+    <Button
+      aria-controls={bodyId}
+      aria-expanded={expanded}
+      aria-label={group.label}
+      className="activity-turn-toggle"
+      type="button"
+      variant="ghost"
+      onClick={onToggle}
+    >
+      <span className="activity-turn-title">
+        {group.turn ? <Terminal aria-hidden="true" size={13} /> : <Clock3 aria-hidden="true" size={13} />}
+        <span>{group.label}</span>
+      </span>
+      <span className="activity-turn-meta">
+        <time>{formatTime(group.occurredAt)}{group.finishedAt ? `–${formatTime(group.finishedAt)}` : ""}</time>
+        <span>{groupStatus(group)}</span>
+      </span>
+      <ChevronDown aria-hidden="true" className={expanded ? "activity-chevron-open" : ""} size={14} />
+    </Button>
+    {expanded ? <div
+      aria-label={`${group.label} Terminal`}
+      aria-live="off"
+      className="activity-terminal activity-turn-body"
+      id={bodyId}
+      role="log"
+    >
+      {group.lines.length ? group.lines.map((line) => line.kind === "command"
+        ? <CommandLogLine key={line.id} line={line} />
+        : <EventLogLine key={line.event.id} line={line} />)
+        : <p className="activity-turn-empty">等待活动…</p>}
+    </div> : null}
+  </section>;
+}
+
 export function AgentActivity({ events, active }: { events: AgentEventDto[]; active: boolean }) {
-  const [expanded, setExpanded] = useState(false);
   const latestEvent = events.at(-1);
   const issueId = latestEvent?.issueId;
+  const [expandedGroups, setExpandedGroups] = useState<{ issueId?: string; ids: Set<string> }>({
+    issueId,
+    ids: new Set(),
+  });
   const [pagination, setPagination] = useState({ count: activityPageSize, issueId });
   const visibleEventCount = pagination.issueId === issueId ? pagination.count : activityPageSize;
   const latestMessage = latestEvent ? eventMessage(latestEvent) : "Agent 正在工作";
@@ -374,35 +422,35 @@ export function AgentActivity({ events, active }: { events: AgentEventDto[]; act
       ? "activity-current activity-current-error"
       : "activity-active activity-current"
     : "activity-current";
-  const visibleEvents = expanded ? events.slice(-visibleEventCount) : [];
-  const groups = expanded ? groupEvents(visibleEvents, active) : [];
+  const expandedGroupIds = expandedGroups.issueId === issueId ? expandedGroups.ids : new Set<string>();
+  const visibleEvents = events.slice(-visibleEventCount);
+  const groups = groupEvents(visibleEvents, active);
   const hiddenEventCount = Math.max(0, events.length - visibleEvents.length);
+  const toggleGroup = (groupId: string) => setExpandedGroups((current) => {
+    const ids = current.issueId === issueId ? new Set(current.ids) : new Set<string>();
+    if (ids.has(groupId)) ids.delete(groupId);
+    else ids.add(groupId);
+    return { issueId, ids };
+  });
 
   return <section className="agent-activity">
-    <Button aria-expanded={expanded} aria-label="Agent 活动" className="h-auto w-full justify-between" type="button" variant="ghost" onClick={() => setExpanded((value) => !value)}>
-      <span><Activity size={14} />Agent 活动</span>
+    <header className="agent-activity-header">
+      <span><Activity aria-hidden="true" size={14} />Agent 活动</span>
       <span aria-live="polite" className={currentClass} title={active ? currentSummary : undefined}>{active ? currentSummary : `${events.length} 条事件`}</span>
-      <ChevronDown className={expanded ? "activity-chevron-open" : ""} size={14} />
-    </Button>
-    {expanded ? <div aria-label="Agent 连续活动日志" aria-live="off" className="activity-terminal" role="log">
+    </header>
+    <div className="activity-groups">
       {hiddenEventCount ? <Button className="activity-history-more" type="button" variant="ghost" onClick={() => setPagination({
         count: Math.min(events.length, visibleEventCount + activityPageSize),
         issueId,
       })}>
         加载更早活动（剩余 {hiddenEventCount} 条）
       </Button> : null}
-      {groups.length ? groups.map((group) => <section aria-label={group.label} className={`activity-turn activity-turn-${group.status}`} key={group.id} role="group">
-        <header className="activity-turn-header">
-          <span className="activity-turn-title">{group.turn ? <Terminal aria-hidden="true" size={13} /> : <Clock3 aria-hidden="true" size={13} />}<span>{group.label}</span></span>
-          <span className="activity-turn-meta"><time>{formatTime(group.occurredAt)}{group.finishedAt ? `–${formatTime(group.finishedAt)}` : ""}</time><span>{groupStatus(group)}</span></span>
-        </header>
-        <div className="activity-turn-body">
-          {group.lines.length ? group.lines.map((line) => line.kind === "command"
-            ? <CommandLogLine key={line.id} line={line} />
-            : <EventLogLine key={line.event.id} line={line} />)
-            : <p className="activity-turn-empty">等待活动…</p>}
-        </div>
-      </section>) : <p className="activity-empty">Agent 尚未产生事件。</p>}
-    </div> : null}
+      {groups.length ? groups.map((group) => <ActivityTurn
+        expanded={expandedGroupIds.has(group.id)}
+        group={group}
+        key={group.id}
+        onToggle={() => toggleGroup(group.id)}
+      />) : <p className="activity-empty">Agent 尚未产生事件。</p>}
+    </div>
   </section>;
 }
