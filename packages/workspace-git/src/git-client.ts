@@ -14,6 +14,7 @@ export class GitCommandError extends Error {
   readonly command: string;
   readonly args: readonly string[];
   readonly exitCode?: number;
+  readonly stdout: string;
   readonly stderr: string;
 
   constructor(input: {
@@ -27,6 +28,11 @@ export class GitCommandError extends Error {
     this.command = command;
     this.args = [...input.args];
     this.exitCode = numericProperty(input.cause, "code");
+    this.stdout = sanitizeGitDiagnosticText(
+      stringProperty(input.cause, "stdout"),
+      input.cwd,
+      8_000,
+    );
     this.stderr = sanitizeGitDiagnosticText(
       stringProperty(input.cause, "stderr"),
       input.cwd,

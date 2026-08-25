@@ -45,6 +45,29 @@ describe("Git command execution", () => {
     expect(failure.stderr).toContain("<workspace>/generated/file.txt");
   });
 
+  it("redacts and bounds failed command stdout", () => {
+    const failure = new GitCommandError({
+      cwd: "/workspace/issue",
+      args: ["merge-tree", "--write-tree"],
+      cause: {
+        code: 1,
+        stdout: [
+          "Auto-merging /workspace/issue/src/feature.ts",
+          "token=private-token",
+          "CONFLICT (content): Merge conflict in src/feature.ts",
+          "x".repeat(9_000),
+          "\u0000hidden",
+        ].join("\n"),
+      },
+    });
+
+    expect(failure.stdout.length).toBeLessThanOrEqual(8_000);
+    expect(failure.stdout).toContain("<workspace>/src/feature.ts");
+    expect(failure.stdout).toContain("token=[REDACTED]");
+    expect(failure.stdout).not.toContain("private-token");
+    expect(failure.stdout).not.toContain("\u0000");
+  });
+
   it("preserves bounded structured command failure details", async () => {
     const value = await createGitFixture();
     try {
@@ -64,6 +87,8 @@ describe("Git command execution", () => {
         exitCode: 128,
       });
       expect(failure.stderr.length).toBeLessThanOrEqual(8_000);
+      expect(failure.stdout.length).toBeLessThanOrEqual(8_000);
+      expect(failure.stdout).not.toContain(value.repository);
       expect(failure.stderr).not.toContain(value.repository);
       expect([...failure.stderr].every((character) => {
         const code = character.charCodeAt(0);

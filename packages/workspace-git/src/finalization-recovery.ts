@@ -129,6 +129,7 @@ export async function prepareGitFinalizationRecovery(input: {
     context: {
       fingerprintRef: input.fingerprintRef,
       workspaceStatus,
+      recoveryKind: "GENERATED_ARTIFACT_CLEANUP",
       fingerprintSummary: [
         `${fingerprint.tracked.length} tracked paths`,
         `${fingerprint.untracked.length} approved untracked paths`,
