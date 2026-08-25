@@ -2,12 +2,12 @@ import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 
 import type {
-  ApproveAssessmentInput,
   EvidenceStore,
   IntegrationHealth,
   Issue,
   RuntimeProject,
   RuntimeStore,
+  ReviewSubmission,
 } from "@oh-my-bug/core";
 import type {
   WorkspacePersistence,
@@ -21,6 +21,7 @@ import type { IntegrationRegistry } from "./integrations/registry.js";
 import type { WorkspaceRegistry } from "./modules/workspace-registry.js";
 import type { ManualSubmission } from "./orchestration/commands.js";
 import type {
+  ApproveAssessmentInput,
   AssessmentReference,
   ApprovalResult,
   CreateProjectInput,
@@ -44,6 +45,7 @@ interface RuntimeFacade {
   getIssue(id: string): Issue;
   listIssues(projectId?: string): Issue[];
   readIssueEvents(id: string, cursor?: number): ReturnType<RuntimeStore["readEvents"]>;
+  submitReview(id: string, input: ReviewSubmission): Issue;
   approveAssessment(id: string, input: ApproveAssessmentInput): Issue;
   approveBugAssessment(id: string, input: ApproveAssessmentInput): Issue;
   confirmNotABug(id: string, reference: AssessmentReference): Issue;
@@ -313,6 +315,11 @@ export class RuntimeService implements RuntimeApi {
   async approveAssessment(input: { id: string; input: ApproveAssessmentInput }): Promise<Issue> {
     this.assertAccepting();
     return this.dependencies.runtime.approveAssessment(input.id, input.input);
+  }
+
+  async submitReview(input: { id: string; input: ReviewSubmission }): Promise<Issue> {
+    this.assertAccepting();
+    return this.dependencies.runtime.submitReview(input.id, input.input);
   }
 
   /** @deprecated Use approveAssessment. */

@@ -21,6 +21,7 @@ import {
   outputSchemas,
   productProjectSchema,
   projectInspectionSchema,
+  reviewSubmissionSchema,
   runtimeHealthSchema,
   updateProjectInputSchema,
   workspaceBranchDiscoverySchema,
@@ -147,6 +148,12 @@ export const runtimeOperations = {
     output: outputSchemas.issue,
     renderer: true,
     invoke: (service, input) => service.submitManual(input),
+  }),
+  submitReview: operation({
+    input: z.object({ id: identifierSchema, input: reviewSubmissionSchema }).strict(),
+    output: outputSchemas.issue,
+    renderer: true,
+    invoke: (service, input) => service.submitReview(input),
   }),
   approveAssessment: operation({
     input: z.object({ id: identifierSchema, input: approveAssessmentInputSchema }).strict(),

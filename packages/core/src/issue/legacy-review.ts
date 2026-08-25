@@ -31,13 +31,11 @@ function assessmentChoices(issue: Issue): ReviewChoice[] {
       continuation: { resumeStatus: "CLOSED", resolution: "NOT_A_BUG" },
     });
   }
-  if (issue.assessment?.suspectedDuplicateOf) {
-    choices.push({
-      id: "duplicate",
-      label: "确认为重复 Issue",
-      continuation: { resumeStatus: "CLOSED", resolution: "DUPLICATE" },
-    });
-  }
+  choices.push({
+    id: "duplicate",
+    label: "确认为重复 Issue",
+    continuation: { resumeStatus: "CLOSED", resolution: "DUPLICATE" },
+  });
   choices.push({
     id: "reassess",
     label: "要求重新分析",

@@ -377,12 +377,12 @@ describe("Runtime recovery", () => {
       .toHaveLength(1);
   });
 
-  it.each(["ASSESSMENT_REVIEW", "ACCEPTANCE_REVIEW", "COMPLETED", "CLOSED"] as const)(
-    "preserves durable %s state while migrating only active legacy workspaces",
+  it.each(["REVIEW_REQUIRED", "COMPLETED", "CLOSED"] as const)(
+    "preserves durable %s state while recovering only active workspaces",
     async (status) => {
       const agent = new FakeAgent();
       const { commands, store, agents, evidence, workspaces } = createHarness(agent);
-      const issue = {
+      const stable = {
         id: `stable-${status}`,
         projectId: project.id,
         identifier: `OMB-${status}`,
@@ -399,6 +399,9 @@ describe("Runtime recovery", () => {
         createdAt: now,
         updatedAt: now,
       };
+      const issue = status === "REVIEW_REQUIRED"
+        ? reviewedIssue({ ...stable, status, assessment, revision: 3 })
+        : stable;
       store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
       store.transaction((transaction) => transaction.updateIssue(issue, issue.revision, null));
       const runtime = new OhMyBugRuntime({
@@ -413,7 +416,7 @@ describe("Runtime recovery", () => {
 
       await runtime.start();
 
-      if (status === "ASSESSMENT_REVIEW" || status === "ACCEPTANCE_REVIEW") {
+      if (status === "REVIEW_REQUIRED") {
         expect(store.getIssue(issue.id)).toMatchObject({
           status,
           projectPath: project.path,
@@ -464,6 +467,6 @@ describe("Runtime recovery", () => {
     expect(runtime.health()).toEqual({ state: "ready" });
     releaseAssessment();
     await runtime.drain();
-    expect(store.getIssue("slow-pending-assess")?.status).toBe("ASSESSMENT_REVIEW");
+    expect(store.getIssue("slow-pending-assess")?.status).toBe("REVIEW_REQUIRED");
   });
 });

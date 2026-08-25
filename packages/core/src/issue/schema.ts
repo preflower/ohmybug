@@ -11,7 +11,6 @@ import type { Issue, ReviewJson } from "./types.js";
 export const issueStatusSchema = z.enum([
   "RECEIVED",
   "ASSESSING",
-  "ASSESSMENT_REVIEW",
   "ASSESSMENT_FAILED",
   "REPAIRING",
   "EVIDENCE_CAPTURE",
@@ -19,7 +18,6 @@ export const issueStatusSchema = z.enum([
   "EVIDENCE_FAILED",
   "REPAIR_FAILED",
   "PERMISSION_REQUIRED",
-  "ACCEPTANCE_REVIEW",
   "REVIEW_REQUIRED",
   "FINALIZING",
   "FINALIZATION_RECOVERY",

@@ -49,6 +49,14 @@ const issue: Issue = {
 };
 
 describe("Issue persistence schema", () => {
+  it.each(["ASSESSMENT_REVIEW", "ACCEPTANCE_REVIEW"] as const)(
+    "rejects legacy %s as a current Issue write",
+    (status) => {
+      expect(() => issueStatusSchema.parse(status)).toThrow();
+      expect(() => issueSchema.parse({ ...issue, status })).toThrow();
+    },
+  );
+
   it("round-trips one bounded generic review request", () => {
     const review = {
       id: "review-19",

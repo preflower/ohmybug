@@ -169,7 +169,7 @@ describe("Runtime repair worker", () => {
     await worker.drainOne();
 
     expect(store.getIssue(issue.id)).toMatchObject({
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       repair: { delivery },
     });
     expect(agent.repairSessions).toEqual(["session-1"]);

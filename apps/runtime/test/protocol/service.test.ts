@@ -89,6 +89,7 @@ async function harness(
     getIssue: commands.getIssue.bind(commands),
     listIssues: commands.listIssues.bind(commands),
     readIssueEvents: commands.readIssueEvents.bind(commands),
+    submitReview: commands.submitReview.bind(commands),
     approveAssessment: commands.approveAssessment.bind(commands),
     approveBugAssessment: commands.approveBugAssessment.bind(commands),
     confirmNotABug: commands.confirmNotABug.bind(commands),

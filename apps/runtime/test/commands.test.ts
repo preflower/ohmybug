@@ -114,8 +114,11 @@ describe("Runtime human commands", () => {
 
     expect(store.readEvents(issue.id)).toContainEqual(expect.objectContaining({
       actor: "USER",
-      type: "REASSESSMENT_REQUESTED",
-      data: { detail: "Inspect the router" },
+      type: "REVIEW_SUBMITTED",
+      data: expect.objectContaining({
+        choiceId: "reassess",
+        feedback: "Inspect the router",
+      }),
     }));
   });
 
@@ -190,7 +193,7 @@ describe("Runtime human commands", () => {
     const { commands, store } = createHarness();
     const issue = reviewedIssue({
       id: "issue-delivery",
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       agentSession: { agent: "fake", sessionId: "session-1" },
       repair: { iteration: 1, delivery },
       revision: 7,
@@ -203,7 +206,7 @@ describe("Runtime human commands", () => {
     expect(store.listPendingOperations()).toEqual([
       { issue: approved, operation: "FINALIZE" },
     ]);
-    expect(store.readEvents(issue.id).map((event) => event.type)).toEqual(["DELIVERY_APPROVED"]);
+    expect(store.readEvents(issue.id).map((event) => event.type)).toEqual(["REVIEW_SUBMITTED"]);
   });
 
   it("retries only a failed Delivery finalization", () => {
@@ -265,7 +268,7 @@ describe("Runtime human commands", () => {
     const feature = { ...assessment, verdict: "FEATURE" as const, rootCause: undefined };
     const issue = reviewedIssue({
       id: "issue-feature-delivery",
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       assessment: feature,
       agentSession: { agent: "fake", sessionId: "session-feature" },
       repair: { iteration: 1, delivery },

@@ -275,6 +275,7 @@ export function recordAssessment(
   const next = transitionIssue(issue, "ASSESSMENT_READY", now);
   return {
     ...next,
+    status: "ASSESSING",
     assessment: assessmentSchema.parse(assessmentInput),
     assessmentFeedback: undefined,
     lastFailure: undefined,
@@ -334,7 +335,10 @@ export function recordEvidenceRejection(
 }
 
 export function recordEvidenceAcceptance(issue: Issue, now: string): Issue {
-  return transitionIssue(issue, "EVIDENCE_ACCEPTED", now);
+  return {
+    ...transitionIssue(issue, "EVIDENCE_ACCEPTED", now),
+    status: "EVIDENCE_CHECK",
+  };
 }
 
 export function recordImplementationDraft(
@@ -470,31 +474,4 @@ export function recordRepairFailure(
     transitionIssue(issue, "REPAIR_ERRORED", now),
     { stage: "REPAIR", code },
   );
-}
-
-export function requestAssessmentChanges(
-  issue: Issue,
-  feedbackInput: string,
-  now: string,
-): Issue {
-  const feedback = required(feedbackInput, "FEEDBACK_REQUIRED");
-  return {
-    ...transitionIssue(issue, "REQUEST_REASSESSMENT", now),
-    assessmentFeedback: feedback,
-    lastFailure: undefined,
-  };
-}
-
-export function requestDeliveryChanges(
-  issue: Issue,
-  feedbackInput: string,
-  now: string,
-): Issue {
-  const feedback = required(feedbackInput, "FEEDBACK_REQUIRED");
-  const next = transitionIssue(issue, "REJECT_DELIVERY", now);
-  return {
-    ...next,
-    repair: { ...(next.repair ?? { iteration: 1 }), feedback },
-    lastFailure: undefined,
-  };
 }

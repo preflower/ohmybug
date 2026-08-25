@@ -1,10 +1,10 @@
 import type {
-  ApproveAssessmentInput,
   ConfigValue,
   IntegrationHealth,
   IntegrationPluginManifest,
   Issue,
   IssueEvent,
+  ReviewSubmission,
   ProjectAgentConfiguration,
   ProjectCommands,
 } from "@oh-my-bug/core";
@@ -89,6 +89,10 @@ export interface AssessmentReference {
   assessmentContentHash: string;
 }
 
+export interface ApproveAssessmentInput extends AssessmentReference {
+  title: string;
+}
+
 export interface IssueEventPage {
   items: IssueEvent[];
   nextCursor: number;
@@ -135,6 +139,7 @@ export interface RuntimeApi {
   getIssue(input: { id: string }): Promise<Issue>;
   getIssueWorkspace(input: { id: string }): Promise<IssueWorkspaceInfo | null>;
   submitManual(input: ManualIssueCommand): Promise<Issue>;
+  submitReview(input: { id: string; input: ReviewSubmission }): Promise<Issue>;
   approveAssessment(input: { id: string; input: ApproveAssessmentInput }): Promise<Issue>;
   /** @deprecated Use approveAssessment. */
   approveBugAssessment(input: { id: string; input: ApproveAssessmentInput }): Promise<Issue>;

@@ -64,7 +64,7 @@ describe("Git Workspace restart acceptance", () => {
     await runtime.drain();
     const assessed = runtime.getIssue(created.issue.id);
     expect(assessed).toMatchObject({
-      status: "ASSESSMENT_REVIEW",
+      status: "REVIEW_REQUIRED",
       assessment,
     });
     runtime.approveAssessment(assessed.id, {

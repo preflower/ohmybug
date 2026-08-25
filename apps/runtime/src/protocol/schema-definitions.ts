@@ -2,6 +2,7 @@ import {
   integrationPluginManifestSchema,
   configFieldSchema,
   issueSchema,
+  reviewSubmissionSchema as coreReviewSubmissionSchema,
   projectCommandsSchema as coreProjectCommandsSchema,
 } from "@oh-my-bug/core";
 import { z } from "zod";
@@ -127,6 +128,7 @@ export const approveAssessmentInputSchema = assessmentReferenceSchema.extend({
   title: z.string().trim().min(1),
 }).strict();
 export const feedbackSchema = z.string().trim().min(1);
+export const reviewSubmissionSchema = coreReviewSubmissionSchema;
 export const issueEventSchema = z.object({
   id: identifierSchema,
   issueId: identifierSchema,

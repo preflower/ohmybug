@@ -69,7 +69,7 @@ describe("Workspace finalization", () => {
     });
     await runtime.drain();
     const ready = fixture.store.getIssue(created.issue.id)!;
-    expect(ready.status).toBe("ACCEPTANCE_REVIEW");
+    expect(ready.status).toBe("REVIEW_REQUIRED");
 
     const approval = runtime.approveDelivery(ready.id);
     runtime.kick();

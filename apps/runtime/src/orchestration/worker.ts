@@ -14,6 +14,7 @@ import {
   recordEvidenceFailure,
   recordEvidenceRejection,
   recordImplementationDraft,
+  requestReview,
   recordRepairFailure,
   reviewVisualEvidence,
   transitionIssue,
@@ -42,6 +43,7 @@ import type {
 } from "../modules/lifecycle-hooks.js";
 import type { WorkspaceCoordinator } from "./workspace-coordinator.js";
 import { publicCapabilityRequest } from "./capability-request.js";
+import { assessmentReview, deliveryReview } from "./reviews.js";
 
 export interface RuntimeWorkerDependencies {
   store: RuntimeStore;
@@ -261,12 +263,18 @@ export class RuntimeWorker {
         feedback: claimed.assessmentFeedback,
         continuation,
       });
-      const assessed = recordAssessment(claimed, result, this.dependencies.now());
-      if (this.complete(claimed, assessed, "ASSESSMENT_READY")) {
+      const reviewedAt = this.dependencies.now();
+      const assessed = recordAssessment(claimed, result, reviewedAt);
+      const reviewed = requestReview(
+        assessed,
+        assessmentReview(assessed, this.dependencies.id(), reviewedAt),
+        reviewedAt,
+      );
+      if (this.completeReview(claimed, reviewed, "ASSESSMENT_READY")) {
         this.emitLifecycle("assessment.after", {
-          issue: assessed,
+          issue: reviewed,
           project,
-          assessment: assessed.assessment,
+          assessment: reviewed.assessment,
         });
       }
     } catch (error) {
@@ -558,11 +566,14 @@ export class RuntimeWorker {
         )));
       const gate = reviewVisualEvidence(delivery, claimed.repair.iteration, inspections);
       if (gate.reviewable) {
-        this.complete(
-          claimed,
-          recordEvidenceAcceptance(claimed, this.dependencies.now()),
-          "EVIDENCE_ACCEPTED",
+        const reviewedAt = this.dependencies.now();
+        const accepted = recordEvidenceAcceptance(claimed, reviewedAt);
+        const reviewed = requestReview(
+          accepted,
+          deliveryReview(accepted, this.dependencies.id(), reviewedAt),
+          reviewedAt,
         );
+        this.completeReview(claimed, reviewed, "EVIDENCE_ACCEPTED");
       } else {
         this.requeueEvidence(
           claimed,
@@ -876,6 +887,26 @@ export class RuntimeWorker {
       if (!current || current.revision !== previous.revision) return false;
       tx.updateIssue(next, previous.revision, pending);
       tx.appendEvent(this.event(next.id, type, "AGENT", data));
+      return true;
+    });
+  }
+
+  private completeReview(previous: Issue, next: Issue, type: string): boolean {
+    const review = next.review;
+    if (next.status !== "REVIEW_REQUIRED" || !review) {
+      throw new Error("REVIEW_COMPLETION_REQUIRED");
+    }
+    return this.dependencies.store.transaction((tx) => {
+      const current = this.dependencies.store.getIssue(previous.id);
+      if (!current || current.revision !== previous.revision) return false;
+      tx.updateIssue(next, previous.revision, null);
+      tx.appendEvent(this.event(next.id, type, "AGENT"));
+      tx.appendEvent(this.event(next.id, "REVIEW_REQUESTED", "SYSTEM", {
+        requestId: review.id,
+        kind: review.kind,
+        choiceIds: review.choices.map((choice) => choice.id),
+        revision: next.revision,
+      }));
       return true;
     });
   }

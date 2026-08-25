@@ -11,7 +11,6 @@ import type { IntegrationInput } from "../integration/input.js";
 export type IssueStatus =
   | "RECEIVED"
   | "ASSESSING"
-  | "ASSESSMENT_REVIEW"
   | "ASSESSMENT_FAILED"
   | "REPAIRING"
   | "EVIDENCE_CAPTURE"
@@ -19,7 +18,6 @@ export type IssueStatus =
   | "EVIDENCE_FAILED"
   | "REPAIR_FAILED"
   | "PERMISSION_REQUIRED"
-  | "ACCEPTANCE_REVIEW"
   | "REVIEW_REQUIRED"
   | "FINALIZING"
   | "FINALIZATION_RECOVERY"

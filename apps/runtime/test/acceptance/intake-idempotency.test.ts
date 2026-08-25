@@ -133,7 +133,7 @@ describe("SQLite-backed intake acceptance", () => {
       ]),
     });
     expect(reopened.getIssue(afterClosure.issue.id)).toMatchObject({
-      status: "ASSESSMENT_REVIEW",
+      status: "REVIEW_REQUIRED",
       inputs: [expect.objectContaining({ inputKey: "event-3" })],
     });
     await reopened.stop();

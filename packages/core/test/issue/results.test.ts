@@ -15,8 +15,6 @@ import {
   grantCapabilityRequest,
   recordCapabilityRequest,
   replaceAgentSession,
-  requestAssessmentChanges,
-  requestDeliveryChanges,
   requestReview,
   submitReview,
   type Assessment,
@@ -231,7 +229,7 @@ describe("Issue workflow results", () => {
 
   it("records structured assessment success and failure", () => {
     expect(recordAssessment(issueAt("ASSESSING"), assessment, now)).toMatchObject({
-      status: "ASSESSMENT_REVIEW",
+      status: "ASSESSING",
       assessment,
       assessmentFeedback: undefined,
       lastFailure: undefined,
@@ -359,20 +357,11 @@ describe("Issue workflow results", () => {
         deliveryDraft: draft,
       },
     });
-    const humanRejected = requestDeliveryChanges(
-      { ...repaired, status: "ACCEPTANCE_REVIEW" },
-      "Show the full response",
-      now,
-    );
-    expect(humanRejected).toMatchObject({
-      status: "REPAIRING",
-      repair: { iteration: 3, feedback: "Show the full response", delivery },
-    });
   });
 
   it("records reviewable evidence and repair failures", () => {
     expect(recordEvidenceAcceptance(issueAt("EVIDENCE_CHECK"), now).status)
-      .toBe("ACCEPTANCE_REVIEW");
+      .toBe("EVIDENCE_CHECK");
     expect(recordRepairFailure(issueAt("REPAIRING"), "AGENT_FAILURE", now)).toMatchObject({
       status: "REPAIR_FAILED",
       lastFailure: { stage: "REPAIR", code: "AGENT_FAILURE" },
@@ -387,18 +376,14 @@ describe("Issue workflow results", () => {
     });
   });
 
-  it("persists assessment feedback and rejects blank diagnostics", () => {
-    expect(requestAssessmentChanges(issueAt("ASSESSMENT_REVIEW"), "Inspect the router", now))
-      .toMatchObject({ status: "ASSESSING", assessmentFeedback: "Inspect the router" });
-    expect(() => requestAssessmentChanges(issueAt("ASSESSMENT_REVIEW"), " ", now))
-      .toThrow("FEEDBACK_REQUIRED");
+  it("rejects blank diagnostics", () => {
     expect(() => recordAssessmentFailure(issueAt("ASSESSING"), " ", now))
       .toThrow("ERROR_CODE_REQUIRED");
   });
 
   it("rejects results that do not belong to the current state", () => {
     expect(() => recordAssessment(issueAt("RECEIVED"), assessment, now)).toThrow(/Illegal Issue transition/);
-    expect(() => recordDelivery(issueAt("ASSESSMENT_REVIEW"), delivery, now)).toThrow(/Illegal Issue transition/);
+    expect(() => recordDelivery(issueAt("ASSESSING"), delivery, now)).toThrow(/Illegal Issue transition/);
   });
 
   it.each([

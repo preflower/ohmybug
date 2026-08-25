@@ -116,10 +116,10 @@ describe("AI merge finalization recovery", () => {
     });
 
     await worker.drain();
-    expect(fixture.store.getIssue(created.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    expect(fixture.store.getIssue(created.issue.id)?.status).toBe("REVIEW_REQUIRED");
     fixture.commands.rejectDelivery(created.issue.id, "取消按钮还需要保留键盘关闭行为");
     await worker.drain();
-    expect(fixture.store.getIssue(created.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    expect(fixture.store.getIssue(created.issue.id)?.status).toBe("REVIEW_REQUIRED");
     await writeFile(
       join(repository, "apps/desktop/src/web/issues/advanced-base.ts"),
       "export const advancedBase = true;\n",
@@ -129,7 +129,7 @@ describe("AI merge finalization recovery", () => {
     const advancedBase = await git(repository, "rev-parse", "main");
     fixture.commands.approveDelivery(created.issue.id);
     await worker.drain();
-    expect(fixture.store.getIssue(created.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    expect(fixture.store.getIssue(created.issue.id)?.status).toBe("REVIEW_REQUIRED");
     expect(agent.recoveryInputs[1]).toMatchObject({
       recoveryKind: "MERGE_CONFLICT",
       merge: {

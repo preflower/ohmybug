@@ -21,6 +21,7 @@ describe("Runtime protocol operation registry", () => {
       "getIssue",
       "getIssueWorkspace",
       "submitManual",
+      "submitReview",
       "approveAssessment",
       "approveBugAssessment",
       "confirmNotABug",
@@ -41,6 +42,24 @@ describe("Runtime protocol operation registry", () => {
     expect(rendererOperationNames).toContain("rebuildAgentSession");
     expect(rendererOperationNames).toContain("grantIssueCapabilities");
     expect(rendererOperationNames).toContain("readEvidence");
+  });
+
+  it("validates optimistic generic review submission", () => {
+    const input = {
+      id: "issue-1",
+      input: {
+        expectedRevision: 7,
+        requestId: "review-1",
+        choiceId: "continue",
+        feedback: "Preserve both compatible changes",
+      },
+    };
+
+    expect(runtimeOperations.submitReview.input.parse(input)).toEqual(input);
+    expect(() => runtimeOperations.submitReview.input.parse({
+      id: "issue-1",
+      input: { requestId: "review-1", choiceId: "continue" },
+    })).toThrow();
   });
 
   it("validates optimistic capability grant input", () => {
