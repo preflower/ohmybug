@@ -17,6 +17,8 @@ import {
   replaceAgentSession,
   requestAssessmentChanges,
   requestDeliveryChanges,
+  requestReview,
+  submitReview,
   type Assessment,
   type Delivery,
   type Issue,
@@ -63,6 +65,77 @@ function issueAt(status: IssueStatus): Issue {
 }
 
 describe("Issue workflow results", () => {
+  const businessReview = {
+    id: "review-19",
+    kind: "business-merge-conflict",
+    requestedFrom: "REPAIRING" as const,
+    payload: { incompatibility: "Only one rounding rule can be active" },
+    choices: [{
+      id: "use-issue-behavior",
+      label: "Use Issue behavior",
+      feedbackRequired: true,
+      continuation: { operation: "REPAIR" as const, resumeStatus: "REPAIRING" as const },
+    }],
+    requestedAt: now,
+  };
+
+  it("pauses one active operation for a bounded generic review", () => {
+    const paused = requestReview(issueAt("REPAIRING"), businessReview, now);
+
+    expect(paused).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      review: businessReview,
+      revision: 2,
+    });
+    expect(() => requestReview(paused, businessReview, now))
+      .toThrow("REVIEW_ALREADY_REQUIRED");
+    expect(() => requestReview(issueAt("REPAIRING"), {
+      ...businessReview,
+      choices: [{
+        id: "escape",
+        label: "Escape Repair",
+        continuation: { operation: "FINALIZE", resumeStatus: "FINALIZING" },
+      }],
+    }, now)).toThrow("REVIEW_CONTINUATION_NOT_ALLOWED");
+  });
+
+  it("submits the current review atomically and returns its operation", () => {
+    const paused = requestReview(issueAt("REPAIRING"), businessReview, now);
+    const submitted = submitReview(paused, {
+      expectedRevision: paused.revision,
+      requestId: businessReview.id,
+      choiceId: "use-issue-behavior",
+      feedback: "Preserve per-line rounding",
+    }, "2026-08-25T00:10:00.000Z");
+
+    expect(submitted.operation).toBe("REPAIR");
+    expect(submitted.issue).toMatchObject({ status: "REPAIRING", revision: 3 });
+    expect(submitted.issue.review).toBeUndefined();
+    expect(() => submitReview(paused, {
+      expectedRevision: paused.revision - 1,
+      requestId: businessReview.id,
+      choiceId: "use-issue-behavior",
+      feedback: "Preserve per-line rounding",
+    }, now)).toThrow("REVIEW_SUBMISSION_STALE");
+    expect(() => submitReview(paused, {
+      expectedRevision: paused.revision,
+      requestId: "stale-review",
+      choiceId: "use-issue-behavior",
+      feedback: "Preserve per-line rounding",
+    }, now)).toThrow("REVIEW_REQUEST_STALE");
+    expect(() => submitReview(paused, {
+      expectedRevision: paused.revision,
+      requestId: businessReview.id,
+      choiceId: "unknown",
+      feedback: "Preserve per-line rounding",
+    }, now)).toThrow("REVIEW_CHOICE_NOT_AVAILABLE");
+    expect(() => submitReview(paused, {
+      expectedRevision: paused.revision,
+      requestId: businessReview.id,
+      choiceId: "use-issue-behavior",
+    }, now)).toThrow("REVIEW_FEEDBACK_REQUIRED");
+  });
+
   const diagnostic = {
     providerId: "git",
     step: "add" as const,

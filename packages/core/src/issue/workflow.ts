@@ -86,6 +86,7 @@ const transitions: Record<
     APPROVE_DELIVERY: "FINALIZING",
     CANCEL: "CANCELED",
   },
+  REVIEW_REQUIRED: { CANCEL: "CANCELED" },
   FINALIZING: {
     BEGIN_FINALIZATION_RECOVERY: "FINALIZATION_RECOVERY",
     FINALIZATION_ERRORED: "FINALIZATION_FAILED",
@@ -177,6 +178,7 @@ function applyTransition(
     delete nextIssue.capabilityGrants;
     delete nextIssue.pendingCapabilityRequest;
     delete nextIssue.finalizationRecovery;
+    delete nextIssue.review;
     delete nextIssue.lastFailure;
   }
   return nextIssue;

@@ -3,6 +3,10 @@ import {
   assessmentSchema,
   deliverySchema,
 } from "../agent/schemas.js";
+import {
+  reviewRequestSchema,
+  reviewSubmissionSchema,
+} from "./schema.js";
 import type {
   AgentSessionRef,
   Assessment,
@@ -14,6 +18,11 @@ import type {
   Issue,
   IssueFailure,
   PendingCapabilityRequest,
+  ReviewChoice,
+  ReviewOperation,
+  ReviewRequest,
+  ReviewSourceStatus,
+  ReviewSubmission,
   WorkspaceFinalizationDiagnostic,
 } from "./types.js";
 import { transitionIssue } from "./workflow.js";
@@ -26,6 +35,103 @@ function required(value: string, code: string): string {
 
 function withFailure(issue: Issue, failure: IssueFailure): Issue {
   return { ...issue, lastFailure: failure };
+}
+
+const allowedReviewContinuations: Record<ReviewSourceStatus, ReadonlySet<string>> = {
+  ASSESSING: new Set([
+    "ASSESSING:ASSESS:-",
+    "REPAIRING:REPAIR:-",
+    "CLOSED:-:NOT_A_BUG",
+    "CLOSED:-:DUPLICATE",
+  ]),
+  REPAIRING: new Set(["REPAIRING:REPAIR:-"]),
+  EVIDENCE_CHECK: new Set([
+    "REPAIRING:REPAIR:-",
+    "FINALIZING:FINALIZE:FIXED",
+    "FINALIZING:FINALIZE:IMPLEMENTED",
+  ]),
+};
+
+function reviewContinuationKey(choice: ReviewChoice): string {
+  const continuation = choice.continuation;
+  return [
+    continuation.resumeStatus,
+    continuation.operation ?? "-",
+    continuation.resolution ?? "-",
+  ].join(":");
+}
+
+export function requestReview(
+  issue: Issue,
+  requestInput: ReviewRequest,
+  now: string,
+): Issue {
+  if (issue.review || issue.status === "REVIEW_REQUIRED") {
+    throw new Error("REVIEW_ALREADY_REQUIRED");
+  }
+  const request = reviewRequestSchema.parse(requestInput);
+  if (issue.status !== request.requestedFrom) {
+    throw new Error("REVIEW_SOURCE_STATUS_MISMATCH");
+  }
+  if (request.choices.some((choice) =>
+    !allowedReviewContinuations[request.requestedFrom].has(reviewContinuationKey(choice)))) {
+    throw new Error("REVIEW_CONTINUATION_NOT_ALLOWED");
+  }
+  return {
+    ...issue,
+    status: "REVIEW_REQUIRED",
+    review: request,
+    lastFailure: undefined,
+    revision: issue.revision + 1,
+    updatedAt: now,
+  };
+}
+
+export function submitReview(
+  issue: Issue,
+  submissionInput: ReviewSubmission,
+  now: string,
+): {
+  issue: Issue;
+  operation: ReviewOperation | null;
+  request: ReviewRequest;
+  choice: ReviewChoice;
+} {
+  const submission = reviewSubmissionSchema.parse(submissionInput);
+  if (issue.revision !== submission.expectedRevision) {
+    throw new Error("REVIEW_SUBMISSION_STALE");
+  }
+  if (issue.status !== "REVIEW_REQUIRED" || !issue.review) {
+    throw new Error("REVIEW_NOT_AVAILABLE");
+  }
+  const request = issue.review;
+  if (request.id !== submission.requestId) throw new Error("REVIEW_REQUEST_STALE");
+  const choice = request.choices.find((candidate) => candidate.id === submission.choiceId);
+  if (!choice) throw new Error("REVIEW_CHOICE_NOT_AVAILABLE");
+  if (choice.feedbackRequired && !submission.feedback) {
+    throw new Error("REVIEW_FEEDBACK_REQUIRED");
+  }
+  const continuation = choice.continuation;
+  const next: Issue = {
+    ...issue,
+    status: continuation.resumeStatus,
+    ...(continuation.resolution ? { resolution: continuation.resolution } : {}),
+    review: undefined,
+    lastFailure: undefined,
+    revision: issue.revision + 1,
+    updatedAt: now,
+  };
+  if (continuation.resumeStatus === "CLOSED") {
+    delete next.capabilityGrants;
+    delete next.pendingCapabilityRequest;
+    delete next.finalizationRecovery;
+  }
+  return {
+    issue: next,
+    operation: continuation.operation ?? null,
+    request,
+    choice,
+  };
 }
 
 const resumeStatusByOperation = {

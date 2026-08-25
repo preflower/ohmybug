@@ -409,6 +409,27 @@ describe("Issue workflow", () => {
     ).toThrow(/Illegal Issue transition/);
   });
 
+  it("cancels a review pause and clears the active request", () => {
+    const canceled = transitionIssue({
+      ...issueAt("REVIEW_REQUIRED"),
+      review: {
+        id: "review-19",
+        kind: "business-merge-conflict",
+        requestedFrom: "REPAIRING",
+        payload: {},
+        choices: [{
+          id: "continue",
+          label: "Continue",
+          continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+        }],
+        requestedAt: "2026-08-25T00:00:00.000Z",
+      },
+    }, "CANCEL", "2026-08-25T00:01:00.000Z");
+
+    expect(canceled).toMatchObject({ status: "CANCELED", resolution: "CANCELED" });
+    expect(canceled.review).toBeUndefined();
+  });
+
   it("cancels a permission-blocked Issue and revokes capability state", () => {
     const canceled = transitionIssue({
       ...issueAt("PERMISSION_REQUIRED"),
