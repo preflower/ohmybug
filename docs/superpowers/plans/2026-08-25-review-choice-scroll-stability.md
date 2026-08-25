@@ -34,10 +34,10 @@
 ### Task 3: Verify the production surface
 
 **Files:**
-- Evidence only: `.oh-my-bug-tmp-evidence-X74Op9/review-choice-scroll-stability.png`
+- Evidence only: `.oh-my-bug-tmp-evidence-JHAfxs/review-choice-scroll-stability.png`
 
 - [ ] Run the Desktop review tests, typecheck, lint, build, and full test suite.
-- [ ] Launch the browser-development application at a deterministic viewport.
+- [ ] Launch the packaged Electron application at a deterministic viewport.
 - [ ] Scroll the Assessment review into position, switch processing choices, and verify the radio group bounding position is unchanged.
 - [ ] Capture the actual rendered acceptance state under the required evidence directory.
 - [ ] Review the final diff and commit only the intended source, tests, and design/plan files.

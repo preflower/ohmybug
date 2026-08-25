@@ -26,5 +26,6 @@ review contexts remain unchanged.
   field states.
 - Focused Desktop tests cover existing review submission behavior and TypeScript
   contracts.
-- A real browser acceptance run scrolls the Issue detail, switches the processing
-  choice, and captures the stable choice list in the rendered application.
+- A real packaged Electron acceptance run scrolls the Issue detail, switches the
+  processing choice, asserts the choice list's bounding position is unchanged, and
+  captures the stable choice list in the rendered application.
