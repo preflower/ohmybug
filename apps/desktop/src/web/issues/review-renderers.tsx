@@ -3,7 +3,7 @@ import { Input } from "../components/ui/input.js";
 
 type ReviewData = ReviewSubmissionInput["data"];
 
-interface ReviewRendererProps {
+interface ReviewResponseFieldsProps {
   issue: IssueDto;
   choiceId: string;
   data: ReviewData;
@@ -24,36 +24,17 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-export function ReviewRenderer({ issue, choiceId, data, onDataChange }: ReviewRendererProps) {
+export function ReviewRenderer({ issue }: { issue: IssueDto }) {
   const review = issue.review;
   if (!review) return null;
   const payload = record(review.payload) ?? {};
 
   if (review.kind === "assessment") {
     const verdict = text(payload.verdict) ?? issue.assessment?.verdict;
-    const response = record(data) ?? {};
     return (
       <div className="review-decision-context">
         <p>当前判断：<strong>{verdict ?? "待确认"}</strong></p>
         <p>确认实现会允许 Agent 修改本机 Issue 工作区并运行项目验证。</p>
-        {choiceId === "implement" ? (
-          <label className="feedback-field">
-            Issue 标题
-            <Input
-              value={text(response.title) ?? issue.assessment?.suggestedTitle ?? issue.title}
-              onChange={(event) => onDataChange({ ...response, title: event.target.value })}
-            />
-          </label>
-        ) : null}
-        {choiceId === "duplicate" ? (
-          <label className="feedback-field">
-            重复 Issue
-            <Input
-              value={text(response.duplicateOf) ?? ""}
-              onChange={(event) => onDataChange({ ...response, duplicateOf: event.target.value })}
-            />
-          </label>
-        ) : null}
       </div>
     );
   }
@@ -107,6 +88,42 @@ export function ReviewRenderer({ issue, choiceId, data, onDataChange }: ReviewRe
       ))}</dl>
     </div>
   );
+}
+
+export function ReviewResponseFields({
+  issue,
+  choiceId,
+  data,
+  onDataChange,
+}: ReviewResponseFieldsProps) {
+  if (issue.review?.kind !== "assessment") return null;
+  const response = record(data) ?? {};
+
+  if (choiceId === "implement") {
+    return (
+      <label className="feedback-field">
+        Issue 标题
+        <Input
+          value={text(response.title) ?? issue.assessment?.suggestedTitle ?? issue.title}
+          onChange={(event) => onDataChange({ ...response, title: event.target.value })}
+        />
+      </label>
+    );
+  }
+
+  if (choiceId === "duplicate") {
+    return (
+      <label className="feedback-field">
+        重复 Issue
+        <Input
+          value={text(response.duplicateOf) ?? ""}
+          onChange={(event) => onDataChange({ ...response, duplicateOf: event.target.value })}
+        />
+      </label>
+    );
+  }
+
+  return null;
 }
 
 function safeSummary(value: unknown): string {

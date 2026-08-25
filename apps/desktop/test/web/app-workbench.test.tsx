@@ -200,6 +200,60 @@ describe("control center workbench", () => {
     expect(within(backgroundRow).queryByText("交付处理中")).not.toBeInTheDocument();
   });
 
+  it("does not clear the selected Issue for a stale filtered-status response", async () => {
+    const current: IssueDto = {
+      ...issue,
+      revision: 7,
+    };
+    const stale: IssueDto = {
+      ...current,
+      status: "REPAIRING",
+      revision: 6,
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([current]);
+    const issueSnapshot = vi.spyOn(api, "issue").mockResolvedValue(current);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    let selectedListener: ((events: AgentEventDto[], cursor: number) => void) | undefined;
+    vi.spyOn(api, "subscribeIssueEvents").mockImplementation(
+      (id, _cursor, listener) => {
+        if (id === current.id) selectedListener = listener;
+        return () => undefined;
+      },
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", {
+      level: 2,
+      name: current.title,
+    })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /筛选 Issue 状态/ }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "实现中" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(selectedListener).toBeDefined());
+    issueSnapshot.mockResolvedValue(stale);
+    act(() => selectedListener?.([{
+      id: "event-stale-selected",
+      issueId: current.id,
+      sequence: 1,
+      type: "ASSESSMENT_PROPOSED",
+      actor: "AGENT",
+      data: {},
+      occurredAt: "2026-08-19T09:02:00.000Z",
+    }], 1));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 250)));
+
+    expect(screen.getByRole("heading", {
+      level: 2,
+      name: current.title,
+    })).toBeVisible();
+    expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
+  });
+
   it("grants the selected Issue capability request with its revision and request ID", async () => {
     const permissionRequiredIssue: IssueDto = {
       ...issue,
@@ -302,6 +356,140 @@ describe("control center workbench", () => {
     ]);
     expect(rows[0]).toHaveAttribute("aria-current", "true");
     expect(await screen.findByRole("heading", { level: 2, name: "Newest checkout regression" })).toBeVisible();
+  });
+
+  it("hides canceled and closed Issues by default", async () => {
+    const canceledIssue: IssueDto = {
+      ...issue,
+      id: "issue-canceled",
+      identifier: "CHK-2",
+      title: "Canceled checkout regression",
+      status: "CANCELED",
+      updatedAt: "2026-08-19T08:59:00.000Z",
+    };
+    const closedIssue: IssueDto = {
+      ...issue,
+      id: "issue-closed",
+      identifier: "CHK-3",
+      title: "Closed checkout regression",
+      status: "CLOSED",
+      updatedAt: "2026-08-19T08:58:00.000Z",
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([closedIssue, canceledIssue, issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+
+    const list = await screen.findByRole("region", { name: "Issue 列表" });
+    expect(within(list).getByText(issue.title)).toBeVisible();
+    expect(within(list).queryByText(canceledIssue.title)).not.toBeInTheDocument();
+    expect(within(list).queryByText(closedIssue.title)).not.toBeInTheDocument();
+    expect(within(list).getByText("1", { selector: ".issue-pane-heading span:last-child" })).toBeVisible();
+  });
+
+  it("lets users choose which Issue statuses are visible", async () => {
+    const canceledIssue: IssueDto = {
+      ...issue,
+      id: "issue-canceled",
+      identifier: "CHK-2",
+      title: "Canceled checkout regression",
+      status: "CANCELED",
+      updatedAt: "2026-08-19T08:59:00.000Z",
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([canceledIssue, issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+
+    const list = await screen.findByRole("region", { name: "Issue 列表" });
+    fireEvent.click(screen.getByRole("button", { name: /筛选 Issue 状态/ }));
+    const canceled = await screen.findByRole("checkbox", { name: "已取消" });
+    expect(canceled).not.toBeChecked();
+    fireEvent.click(canceled);
+
+    expect(within(list).getByText(canceledIssue.title)).toBeVisible();
+    expect(within(list).getByText("2", { selector: ".issue-pane-heading span:last-child" })).toBeVisible();
+
+    const reviewRequired = screen.getByRole("checkbox", { name: "待人工审核" });
+    expect(reviewRequired).toBeChecked();
+    fireEvent.click(reviewRequired);
+    expect(within(list).queryByText(issue.title)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("heading", {
+      level: 2,
+      name: issue.title,
+    })).not.toBeInTheDocument());
+    expect(screen.getByRole("region", { name: "开始使用" })).toBeVisible();
+    fireEvent.click(canceled);
+    expect(within(list).queryByText(canceledIssue.title)).not.toBeInTheDocument();
+    expect(within(list).getByRole("heading", {
+      name: "没有符合筛选条件的 Issue",
+    })).toBeVisible();
+    expect(within(list).getByText("调整状态过滤器以显示其他 Issue。")).toBeVisible();
+  });
+
+  it("keeps filtered active Issues subscribed for status transitions", async () => {
+    const backgroundIssue: IssueDto = {
+      ...issue,
+      id: "issue-background",
+      identifier: "CHK-2",
+      title: "Background repair",
+      status: "REPAIRING",
+      createdAt: "2026-08-19T08:59:00.000Z",
+      updatedAt: "2026-08-19T08:59:00.000Z",
+    };
+    const transitionedIssue: IssueDto = {
+      ...backgroundIssue,
+      status: "REVIEW_REQUIRED",
+      revision: backgroundIssue.revision + 1,
+    };
+    let backgroundListener: ((events: AgentEventDto[], cursor: number) => void) | undefined;
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([backgroundIssue, issue]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) =>
+      id === backgroundIssue.id ? transitionedIssue : issue
+    );
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const subscribe = vi.spyOn(api, "subscribeIssueEvents").mockImplementation(
+      (id, _cursor, listener) => {
+        if (id === backgroundIssue.id) backgroundListener = listener;
+        return () => undefined;
+      },
+    );
+
+    render(<App />);
+
+    const list = await screen.findByRole("region", { name: "Issue 列表" });
+    await waitFor(() => expect(subscribe).toHaveBeenCalledWith(
+      backgroundIssue.id,
+      0,
+      expect.any(Function),
+    ));
+    fireEvent.click(screen.getByRole("button", { name: /筛选 Issue 状态/ }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "实现中" }));
+
+    expect(within(list).queryByText(backgroundIssue.title)).not.toBeInTheDocument();
+    act(() => backgroundListener?.([{
+      id: "event-review-required",
+      issueId: backgroundIssue.id,
+      sequence: 1,
+      type: "ASSESSMENT_PROPOSED",
+      actor: "AGENT",
+      data: {},
+      occurredAt: "2026-08-19T09:02:00.000Z",
+    }], 1));
+
+    expect(await within(list).findByText(backgroundIssue.title, {}, {
+      timeout: 1_000,
+    })).toBeVisible();
   });
 
   it("labels the empty Issue list with a heading and supporting guidance", async () => {
@@ -617,6 +805,112 @@ describe("control center workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建并开始分析" }));
 
     await waitFor(() => expect(localStorage.getItem("oh-my-bug:last-issue-project")).toBe(storefront.id));
+  });
+
+  it("creates a valid Issue when Enter is pressed in the content field", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue({
+      ...issue,
+      id: "issue-2",
+      identifier: "CHK-2",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed after login" } });
+    expect(screen.getByRole("button", { name: "创建并开始分析" })).toBeEnabled();
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(submitManual).toHaveBeenCalledWith({
+      projectId: "project-1",
+      commandId: expect.stringMatching(/^manual-/),
+      content: "Checkout failed after login",
+    }));
+  });
+
+  it("keeps Shift+Enter available for a newline in the content field", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed" } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter", shiftKey: true });
+
+    expect(submitManual).not.toHaveBeenCalled();
+  });
+
+  it("does not submit when Enter confirms an IME composition", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "结账失败" } });
+    fireEvent.keyDown(contentField, {
+      key: "Enter",
+      code: "Enter",
+      isComposing: true,
+    });
+
+    expect(submitManual).not.toHaveBeenCalled();
+  });
+
+  it("does not submit again when Enter is pressed while creation is busy", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual")
+      .mockReturnValue(new Promise<IssueDto>(() => undefined));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed" } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(submitManual).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    expect(submitManual).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps creation disabled and ignores Enter when content is blank", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    const createButton = screen.getByRole("button", { name: "创建并开始分析" });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(contentField, { target: { value: "   " } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    expect(createButton).toBeDisabled();
+    expect(submitManual).not.toHaveBeenCalled();
   });
 
   it("does not remember a project when Issue creation fails", async () => {

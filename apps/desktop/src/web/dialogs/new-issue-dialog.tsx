@@ -146,6 +146,17 @@ function NewIssueDialogContent({
               rows={5}
               value={content}
               onChange={(event) => setContent(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key !== "Enter"
+                  || event.shiftKey
+                  || event.nativeEvent.isComposing
+                  || !canCreate
+                  || busy
+                ) return;
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }}
             />
           </label>
           {error ? <p className="form-error" role="alert">{error}</p> : null}

@@ -192,4 +192,50 @@ describe("unified review panel", () => {
       data: { duplicateOf: "CHK-9" },
     });
   });
+
+  it("keeps choice-dependent assessment fields after the processing choices", () => {
+    const assessmentIssue: IssueDto = {
+      ...issue,
+      assessment: { ...issue.assessment!, suspectedDuplicateOf: "CHK-9" },
+      review: {
+        id: "review-assessment-layout-1",
+        kind: "assessment",
+        requestedFrom: "ASSESSING",
+        payload: { verdict: "BUG" },
+        choices: [{
+          id: "implement",
+          label: "开始实现",
+          continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+        }, {
+          id: "duplicate",
+          label: "确认为重复 Issue",
+          continuation: { resumeStatus: "CLOSED", resolution: "DUPLICATE" },
+        }, {
+          id: "reassess",
+          label: "要求重新分析",
+          feedbackRequired: true,
+          continuation: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+        }],
+        requestedAt: timestamp,
+      },
+    };
+    render(<ReviewPanel issue={assessmentIssue} onSubmit={async () => undefined} />);
+
+    const processingChoices = screen.getByRole("radiogroup", { name: "选择处理方式" });
+    const expectAfterChoices = (field: HTMLElement) => {
+      expect(
+        processingChoices.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    };
+
+    expectAfterChoices(screen.getByLabelText("Issue 标题"));
+
+    fireEvent.click(screen.getByRole("radio", { name: "确认为重复 Issue" }));
+    expect(screen.queryByLabelText("Issue 标题")).not.toBeInTheDocument();
+    expectAfterChoices(screen.getByLabelText("重复 Issue"));
+
+    fireEvent.click(screen.getByRole("radio", { name: "要求重新分析" }));
+    expect(screen.queryByLabelText("Issue 标题")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("重复 Issue")).not.toBeInTheDocument();
+  });
 });
