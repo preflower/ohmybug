@@ -207,6 +207,39 @@ describe("Issue detail", () => {
     const dialog = screen.getByRole("dialog", { name: "Checkout success" });
     expect(within(dialog).getByRole("img", { name: "Checkout success" })).toHaveAttribute("src", "blob:checkout-shot");
     expect(within(dialog).getByRole("button", { name: "关闭预览" })).toBeVisible();
+    expect(dialog.querySelector(".evidence-preview-header")).not.toBeInTheDocument();
+    expect(dialog.querySelector(".evidence-preview-stage > .evidence-preview-toolbar")).toBeInTheDocument();
+  });
+
+  it("zooms, pans, and resets screenshot evidence", async () => {
+    vi.spyOn(api, "evidenceSource").mockResolvedValue({ url: "blob:checkout-shot" });
+    render(<IssueDetail issue={issue} onRefresh={async () => undefined} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "预览 Checkout success" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Checkout success" });
+    const preview = within(dialog);
+    const image = preview.getByRole("img", { name: "Checkout success" });
+    const stage = image.closest(".evidence-preview-stage");
+    expect(stage).not.toBeNull();
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("100%");
+
+    fireEvent.click(preview.getByRole("button", { name: "放大" }));
+    fireEvent.click(preview.getByRole("button", { name: "放大" }));
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("150%");
+
+    fireEvent.pointerDown(stage!, { button: 0, clientX: 120, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(stage!, { clientX: 150, clientY: 120, pointerId: 1 });
+    fireEvent.pointerUp(stage!, { pointerId: 1 });
+    expect(image).toHaveStyle({ transform: "translate3d(30px, 20px, 0) scale(1.5)" });
+
+    fireEvent.click(preview.getByRole("button", { name: "重置视图" }));
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("100%");
+    expect(image).toHaveStyle({ transform: "translate3d(0px, 0px, 0) scale(1)" });
+
+    fireEvent.wheel(stage!, { clientX: 200, clientY: 160, deltaY: -100 });
+    expect(preview.getByLabelText("当前缩放比例")).toHaveTextContent("125%");
+    expect(image).not.toHaveStyle({ transform: "translate3d(0px, 0px, 0) scale(1.25)" });
   });
 
   it("plays recording evidence in a large dialog", async () => {
@@ -387,10 +420,60 @@ describe("Issue detail", () => {
     expect(screen.queryByText(/发布/)).not.toBeInTheDocument();
   });
 
+  it("shows bounded AI finalization recovery state without duplicate delivery actions", () => {
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "FINALIZATION_RECOVERY",
+        resolution: "FIXED",
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-1",
+          fingerprintRef: "fingerprint-1",
+          diagnostic: {
+            providerId: "git",
+            step: "add",
+            code: "GIT_ADD_FAILED",
+            message: "生成的临时目录阻塞了 Git 暂存",
+            relatedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
+          },
+        },
+      }}
+      onApproveDelivery={async () => undefined}
+      onCancel={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("AI 正在恢复交付")).toBeVisible();
+    const recovery = screen.getByRole("status", { name: "自动交付恢复" });
+    expect(within(recovery).getByText("第 1/1 次自动恢复")).toBeVisible();
+    expect(within(recovery).getByText("生成的临时目录阻塞了 Git 暂存")).toBeVisible();
+    expect(within(recovery).getByText(".pnpm-store/shared/v11/tmp/_tmp_fixture")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消 Agent 运行" })).toBeVisible();
+  });
+
   it("retries only a failed finalization", async () => {
     const onApproveDelivery = vi.fn(async () => undefined);
     render(<IssueDetail
-      issue={{ ...issue, status: "FINALIZATION_FAILED", repair: undefined }}
+      issue={{
+        ...issue,
+        status: "FINALIZATION_FAILED",
+        repair: undefined,
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-1",
+          fingerprintRef: "fingerprint-1",
+          summary: "未找到可安全自动修复的路径",
+          diagnostic: {
+            providerId: "git",
+            step: "commit",
+            code: "GIT_COMMAND_FAILED:commit",
+            message: "提交钩子拒绝了交付",
+            relatedPaths: [],
+          },
+        },
+      }}
       onApproveDelivery={onApproveDelivery}
       onRefresh={async () => undefined}
     />);
@@ -398,6 +481,10 @@ describe("Issue detail", () => {
     const recovery = within(screen.getByRole("region", { name: "交付恢复" }));
     expect(recovery.getByText("交付失败，待重试")).toBeVisible();
     expect(recovery.getByText("代码和工作目录已保留，可安全重试交付收尾。")).toBeVisible();
+    expect(recovery.getByText("自动恢复尝试 1/1 已用尽")).toBeVisible();
+    expect(recovery.getByText("自动恢复结果：未找到可安全自动修复的路径")).toBeVisible();
+    expect(recovery.getByText("commit · GIT_COMMAND_FAILED:commit")).toBeVisible();
+    expect(recovery.getByText("提交钩子拒绝了交付")).toBeVisible();
     await act(async () => {
       fireEvent.click(recovery.getByRole("button", { name: "重试交付" }));
     });

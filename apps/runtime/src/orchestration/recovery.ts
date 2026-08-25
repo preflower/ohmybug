@@ -152,6 +152,12 @@ function migrateLegacyFailure(
 }
 
 export function interruptedOperation(issue: Issue): PendingOperation | undefined {
+  if (
+    issue.status === "FINALIZATION_RECOVERY"
+    && issue.finalizationRecovery?.automaticAttempts === 1
+    && issue.finalizationRecovery.attemptId
+    && issue.finalizationRecovery.fingerprintRef
+  ) return "RECOVER_FINALIZATION";
   if (issue.status === "ASSESSING") return "ASSESS";
   if (issue.status === "REPAIRING") return "REPAIR";
   if (issue.status === "EVIDENCE_CAPTURE" && issue.repair?.deliveryDraft) {

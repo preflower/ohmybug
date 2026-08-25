@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  beginFinalizationRecovery,
   recordAgentSession,
   recordAssessment,
   recordAssessmentFailure,
@@ -9,6 +10,7 @@ import {
   recordEvidenceFailure,
   recordEvidenceRejection,
   recordImplementationDraft,
+  recordFinalizationRecoveryResult,
   recordRepairFailure,
   grantCapabilityRequest,
   recordCapabilityRequest,
@@ -61,6 +63,15 @@ function issueAt(status: IssueStatus): Issue {
 }
 
 describe("Issue workflow results", () => {
+  const diagnostic = {
+    providerId: "git",
+    step: "add" as const,
+    code: "GIT_COMMAND_FAILED:add",
+    exitCode: 128,
+    message: "Git could not add a generated directory",
+    stderr: "fatal: adding files failed",
+    relatedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
+  };
   const capabilityRequest = {
     id: "request-1",
     operation: "REPAIR" as const,
@@ -158,6 +169,81 @@ describe("Issue workflow results", () => {
     });
   });
 
+  it("starts one bounded finalization recovery attempt", () => {
+    const finalizing: Issue = {
+      ...issueAt("FINALIZING"),
+      finalizationRecovery: { automaticAttempts: 0 },
+    };
+    const recovering = beginFinalizationRecovery(finalizing, {
+      attemptId: "recovery-1",
+      diagnostic,
+      fingerprintRef: "fingerprint-1",
+    }, now);
+
+    expect(recovering).toMatchObject({
+      status: "FINALIZATION_RECOVERY",
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: "recovery-1",
+        diagnostic,
+        fingerprintRef: "fingerprint-1",
+      },
+    });
+    expect(() => beginFinalizationRecovery({
+      ...finalizing,
+      finalizationRecovery: { automaticAttempts: 1 },
+    }, {
+      attemptId: "recovery-2",
+      diagnostic,
+      fingerprintRef: "fingerprint-2",
+    }, now)).toThrow("FINALIZATION_RECOVERY_BUDGET_SPENT");
+  });
+
+  it.each([
+    ["UNCHANGED", "FINALIZING"],
+    ["CHANGED", "EVIDENCE_CAPTURE"],
+    ["UNSAFE", "FINALIZATION_FAILED"],
+  ] as const)("routes deterministic %s recovery validation to %s", (validation, status) => {
+    const recovering: Issue = {
+      ...issueAt("FINALIZATION_RECOVERY"),
+      repair: { iteration: 2, delivery },
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: "recovery-1",
+        diagnostic,
+        fingerprintRef: "fingerprint-1",
+      },
+    };
+    const result = recordFinalizationRecoveryResult(recovering, {
+      summary: "Removed generated package-manager cache",
+      diagnosis: "An empty nested repository blocked git add",
+      disposition: "RECOVERED",
+      affectedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
+    }, validation, now);
+
+    expect(result.status).toBe(status);
+    expect(result.finalizationRecovery?.summary).toBe(
+      "Removed generated package-manager cache",
+    );
+    if (validation === "CHANGED") {
+      expect(result.repair).toMatchObject({
+        iteration: 3,
+        evidenceRetries: 0,
+        deliveryDraft: {
+          summary: "Removed generated package-manager cache",
+          repairIteration: 3,
+        },
+      });
+      expect(result.repair?.delivery).toBeUndefined();
+    }
+    if (validation === "UNSAFE") {
+      expect(result.lastFailure).toEqual({
+        stage: "FINALIZATION_RECOVERY",
+        code: "FINALIZATION_RECOVERY_UNSAFE",
+      });
+    }
+  });
+
   it("persists implementation before evidence and retries proof without a new iteration", () => {
     const drafted = recordImplementationDraft(
       { ...issueAt("REPAIRING"), repair: { iteration: 2 } },
@@ -230,6 +316,7 @@ describe("Issue workflow results", () => {
     ["ASSESSING", "ASSESSMENT", "ASSESS"],
     ["REPAIRING", "REPAIR", "REPAIR"],
     ["EVIDENCE_CAPTURE", "EVIDENCE", "CAPTURE_EVIDENCE"],
+    ["FINALIZATION_RECOVERY", "FINALIZATION_RECOVERY", "RECOVER_FINALIZATION"],
   ] as const)("pauses %s for a capability request", (status, stage, operation) => {
     const current = {
       ...issueAt(status),

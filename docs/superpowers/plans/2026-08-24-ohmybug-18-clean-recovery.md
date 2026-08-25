@@ -193,10 +193,13 @@ Run with approval to write under `/Users/starrblink/.oh-my-bug/backups`:
 ```bash
 OH18_BACKUP_DIR="$(mktemp -d /Users/starrblink/.oh-my-bug/backups/ohmybug-18-clean-recovery-20260824-XXXXXX)"
 sqlite3 "$OH18_DB" ".backup '$OH18_BACKUP_DIR/runtime.sqlite'"
-sqlite3 -readonly "$OH18_BACKUP_DIR/runtime.sqlite" "PRAGMA integrity_check;"
+sqlite3 "file:$OH18_BACKUP_DIR/runtime.sqlite?immutable=1" "PRAGMA integrity_check;"
 ```
 
-Expected: `integrity_check` prints `ok`.
+Expected: `integrity_check` prints `ok`. Use the immutable URI because an online
+backup can retain the source database's WAL-mode header without copying transient
+`-wal` or `-shm` sidecars; ordinary read-only reopening may otherwise return SQLite
+error 14 while trying to initialize WAL state.
 
 - [ ] **Step 2: Move the local Issue branch with compare-and-swap protection**
 
@@ -214,7 +217,7 @@ Expected: the branch points to the validated clean commit. A compare-and-swap fa
 Run with approval to update `/Users/starrblink/.oh-my-bug/runtime.sqlite`:
 
 ```bash
-sqlite3 "$OH18_DB" ".bail on
+sqlite3 -bail "$OH18_DB" "
 CREATE TEMP TABLE assert_one(value INTEGER CHECK(value = 1));
 BEGIN IMMEDIATE;
 UPDATE module_resources

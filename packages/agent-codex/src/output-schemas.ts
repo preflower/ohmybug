@@ -131,6 +131,17 @@ export function parseCapabilityRequiredOutput(
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const candidate = value as Record<string, unknown>;
   if (candidate.outcome !== "CAPABILITY_REQUIRED") return undefined;
+  if ("result" in candidate || "capabilityRequest" in candidate) {
+    const envelope = strictObject(value, ["outcome", "result", "capabilityRequest"]);
+    if (envelope.result !== null || envelope.capabilityRequest === null) {
+      throw new Error("AGENT_CAPABILITY_REQUIRED");
+    }
+    return parseCapabilityRequest(envelope.capabilityRequest);
+  }
+  return parseCapabilityRequest(value);
+}
+
+function parseCapabilityRequest(value: unknown): AgentCapabilityRequest {
   const object = strictObject(value, [
     "outcome",
     "capabilities",

@@ -49,3 +49,10 @@ export interface RepairResult {
   summary: string;
   evidence: RepairEvidencePath[];
 }
+
+export interface FinalizationRecoveryResult {
+  summary: string;
+  diagnosis: string;
+  disposition: "RECOVERED" | "REVALIDATION_REQUIRED" | "UNSAFE";
+  affectedPaths: string[];
+}

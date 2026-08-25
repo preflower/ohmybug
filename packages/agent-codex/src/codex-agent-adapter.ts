@@ -20,6 +20,8 @@ import {
   type CreateSessionInput,
   type EvidenceCaptureInput,
   type EvidenceCaptureResult,
+  type FinalizationRecoveryInput,
+  type FinalizationRecoveryResult,
   type Issue,
   type RepairInput,
   type RepairResult,
@@ -41,6 +43,11 @@ import {
   evidenceOutputSchema,
   repairOutputSchema,
 } from "./output-schemas.js";
+import {
+  finalizationRecoveryOutputSchema,
+  parseFinalizationRecoveryOutput,
+} from "./finalization-recovery-output.js";
+import { finalizationRecoveryPrompt } from "./finalization-recovery-prompt.js";
 import { assessmentPrompt, evidencePrompt, repairPrompt } from "./prompts.js";
 import {
   effectiveStageCapabilities,
@@ -188,6 +195,33 @@ export class CodexAgentAdapter implements AgentAdapter {
     };
   }
 
+  async recoverFinalization(
+    session: AgentSessionRef,
+    input: FinalizationRecoveryInput,
+  ): Promise<FinalizationRecoveryResult> {
+    const rawOutput = await this.stageTurn(
+      session,
+      input,
+      "FINALIZATION_RECOVERY",
+      {
+        workingDirectory: requireProjectPath(input.issue),
+        ...effectiveTurnOptions(input.issue, "FINALIZATION_RECOVERY", {
+          sandboxMode: "workspace-write",
+          networkAccessEnabled: false,
+        }),
+        approvalPolicy: "never",
+      },
+      finalizationRecoveryPrompt(input),
+      finalizationRecoveryOutputSchema,
+    );
+    try {
+      return parseFinalizationRecoveryOutput(rawOutput);
+    } catch (error) {
+      await this.reportFailure(session.sessionId, "FINALIZATION_RECOVERY", error);
+      throw error;
+    }
+  }
+
   async cancel(
     session: AgentSessionRef,
     reason: AgentInterruptionReason,
@@ -201,7 +235,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   private async stageTurn(
     session: AgentSessionRef,
-    input: AssessInput | RepairInput | EvidenceCaptureInput,
+    input: AssessInput | RepairInput | EvidenceCaptureInput | FinalizationRecoveryInput,
     stage: CodexActivity["stage"],
     threadOptions: CodexThreadOptions,
     prompt: string,
@@ -251,7 +285,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   private async turn(
     session: AgentSessionRef,
-    input: AssessInput | RepairInput | EvidenceCaptureInput,
+    input: AssessInput | RepairInput | EvidenceCaptureInput | FinalizationRecoveryInput,
     stage: CodexActivity["stage"],
     threadOptions: CodexThreadOptions,
     prompt: string,
@@ -319,7 +353,7 @@ export class CodexAgentAdapter implements AgentAdapter {
   private assertState(
     state: AgentSessionRecord | undefined,
     session: AgentSessionRef,
-    input: AssessInput | RepairInput | EvidenceCaptureInput,
+    input: AssessInput | RepairInput | EvidenceCaptureInput | FinalizationRecoveryInput,
   ): asserts state is AgentSessionRecord {
     if (!state) throw new Error("AGENT_SESSION_NOT_FOUND");
     if (state.lifecycle !== "ACTIVE") throw new Error("AGENT_SESSION_RETIRED");
@@ -463,7 +497,13 @@ function publicActivity(
   stage: CodexActivity["stage"],
   event: CodexClientEvent,
 ): AgentActivityUpdate | undefined {
-  const stageName = stage === "ASSESSMENT" ? "分析" : stage === "REPAIR" ? "实现" : "采集证据";
+  const stageName = stage === "ASSESSMENT"
+    ? "分析"
+    : stage === "REPAIR"
+      ? "实现"
+      : stage === "EVIDENCE"
+        ? "采集证据"
+        : "交付恢复";
   if (event.type === "thread.started") {
     return activity(sessionId, stage, "AGENT_SESSION_CONNECTED", "Codex 会话已连接");
   }

@@ -235,6 +235,31 @@ describe("Runtime human commands", () => {
       .toEqual(["DELIVERY_FINALIZATION_RETRIED"]);
   });
 
+  it("rejects duplicate delivery actions while finalization recovery is active", () => {
+    const { commands, store } = createHarness();
+    const recovering = reviewedIssue({
+      id: "issue-finalization-recovering",
+      status: "FINALIZATION_RECOVERY",
+      resolution: "FIXED",
+      repair: { iteration: 1, delivery },
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        attemptId: "attempt-1",
+        fingerprintRef: "fingerprint-1",
+      },
+      revision: 9,
+    });
+    store.transaction((transaction) => transaction.insertIssue(
+      recovering,
+      "RECOVER_FINALIZATION",
+    ));
+
+    expect(() => commands.approveDelivery(recovering.id)).toThrow();
+    expect(() => commands.retryIssue(recovering.id)).toThrow("RETRY_NOT_AVAILABLE");
+    expect(store.listPendingOperations().map((pending) => pending.operation))
+      .toEqual(["RECOVER_FINALIZATION"]);
+  });
+
   it("persists an approved Feature Delivery as IMPLEMENTED", () => {
     const { commands, store } = createHarness();
     const feature = { ...assessment, verdict: "FEATURE" as const, rootCause: undefined };

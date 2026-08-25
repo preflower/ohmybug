@@ -1,9 +1,11 @@
 import type {
   ConfigField,
   ConfigValue,
+  FinalizationRecoveryResult,
   Issue,
   NewIssueEvent,
   RuntimeProject,
+  WorkspaceFinalizationDiagnostic,
 } from "@oh-my-bug/core";
 
 export interface BranchInfo {
@@ -74,6 +76,17 @@ export interface WorkspaceDescription {
   branch?: string;
 }
 
+export interface WorkspaceFinalizationRecoveryContext {
+  fingerprintRef: string;
+  workspaceStatus: string;
+  fingerprintSummary: string;
+}
+
+export type WorkspaceFinalizationRecoveryValidation =
+  | { kind: "UNCHANGED"; changedPaths: string[] }
+  | { kind: "CHANGED"; changedPaths: string[] }
+  | { kind: "UNSAFE"; changedPaths: string[]; reason: string };
+
 export interface WorkspaceProvider {
   readonly id: string;
   acquire(input: { issue: Issue; project: RuntimeProject }): Promise<{
@@ -88,6 +101,18 @@ export interface WorkspaceProvider {
     issue: Issue;
     resourceId: string;
   }): Promise<BranchInfo | undefined>;
+  prepareFinalizationRecovery?(input: {
+    issue: Issue;
+    resourceId: string;
+    diagnostic: WorkspaceFinalizationDiagnostic;
+    attemptId: string;
+  }): Promise<WorkspaceFinalizationRecoveryContext>;
+  validateFinalizationRecovery?(input: {
+    issue: Issue;
+    resourceId: string;
+    fingerprintRef: string;
+    result: FinalizationRecoveryResult;
+  }): Promise<WorkspaceFinalizationRecoveryValidation>;
   release(input: { issue: Issue; resourceId: string }): Promise<void>;
 }
 
