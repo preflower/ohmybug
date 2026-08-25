@@ -170,6 +170,7 @@ describe("AgentAdapter", () => {
       },
       workspaceStatus: "?? .pnpm-store/tmp/repository/",
       fingerprintSummary: "1 tracked change, 1 diagnostic root",
+      recoveryKind: "GENERATED_ARTIFACT_CLEANUP",
     });
     await adapter.cancel(ref, "USER_CANCELED");
 

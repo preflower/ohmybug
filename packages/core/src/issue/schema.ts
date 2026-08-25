@@ -86,11 +86,48 @@ export const workspaceFinalizationDiagnosticSchema = z.object({
   relatedPaths: z.array(repositoryRelativePathSchema).max(50),
 }).strict();
 
+const mergeContextFields = {
+  baseBranch: z.string().trim().min(1).max(200),
+  baseCommit: z.string().trim().min(1).max(100).optional(),
+  issueBranch: z.string().trim().min(1).max(200),
+  issueCommit: z.string().trim().min(1).max(100),
+  conflictPaths: z.array(repositoryRelativePathSchema).max(50),
+  mergeMessages: z.array(z.string().trim().min(1).max(1_000)).max(20),
+};
+
+export const finalizationRecoveryContextSchema = z.discriminatedUnion(
+  "recoveryKind",
+  [
+    z.object({
+      recoveryKind: z.literal("GENERATED_ARTIFACT_CLEANUP"),
+    }).strict(),
+    z.object({
+      recoveryKind: z.literal("MERGE_CONFLICT"),
+      merge: z.object({
+        kind: z.literal("MERGE_CONFLICT"),
+        ...mergeContextFields,
+        baseCommit: z.string().trim().min(1).max(100),
+        conflictPaths: z.array(repositoryRelativePathSchema).min(1).max(50),
+        mergePrepared: z.literal(true),
+      }).strict(),
+    }).strict(),
+    z.object({
+      recoveryKind: z.literal("MERGE_ENVIRONMENT"),
+      merge: z.object({
+        kind: z.literal("MERGE_ENVIRONMENT"),
+        ...mergeContextFields,
+        mergePrepared: z.literal(false),
+      }).strict(),
+    }).strict(),
+  ],
+);
+
 const finalizationRecoverySchema = z.object({
   automaticAttempts: z.union([z.literal(0), z.literal(1)]),
   attemptId: z.string().trim().min(1).max(200).optional(),
   diagnostic: workspaceFinalizationDiagnosticSchema.optional(),
   fingerprintRef: z.string().trim().min(1).max(500).optional(),
+  context: finalizationRecoveryContextSchema.optional(),
   summary: z.string().trim().min(1).max(4_000).optional(),
 }).strict();
 

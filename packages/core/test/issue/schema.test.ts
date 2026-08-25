@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { issueSchema, issueStatusSchema, type Issue } from "../../src/index.js";
+import {
+  issueSchema,
+  issueStatusSchema,
+  type FinalizationRecoveryContextSummary,
+  type Issue,
+} from "../../src/index.js";
 
 const issue: Issue = {
   id: "issue-1",
@@ -100,6 +105,88 @@ describe("Issue persistence schema", () => {
         },
       },
     })).toThrow();
+  });
+
+  it("round-trips bounded merge recovery context", () => {
+    const context = {
+      recoveryKind: "MERGE_CONFLICT",
+      merge: {
+        kind: "MERGE_CONFLICT",
+        baseBranch: "main",
+        baseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/ohmybug-21",
+        issueCommit: "b".repeat(40),
+        conflictPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+        mergeMessages: ["CONFLICT (content): Merge conflict in issue-detail.tsx"],
+        mergePrepared: true,
+      },
+    } satisfies FinalizationRecoveryContextSummary;
+    const recovering = {
+      ...issue,
+      status: "FINALIZATION_RECOVERY" as const,
+      finalizationRecovery: {
+        automaticAttempts: 1 as const,
+        context,
+      },
+    };
+
+    expect(issueSchema.parse(recovering).finalizationRecovery?.context).toEqual(context);
+    expect(issueSchema.parse({
+      ...recovering,
+      finalizationRecovery: { automaticAttempts: 1 },
+    }).finalizationRecovery?.context).toBeUndefined();
+  });
+
+  it.each([
+    { conflictPaths: ["/private/source.ts"] },
+    { conflictPaths: ["../source.ts"] },
+    { conflictPaths: Array.from({ length: 51 }, (_, index) => `src/${index}.ts`) },
+    { mergeMessages: Array.from({ length: 21 }, (_, index) => `message ${index}`) },
+    { mergeMessages: ["x".repeat(1_001)] },
+  ])("rejects unsafe or unbounded merge recovery context", (override) => {
+    expect(() => issueSchema.parse({
+      ...issue,
+      status: "FINALIZATION_RECOVERY",
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        context: {
+          recoveryKind: "MERGE_CONFLICT",
+          merge: {
+            kind: "MERGE_CONFLICT",
+            baseBranch: "main",
+            baseCommit: "a".repeat(40),
+            issueBranch: "ohmybug/ohmybug-21",
+            issueCommit: "b".repeat(40),
+            conflictPaths: ["src/feature.ts"],
+            mergeMessages: ["content conflict"],
+            mergePrepared: true,
+            ...override,
+          },
+        },
+      },
+    })).toThrow();
+  });
+
+  it("accepts inspection-only merge environment context", () => {
+    expect(issueSchema.parse({
+      ...issue,
+      status: "FINALIZATION_RECOVERY",
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        context: {
+          recoveryKind: "MERGE_ENVIRONMENT",
+          merge: {
+            kind: "MERGE_ENVIRONMENT",
+            baseBranch: "main",
+            issueBranch: "ohmybug/ohmybug-21",
+            issueCommit: "b".repeat(40),
+            conflictPaths: [],
+            mergeMessages: ["local base branch is unavailable"],
+            mergePrepared: false,
+          },
+        },
+      },
+    }).finalizationRecovery?.context?.recoveryKind).toBe("MERGE_ENVIRONMENT");
   });
 
   it("rejects the legacy APPROVED status", () => {

@@ -1,6 +1,7 @@
 import type {
   ConfigField,
   ConfigValue,
+  FinalizationRecoveryContextSummary,
   FinalizationRecoveryResult,
   Issue,
   NewIssueEvent,
@@ -76,7 +77,8 @@ export interface WorkspaceDescription {
   branch?: string;
 }
 
-export interface WorkspaceFinalizationRecoveryContext {
+export interface WorkspaceFinalizationRecoveryContext
+  extends FinalizationRecoveryContextSummary {
   fingerprintRef: string;
   workspaceStatus: string;
   fingerprintSummary: string;

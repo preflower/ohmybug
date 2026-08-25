@@ -68,11 +68,33 @@ export interface WorkspaceFinalizationDiagnostic {
   relatedPaths: string[];
 }
 
+export type FinalizationRecoveryKind =
+  | "GENERATED_ARTIFACT_CLEANUP"
+  | "MERGE_CONFLICT"
+  | "MERGE_ENVIRONMENT";
+
+export interface FinalizationRecoveryMergeContext {
+  kind: "MERGE_CONFLICT" | "MERGE_ENVIRONMENT";
+  baseBranch: string;
+  baseCommit?: string;
+  issueBranch: string;
+  issueCommit: string;
+  conflictPaths: string[];
+  mergeMessages: string[];
+  mergePrepared: boolean;
+}
+
+export interface FinalizationRecoveryContextSummary {
+  recoveryKind: FinalizationRecoveryKind;
+  merge?: FinalizationRecoveryMergeContext;
+}
+
 export interface FinalizationRecoveryState {
   automaticAttempts: 0 | 1;
   attemptId?: string;
   diagnostic?: WorkspaceFinalizationDiagnostic;
   fingerprintRef?: string;
+  context?: FinalizationRecoveryContextSummary;
   summary?: string;
 }
 

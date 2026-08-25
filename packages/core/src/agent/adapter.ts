@@ -1,4 +1,6 @@
 import type {
+  FinalizationRecoveryKind,
+  FinalizationRecoveryMergeContext,
   Issue,
   WorkspaceFinalizationDiagnostic,
 } from "../issue/types.js";
@@ -119,6 +121,8 @@ export interface FinalizationRecoveryInput {
   diagnostic: WorkspaceFinalizationDiagnostic;
   workspaceStatus: string;
   fingerprintSummary: string;
+  recoveryKind: FinalizationRecoveryKind;
+  merge?: FinalizationRecoveryMergeContext;
   continuation?: AgentContinuation;
 }
 

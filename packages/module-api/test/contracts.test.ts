@@ -38,6 +38,7 @@ describe("internal module contracts", () => {
         fingerprintRef: "fingerprint-1",
         workspaceStatus: "?? .pnpm-store/tmp/repository/",
         fingerprintSummary: "1 diagnostic root",
+        recoveryKind: "GENERATED_ARTIFACT_CLEANUP",
       }),
       validateFinalizationRecovery: async () => ({
         kind: "UNCHANGED",

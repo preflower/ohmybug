@@ -174,10 +174,24 @@ describe("Issue workflow results", () => {
       ...issueAt("FINALIZING"),
       finalizationRecovery: { automaticAttempts: 0 },
     };
+    const context = {
+      recoveryKind: "MERGE_CONFLICT" as const,
+      merge: {
+        kind: "MERGE_CONFLICT" as const,
+        baseBranch: "main",
+        baseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/ohmybug-21",
+        issueCommit: "b".repeat(40),
+        conflictPaths: ["src/feature.ts"],
+        mergeMessages: ["content conflict"],
+        mergePrepared: true,
+      },
+    };
     const recovering = beginFinalizationRecovery(finalizing, {
       attemptId: "recovery-1",
       diagnostic,
       fingerprintRef: "fingerprint-1",
+      context,
     }, now);
 
     expect(recovering).toMatchObject({
@@ -187,6 +201,7 @@ describe("Issue workflow results", () => {
         attemptId: "recovery-1",
         diagnostic,
         fingerprintRef: "fingerprint-1",
+        context,
       },
     });
     expect(() => beginFinalizationRecovery({
@@ -196,6 +211,7 @@ describe("Issue workflow results", () => {
       attemptId: "recovery-2",
       diagnostic,
       fingerprintRef: "fingerprint-2",
+      context,
     }, now)).toThrow("FINALIZATION_RECOVERY_BUDGET_SPENT");
   });
 

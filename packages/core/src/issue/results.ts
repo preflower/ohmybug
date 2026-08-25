@@ -10,6 +10,7 @@ import type {
   FinalizationRecoveryResult,
 } from "../agent/types.js";
 import type {
+  FinalizationRecoveryContextSummary,
   Issue,
   IssueFailure,
   PendingCapabilityRequest,
@@ -257,6 +258,7 @@ export interface BeginFinalizationRecoveryInput {
   attemptId: string;
   diagnostic: WorkspaceFinalizationDiagnostic;
   fingerprintRef: string;
+  context: FinalizationRecoveryContextSummary;
 }
 
 export function beginFinalizationRecovery(
@@ -279,6 +281,7 @@ export function beginFinalizationRecovery(
       attemptId,
       diagnostic: input.diagnostic,
       fingerprintRef,
+      context: input.context,
     },
     lastFailure: undefined,
   };
