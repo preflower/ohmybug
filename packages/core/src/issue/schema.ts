@@ -23,6 +23,7 @@ export const issueStatusSchema = z.enum([
   "FINALIZING",
   "FINALIZATION_RECOVERY",
   "FINALIZATION_FAILED",
+  "PAUSED",
   "COMPLETED",
   "CLOSED",
   "CANCELED",
@@ -193,6 +194,24 @@ const finalizationRecoverySchema = z.object({
   summary: z.string().trim().min(1).max(4_000).optional(),
 }).strict();
 
+const pauseContextSchema = z.object({
+  operation: z.enum(["ASSESS", "REPAIR", "CAPTURE_EVIDENCE", "RECOVER_FINALIZATION"]),
+  resumeStatus: z.enum([
+    "ASSESSING",
+    "REPAIRING",
+    "EVIDENCE_CAPTURE",
+    "FINALIZATION_RECOVERY",
+  ]),
+  pausedAt: z.iso.datetime(),
+}).strict();
+
+const pausePairs = new Set([
+  "ASSESS:ASSESSING",
+  "REPAIR:REPAIRING",
+  "CAPTURE_EVIDENCE:EVIDENCE_CAPTURE",
+  "RECOVER_FINALIZATION:FINALIZATION_RECOVERY",
+]);
+
 export const issueSchema: z.ZodType<Issue> = z
   .object({
     id: z.string().trim().min(1),
@@ -243,8 +262,34 @@ export const issueSchema: z.ZodType<Issue> = z
     pendingCapabilityRequest: pendingCapabilityRequestSchema.optional(),
     review: reviewRequestSchema.optional(),
     finalizationRecovery: finalizationRecoverySchema.optional(),
+    pauseContext: pauseContextSchema.optional(),
     revision: z.number().int().positive(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.status === "PAUSED" && !value.pauseContext) {
+      context.addIssue({
+        code: "custom",
+        path: ["pauseContext"],
+        message: "PAUSE_CONTEXT_REQUIRED",
+      });
+    }
+    if (value.status !== "PAUSED" && value.pauseContext) {
+      context.addIssue({
+        code: "custom",
+        path: ["pauseContext"],
+        message: "PAUSE_CONTEXT_NOT_ALLOWED",
+      });
+    }
+    if (value.pauseContext && !pausePairs.has(
+      `${value.pauseContext.operation}:${value.pauseContext.resumeStatus}`,
+    )) {
+      context.addIssue({
+        code: "custom",
+        path: ["pauseContext"],
+        message: "PAUSE_CONTEXT_MISMATCH",
+      });
+    }
+  });

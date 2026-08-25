@@ -306,6 +306,43 @@ describe("Issue persistence schema", () => {
     expect(issueSchema.parse(paused)).toEqual(paused);
   });
 
+  it("round-trips a user-paused Repair Issue", () => {
+    const paused = {
+      ...issue,
+      status: "PAUSED" as const,
+      pauseContext: {
+        operation: "REPAIR" as const,
+        resumeStatus: "REPAIRING" as const,
+        pausedAt: issue.updatedAt,
+      },
+    };
+
+    expect(issueSchema.parse(paused)).toEqual(paused);
+  });
+
+  it.each([
+    { ...issue, status: "PAUSED" },
+    {
+      ...issue,
+      pauseContext: {
+        operation: "REPAIR",
+        resumeStatus: "REPAIRING",
+        pausedAt: issue.updatedAt,
+      },
+    },
+    {
+      ...issue,
+      status: "PAUSED",
+      pauseContext: {
+        operation: "ASSESS",
+        resumeStatus: "REPAIRING",
+        pausedAt: issue.updatedAt,
+      },
+    },
+  ])("rejects invalid user pause state %#", (value) => {
+    expect(() => issueSchema.parse(value)).toThrow();
+  });
+
   it("rejects duplicate capability state", () => {
     expect(() => issueSchema.parse({
       ...issue,

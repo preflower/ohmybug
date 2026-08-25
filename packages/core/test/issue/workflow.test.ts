@@ -155,6 +155,61 @@ describe("Issue workflow", () => {
     expect(canceled.pendingCapabilityRequest).toBeUndefined();
   });
 
+  it.each([
+    ["ASSESSING", "ASSESS"],
+    ["REPAIRING", "REPAIR"],
+    ["EVIDENCE_CAPTURE", "CAPTURE_EVIDENCE"],
+    ["FINALIZATION_RECOVERY", "RECOVER_FINALIZATION"],
+  ] as const)("pauses and resumes %s", (status, operation) => {
+    const active = {
+      ...issueAt(status),
+      agentSession: { agent: "fake", sessionId: "session-1" },
+      repair: status === "ASSESSING" ? undefined : { iteration: 2 },
+    };
+
+    const paused = transitionIssue(active, "PAUSE", now);
+    expect(paused).toMatchObject({
+      status: "PAUSED",
+      pauseContext: { operation, resumeStatus: status, pausedAt: now },
+      agentSession: active.agentSession,
+      repair: active.repair,
+    });
+
+    const resumed = transitionIssue(paused, "RESUME", now);
+    expect(resumed).toMatchObject({
+      status,
+      agentSession: active.agentSession,
+      repair: active.repair,
+    });
+    expect(resumed.pauseContext).toBeUndefined();
+  });
+
+  it.each([
+    "RECEIVED",
+    "ASSESSMENT_FAILED",
+    "EVIDENCE_CHECK",
+    "EVIDENCE_FAILED",
+    "REPAIR_FAILED",
+    "PERMISSION_REQUIRED",
+    "REVIEW_REQUIRED",
+    "FINALIZATION_FAILED",
+  ] as const)("allows terminal cancellation from passive %s", (status) => {
+    expect(transitionIssue(issueAt(status), "CANCEL", now)).toMatchObject({
+      status: "CANCELED",
+      resolution: "CANCELED",
+    });
+  });
+
+  it.each([
+    "ASSESSING",
+    "REPAIRING",
+    "EVIDENCE_CAPTURE",
+    "FINALIZATION_RECOVERY",
+  ] as const)("requires pause instead of cancellation while %s is active", (status) => {
+    expect(() => transitionIssue(issueAt(status), "CANCEL", now))
+      .toThrow(/Illegal Issue transition/);
+  });
+
   it("clears grants and failures when finalization completes", () => {
     const completed = transitionIssue({
       ...issueAt("FINALIZING"),
