@@ -911,18 +911,7 @@ async function unresolvedMergeEnvironmentReason(
     }
   }
   if (diagnosticCode === "GIT_AUTO_MERGE_BASE_DIRTY") {
-    if (!(await gitRefExists(state.repositoryPath, baseRef))) {
-      return "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH";
-    }
-    const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
-    const checkedOutPath = worktreePathForBranch(listed, baseRef);
-    if (!checkedOutPath) return undefined;
-    try {
-      await assertWorktreeAndSubmodulesClean(checkedOutPath);
-      return undefined;
-    } catch {
-      return diagnosticCode;
-    }
+    return await automaticMergePreflightReason(state);
   }
   return "GIT_MERGE_ENVIRONMENT_UNRESOLVED";
 }
@@ -933,25 +922,39 @@ async function automaticMergePreflightReason(
   const baseRef = `refs/heads/${state.baseBranch}`;
   try {
     await assertGitSupportsAutomaticMerge(state.repositoryPath);
+  } catch {
+    return "GIT_AUTO_MERGE_REQUIRES_GIT_2_38";
+  }
+  if (!(await gitRefExists(state.repositoryPath, baseRef))) {
+    return "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH";
+  }
+  try {
     const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
     const checkedOutPath = worktreePathForBranch(listed, baseRef);
-    if (checkedOutPath) {
-      try {
-        await assertWorktreeAndSubmodulesClean(checkedOutPath);
-      } catch {
-        return "GIT_AUTO_MERGE_BASE_DIRTY";
-      }
-    }
     const [baseCommit, issueCommit] = await Promise.all([
       runGit(state.repositoryPath, ["rev-parse", baseRef]),
       runGit(state.worktreePath, ["rev-parse", "HEAD"]),
     ]);
-    await runGit(state.repositoryPath, [
+    const treeOutput = await runGit(state.repositoryPath, [
       "merge-tree",
       "--write-tree",
       baseCommit,
       issueCommit,
     ]);
+    const resultTree = treeOutput.split("\n", 1)[0]?.trim();
+    if (!resultTree) return "GIT_MERGE_ENVIRONMENT_UNRESOLVED";
+    if (checkedOutPath) {
+      try {
+        await assertBaseCheckoutMergeSafe(
+          state.repositoryPath,
+          checkedOutPath,
+          baseCommit,
+          resultTree,
+        );
+      } catch {
+        return "GIT_AUTO_MERGE_BASE_DIRTY";
+      }
+    }
     return undefined;
   } catch (error) {
     return error instanceof GitCommandError && error.exitCode === 1

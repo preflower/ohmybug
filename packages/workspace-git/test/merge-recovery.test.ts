@@ -322,7 +322,7 @@ describe("Git merge recovery diagnostics", () => {
     }
   });
 
-  it("retries only after a dirty base checkout is proven clean", async () => {
+  it("retries when dirty base paths are unrelated and rejects an overlapping path", async () => {
     const fixture = await createGitFixture();
     try {
       const provider = gitWorkspaceFactory({
@@ -330,6 +330,9 @@ describe("Git merge recovery diagnostics", () => {
         worktreeRoot: fixture.worktreeRoot,
       }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
       const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+      await writeFile(join(acquired.projectPath, "fixed.txt"), "issue fix\n");
+      await git(acquired.projectPath, "add", "fixed.txt");
+      await git(acquired.projectPath, "commit", "-m", "add issue fix");
       const localPath = join(fixture.repository, "local-only.txt");
       await writeFile(localPath, "dirty base\n");
       const diagnostic = {
@@ -362,15 +365,18 @@ describe("Git merge recovery diagnostics", () => {
         },
       };
 
-      await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toMatchObject({
-        kind: "UNSAFE",
-        reason: "GIT_AUTO_MERGE_BASE_DIRTY",
-      });
-      await rm(localPath);
       await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toEqual({
         kind: "UNCHANGED",
         changedPaths: [],
       });
+      await rm(localPath);
+      const collisionPath = join(fixture.repository, "fixed.txt");
+      await writeFile(collisionPath, "local collision\n");
+      await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_AUTO_MERGE_BASE_DIRTY",
+      });
+      await rm(collisionPath);
       await writeFile(join(fixture.repository, "advanced-after-dirty.txt"), "advance base\n");
       await git(fixture.repository, "add", "advanced-after-dirty.txt");
       await git(fixture.repository, "commit", "-m", "advance base after dirty recovery");
@@ -391,6 +397,9 @@ describe("Git merge recovery diagnostics", () => {
         worktreeRoot: fixture.worktreeRoot,
       }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
       const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+      await writeFile(join(acquired.projectPath, "README.md"), "issue-side change\n");
+      await git(acquired.projectPath, "add", "README.md");
+      await git(acquired.projectPath, "commit", "-m", "change issue README");
       const baseCommit = await git(fixture.repository, "rev-parse", "main");
       await git(fixture.repository, "switch", "-c", "holding");
       await git(fixture.repository, "branch", "-D", "main");
@@ -427,10 +436,16 @@ describe("Git merge recovery diagnostics", () => {
       await git(fixture.repository, "switch", "main");
       const dirtyBasePath = join(fixture.repository, "local-after-restore.txt");
       await writeFile(dirtyBasePath, "dirty restored base\n");
+      await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toEqual({
+        kind: "UNCHANGED",
+        changedPaths: [],
+      });
+      await writeFile(join(fixture.repository, "README.md"), "local collision\n");
       await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toMatchObject({
         kind: "UNSAFE",
         reason: "GIT_AUTO_MERGE_BASE_DIRTY",
       });
+      await git(fixture.repository, "restore", "README.md");
       await rm(dirtyBasePath);
       await expect(provider.validateFinalizationRecovery!(validationInput)).resolves.toEqual({
         kind: "UNCHANGED",
