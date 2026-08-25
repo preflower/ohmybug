@@ -1,19 +1,22 @@
 import {
   buildTrayTaskModel,
   type TrayIssue,
+  type TrayTaskIndicator,
   type TrayTaskSection,
 } from "./tray-task-model.js";
 
-export interface TrayMenuEntry {
+export interface TrayMenuEntry<Icon = unknown> {
   label?: string;
   type?: "separator";
   enabled?: boolean;
+  icon?: Icon;
   click?: () => void;
 }
 
-interface TrayMenuControllerOptions<Menu> {
+interface TrayMenuControllerOptions<Menu, Icon> {
   loadIssues(): Promise<TrayIssue[]>;
-  buildMenu(template: TrayMenuEntry[]): Menu;
+  resolveTaskIcon(indicator: TrayTaskIndicator): Icon | undefined;
+  buildMenu(template: TrayMenuEntry<Icon>[]): Menu;
   popUp(menu: Menu): void;
   openIssue(issueId: string): void;
   openAll(): void;
@@ -34,10 +37,10 @@ export function installTrayMenuEvents(tray: TrayEventSource, menu: OpenableTrayM
   tray.on("right-click", open);
 }
 
-export class TrayMenuController<Menu> {
+export class TrayMenuController<Menu, Icon = unknown> {
   private opening?: Promise<void>;
 
-  constructor(private readonly options: TrayMenuControllerOptions<Menu>) {}
+  constructor(private readonly options: TrayMenuControllerOptions<Menu, Icon>) {}
 
   open(): Promise<void> {
     this.opening ??= this.loadAndOpen().finally(() => { this.opening = undefined; });
@@ -45,12 +48,13 @@ export class TrayMenuController<Menu> {
   }
 
   private async loadAndOpen(): Promise<void> {
-    let taskArea: TrayMenuEntry[];
+    let taskArea: TrayMenuEntry<Icon>[];
     try {
       taskArea = buildTaskArea(
         await this.options.loadIssues(),
         this.options.openIssue,
         this.options.openAll,
+        this.options.resolveTaskIcon,
       );
     } catch {
       taskArea = [{ label: "任务列表暂不可用", enabled: false }];
@@ -66,33 +70,51 @@ export class TrayMenuController<Menu> {
   }
 }
 
-function sectionEntries(
+function sectionEntries<Icon>(
   heading: string,
   section: TrayTaskSection,
   openIssue: (issueId: string) => void,
   openAll: () => void,
-): TrayMenuEntry[] {
+  resolveTaskIcon: (indicator: TrayTaskIndicator) => Icon | undefined,
+): TrayMenuEntry<Icon>[] {
   if (section.total === 0) return [];
   return [
     { label: `${heading} (${section.total})`, enabled: false },
-    ...section.items.map((item) => ({
-      label: item.label,
-      click: () => openIssue(item.id),
-    })),
+    ...section.items.map((item) => {
+      const icon = resolveTaskIcon(item.indicator);
+      return {
+        label: item.label,
+        ...(icon === undefined ? {} : { icon }),
+        click: () => openIssue(item.id),
+      };
+    }),
     ...(section.overflow > 0
       ? [{ label: `还有 ${section.overflow} 条…`, click: openAll }]
       : []),
   ];
 }
 
-function buildTaskArea(
+function buildTaskArea<Icon>(
   issues: TrayIssue[],
   openIssue: (issueId: string) => void,
   openAll: () => void,
-): TrayMenuEntry[] {
+  resolveTaskIcon: (indicator: TrayTaskIndicator) => Icon | undefined,
+): TrayMenuEntry<Icon>[] {
   const model = buildTrayTaskModel(issues);
-  const attention = sectionEntries("需要你操作", model.attention, openIssue, openAll);
-  const processing = sectionEntries("AI 处理中", model.processing, openIssue, openAll);
+  const attention = sectionEntries(
+    "需要你操作",
+    model.attention,
+    openIssue,
+    openAll,
+    resolveTaskIcon,
+  );
+  const processing = sectionEntries(
+    "AI 处理中",
+    model.processing,
+    openIssue,
+    openAll,
+    resolveTaskIcon,
+  );
   if (!attention.length && !processing.length) {
     return [{ label: "暂无待处理任务", enabled: false }];
   }

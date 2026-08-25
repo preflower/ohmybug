@@ -21,13 +21,20 @@ const repairing = {
   status: "REPAIRING" as const,
   updatedAt: "2026-08-25T11:00:00.000Z",
 };
+const icons = {
+  failure: { name: "red" },
+  review: { name: "yellow" },
+  processing: { name: "blue" },
+} as const;
+type TestIcon = (typeof icons)[keyof typeof icons];
 
 function setup(loadIssues = vi.fn(async () => [review, repairing])) {
-  let template: TrayMenuEntry[] = [];
+  let template: TrayMenuEntry<TestIcon>[] = [];
   const menu = { native: true };
   const options = {
     loadIssues,
-    buildMenu: vi.fn((next: TrayMenuEntry[]) => {
+    resolveTaskIcon: vi.fn((indicator: keyof typeof icons): TestIcon | undefined => icons[indicator]),
+    buildMenu: vi.fn((next: TrayMenuEntry<TestIcon>[]) => {
       template = next;
       return menu;
     }),
@@ -62,13 +69,19 @@ describe("tray menu controller", () => {
 
     expect(fixture.template.map((item) => item.label ?? item.type)).toEqual([
       "需要你操作 (1)",
-      "CHK-1 · Review checkout — 待确认判断",
+      "CHK-1 · Review checkout",
       "separator",
       "AI 处理中 (1)",
-      "CHK-2 · Repair checkout — 实现中",
+      "CHK-2 · Repair checkout",
       "separator",
       "打开全部 Issues",
       "退出 Oh My Bug",
+    ]);
+    expect(fixture.template[1]?.icon).toBe(icons.review);
+    expect(fixture.template[4]?.icon).toBe(icons.processing);
+    expect(fixture.options.resolveTaskIcon.mock.calls.map(([indicator]) => indicator)).toEqual([
+      "review",
+      "processing",
     ]);
     fixture.template[1]?.click?.();
     fixture.template.at(-2)?.click?.();
@@ -110,10 +123,10 @@ describe("tray menu controller", () => {
 
     expect(fixture.template.map((item) => item.label ?? item.type)).toEqual([
       "需要你操作 (6)",
-      "CHK-6 · Review checkout — 待确认判断",
-      "CHK-5 · Review checkout — 待确认判断",
-      "CHK-4 · Review checkout — 待确认判断",
-      "CHK-3 · Review checkout — 待确认判断",
+      "CHK-6 · Review checkout",
+      "CHK-5 · Review checkout",
+      "CHK-4 · Review checkout",
+      "CHK-3 · Review checkout",
       "还有 2 条…",
       "separator",
       "打开全部 Issues",
@@ -121,6 +134,25 @@ describe("tray menu controller", () => {
     ]);
     fixture.template[5]?.click?.();
     expect(fixture.options.openAll).toHaveBeenCalledOnce();
+  });
+
+  it("uses the failure icon without changing the row action", async () => {
+    const fixture = setup(vi.fn(async () => [{ ...review, status: "REPAIR_FAILED" as const }]));
+    await fixture.controller.open();
+
+    expect(fixture.template[1]?.icon).toBe(icons.failure);
+    fixture.template[1]?.click?.();
+    expect(fixture.options.openIssue).toHaveBeenCalledWith("issue-1");
+  });
+
+  it("keeps a text-only task usable when no icon resolves", async () => {
+    const fixture = setup();
+    fixture.options.resolveTaskIcon.mockReturnValue(undefined);
+    await fixture.controller.open();
+
+    expect(fixture.template[1]?.icon).toBeUndefined();
+    fixture.template[1]?.click?.();
+    expect(fixture.options.openIssue).toHaveBeenCalledWith("issue-1");
   });
 
   it("shares one in-flight load across rapid repeated clicks", async () => {
