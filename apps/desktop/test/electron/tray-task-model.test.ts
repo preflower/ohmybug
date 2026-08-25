@@ -2,20 +2,24 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTrayTaskModel,
+  classifyTrayIndicator,
   classifyTrayStatus,
   truncateTrayTitle,
   type TrayIssue,
 } from "../../src/electron/tray-task-model.js";
 
-const attention = [
+const review = [
   "ASSESSMENT_REVIEW",
   "PERMISSION_REQUIRED",
   "ACCEPTANCE_REVIEW",
+] as const;
+const failure = [
   "ASSESSMENT_FAILED",
   "EVIDENCE_FAILED",
   "REPAIR_FAILED",
   "FINALIZATION_FAILED",
 ] as const;
+const attention = [...review, ...failure] as const;
 const processing = [
   "RECEIVED",
   "ASSESSING",
@@ -77,12 +81,22 @@ describe("tray task model", () => {
     expect(model.processing.items.map((item) => item.identifier)).toEqual(["CHK-10", "CHK-2"]);
   });
 
-  it("builds the native label from the shared Chinese status wording", () => {
+  it("maps every pending Issue status to a semantic indicator", () => {
+    for (const status of review) expect(classifyTrayIndicator(status)).toBe("review");
+    for (const status of failure) expect(classifyTrayIndicator(status)).toBe("failure");
+    for (const status of processing) expect(classifyTrayIndicator(status)).toBe("processing");
+    for (const status of terminal) expect(classifyTrayIndicator(status)).toBeNull();
+  });
+
+  it("builds a plain label and carries the semantic indicator", () => {
     const model = buildTrayTaskModel([
       issue("CHK-1", "ASSESSMENT_REVIEW", "2026-08-25T10:00:00.000Z", "Review checkout"),
     ]);
 
-    expect(model.attention.items[0]?.label).toBe("CHK-1 · Review checkout — 待确认判断");
+    expect(model.attention.items[0]).toMatchObject({
+      label: "CHK-1 · Review checkout",
+      indicator: "review",
+    });
   });
 
   it("truncates title text at 32 grapheme clusters without splitting emoji", () => {

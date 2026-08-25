@@ -1,4 +1,4 @@
-import { issueStatusLabels, type DesktopIssueStatus } from "../shared/issue-status.js";
+import type { DesktopIssueStatus } from "../shared/issue-status.js";
 
 export interface TrayIssue {
   id: string;
@@ -9,9 +9,11 @@ export interface TrayIssue {
 }
 
 export type TrayTaskGroup = "attention" | "processing";
+export type TrayTaskIndicator = "failure" | "review" | "processing";
 
 export interface TrayTaskItem extends TrayIssue {
   label: string;
+  indicator: TrayTaskIndicator;
 }
 
 export interface TrayTaskSection {
@@ -35,6 +37,19 @@ const attentionStatuses = new Set<DesktopIssueStatus>([
   "FINALIZATION_FAILED",
 ]);
 
+const reviewStatuses = new Set<DesktopIssueStatus>([
+  "ASSESSMENT_REVIEW",
+  "PERMISSION_REQUIRED",
+  "ACCEPTANCE_REVIEW",
+]);
+
+const failureStatuses = new Set<DesktopIssueStatus>([
+  "ASSESSMENT_FAILED",
+  "EVIDENCE_FAILED",
+  "REPAIR_FAILED",
+  "FINALIZATION_FAILED",
+]);
+
 const processingStatuses = new Set<DesktopIssueStatus>([
   "RECEIVED",
   "ASSESSING",
@@ -49,6 +64,13 @@ const segmenter = new Intl.Segmenter("zh-CN", { granularity: "grapheme" });
 
 export function classifyTrayStatus(status: DesktopIssueStatus): TrayTaskGroup | null {
   if (attentionStatuses.has(status)) return "attention";
+  if (processingStatuses.has(status)) return "processing";
+  return null;
+}
+
+export function classifyTrayIndicator(status: DesktopIssueStatus): TrayTaskIndicator | null {
+  if (reviewStatuses.has(status)) return "review";
+  if (failureStatuses.has(status)) return "failure";
   if (processingStatuses.has(status)) return "processing";
   return null;
 }
@@ -78,7 +100,8 @@ export function buildTrayTaskModel(issues: TrayIssue[], limit = 4): TrayTaskMode
       overflow: Math.max(0, ordered.length - limit),
       items: ordered.slice(0, limit).map((issue) => ({
         ...issue,
-        label: `${issue.identifier} · ${truncateTrayTitle(issue.title)} — ${issueStatusLabels[issue.status]}`,
+        label: `${issue.identifier} · ${truncateTrayTitle(issue.title)}`,
+        indicator: classifyTrayIndicator(issue.status)!,
       })),
     };
   };
