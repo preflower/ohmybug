@@ -394,6 +394,102 @@ describe("control center workbench", () => {
     expect(screen.getByText("Storefront", { selector: ".breadcrumb span:last-child" })).toBeVisible();
   });
 
+  it("opens a tray-selected Issue in the unfiltered workbench and cleans up the listener", async () => {
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    const storefrontIssue: IssueDto = {
+      ...issue,
+      id: "issue-2",
+      projectId: storefront.id,
+      identifier: "STO-1",
+      title: "Storefront search is stale",
+      updatedAt: "2026-08-20T09:01:00.000Z",
+    };
+    let navigate: ((target: { issueId?: string }) => void) | undefined;
+    const stopNavigation = vi.fn();
+    Object.defineProperty(window, "ohMyBug", {
+      configurable: true,
+      value: Object.freeze({
+        onTrayNavigation: vi.fn((listener) => {
+          navigate = listener;
+          return stopNavigation;
+        }),
+      }),
+    });
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue, storefrontIssue]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) => {
+      if (id === "missing-issue") throw new Error("ISSUE_NOT_FOUND");
+      return id === issue.id ? issue : storefrontIssue;
+    });
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    const view = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Storefront" }));
+    expect(within(screen.getByRole("region", { name: "Issue 列表" }))
+      .queryByText(issue.title)).not.toBeInTheDocument();
+
+    act(() => navigate?.({ issueId: issue.id }));
+    expect(window.location.hash).toBe("#/issues");
+    expect(screen.getByText("全部", { selector: ".breadcrumb span:last-child" })).toBeVisible();
+    expect(await screen.findByRole("heading", { level: 2, name: issue.title })).toBeVisible();
+
+    act(() => navigate?.({ issueId: "missing-issue" }));
+    await waitFor(() => expect(api.issue).toHaveBeenCalledWith("missing-issue"));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Issue 详情" }))
+      .not.toBeInTheDocument());
+
+    view.unmount();
+    expect(stopNavigation).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to the full Issue list when a tray target has already completed", async () => {
+    const terminal: IssueDto = {
+      ...issue,
+      id: "issue-completed",
+      identifier: "CHK-2",
+      title: "Already completed",
+      status: "COMPLETED",
+    };
+    let navigate: ((target: { issueId?: string }) => void) | undefined;
+    Object.defineProperty(window, "ohMyBug", {
+      configurable: true,
+      value: Object.freeze({
+        onTrayNavigation: vi.fn((listener) => {
+          navigate = listener;
+          return () => undefined;
+        }),
+      }),
+    });
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) => id === terminal.id ? terminal : issue);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { level: 2, name: issue.title })).toBeVisible();
+
+    act(() => navigate?.({ issueId: terminal.id }));
+    await waitFor(() => expect(api.issue).toHaveBeenCalledWith(terminal.id));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Issue 详情" }))
+      .not.toBeInTheDocument());
+    expect(within(screen.getByRole("region", { name: "Issue 列表" }))
+      .getByText(issue.title)).toBeVisible();
+  });
+
   it("defaults a new Issue to the active sidebar project", async () => {
     const storefront: ProjectDto = {
       ...project,

@@ -13,6 +13,8 @@ import {
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 import appIconUrl from "../../assets/icons/oh-my-bug.png";
+import type { TrayNavigationTarget } from "../electron/desktop-api.js";
+import { isTerminalIssueStatus } from "../shared/issue-status.js";
 import { api } from "./api/client.js";
 import type { DirectorySelection, ProductTransport } from "./api/transport.js";
 import type { BranchInfoDto, IntegrationPluginManifest, IssueDto, IssueWorkspaceInfoDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
@@ -99,6 +101,7 @@ function AppContent() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [health, setHealth] = useState<Record<string, { state: string; lastError?: string; nextRetryAt?: string }>>({});
   const [error, setError] = useState("");
+  const traySelection = useRef<string>();
   const canCreateIssue = loaded && projects.length > 0;
 
   const selectProjectDirectory = useCallback(async (): Promise<DirectorySelection> => {
@@ -170,6 +173,17 @@ function AppContent() {
     return () => window.removeEventListener(eventName, onRouteChange);
   }, []);
 
+  useEffect(() => window.ohMyBug?.onTrayNavigation?.((target: TrayNavigationTarget) => {
+    writeRoute("issues");
+    setView("issues");
+    setActiveProjectId(undefined);
+    setProjectEditor(undefined);
+    setProjectInspection(undefined);
+    traySelection.current = target.issueId;
+    setSelectedId(target.issueId);
+    setSelectedIssue(undefined);
+  }) ?? (() => undefined), []);
+
   const updateIssue = useCallback((issue: IssueDto) => {
     setSelectedIssue((current) =>
       issue.id === selectedId
@@ -226,10 +240,27 @@ function AppContent() {
 
   useEffect(() => {
     if (!selectedId) return;
+    const fromTray = traySelection.current === selectedId;
     void api
       .issue(selectedId)
-      .then(updateIssue)
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Issue 加载失败"));
+      .then((next) => {
+        if (fromTray) traySelection.current = undefined;
+        if (fromTray && isTerminalIssueStatus(next.status)) {
+          setSelectedId(undefined);
+          setSelectedIssue(undefined);
+          return;
+        }
+        updateIssue(next);
+      })
+      .catch((caught) => {
+        if (fromTray) {
+          traySelection.current = undefined;
+          setSelectedId(undefined);
+          setSelectedIssue(undefined);
+          return;
+        }
+        setError(caught instanceof Error ? caught.message : "Issue 加载失败");
+      });
   }, [selectedId, updateIssue]);
 
   const goTo = (next: View) => {
