@@ -24,6 +24,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./comp
 import { NewIssueDialog } from "./dialogs/new-issue-dialog.js";
 import { IssueDetail } from "./issues/issue-detail.js";
 import { IssueStatusBadge } from "./issues/issue-status.js";
+import {
+  createDefaultVisibleIssueStatuses,
+  isIssueStatusVisibleByDefault,
+} from "./issues/issue-status-filter-model.js";
+import { IssueStatusFilter } from "./issues/issue-status-filter.js";
 import { AgentActivity } from "./issues/agent-activity.js";
 import { completedBranchFromEvents } from "./issues/completed-branch.js";
 import { newestIssuesFirst } from "./issues/issue-order.js";
@@ -101,6 +106,10 @@ function AppContent() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [health, setHealth] = useState<Record<string, IntegrationHealth>>({});
   const [error, setError] = useState("");
+  const [visibleIssueStatuses, setVisibleIssueStatuses] = useState(
+    createDefaultVisibleIssueStatuses,
+  );
+  const issueRevisions = useRef(new Map<string, number>());
   const traySelection = useRef<string | undefined>(undefined);
   const canCreateIssue = loaded && projects.length > 0;
 
@@ -185,16 +194,24 @@ function AppContent() {
   }) ?? (() => undefined), []);
 
   const updateIssue = useCallback((issue: IssueDto) => {
-    setSelectedIssue((current) =>
-      issue.id === selectedId
-        && (current?.id !== issue.id || issue.revision >= current.revision)
-        ? issue
-        : current
-    );
+    const currentRevision = issueRevisions.current.get(issue.id);
+    if (currentRevision !== undefined && issue.revision < currentRevision) return;
+    issueRevisions.current.set(issue.id, issue.revision);
+    if (issue.id === selectedId && !visibleIssueStatuses.has(issue.status)) {
+      setSelectedId((current) => current === issue.id ? undefined : current);
+      setSelectedIssue((current) => current?.id === issue.id ? undefined : current);
+    } else {
+      setSelectedIssue((current) =>
+        issue.id === selectedId
+          && (current?.id !== issue.id || issue.revision >= current.revision)
+          ? issue
+          : current
+      );
+    }
     setIssues((current) => newestIssuesFirst(current.map((entry) =>
       entry.id === issue.id && issue.revision >= entry.revision ? issue : entry
     )));
-  }, [selectedId]);
+  }, [selectedId, visibleIssueStatuses]);
 
   const refreshIssue = useCallback(async () => {
     if (!selectedId) return;
@@ -213,11 +230,14 @@ function AppContent() {
       .then(([nextManifests, nextWorkspaceProviders, nextProjects, nextIssues, nextHealth]) => {
         if (!active) return;
         const orderedIssues = newestIssuesFirst(nextIssues);
+        issueRevisions.current = new Map(orderedIssues.map((issue) => [issue.id, issue.revision]));
         setManifests(nextManifests);
         setWorkspaceProviders(nextWorkspaceProviders);
         setProjects(nextProjects);
         setIssues(orderedIssues);
-        setSelectedId((current) => current ?? orderedIssues[0]?.id);
+        setSelectedId((current) => current ?? orderedIssues.find((issue) =>
+          isIssueStatusVisibleByDefault(issue.status)
+        )?.id);
         setHealth(nextHealth);
         setLoaded(true);
         if (nextProjects.length === 0) {
@@ -240,10 +260,12 @@ function AppContent() {
 
   useEffect(() => {
     if (!selectedId) return;
+    let active = true;
     const fromTray = traySelection.current === selectedId;
     void api
       .issue(selectedId)
       .then((next) => {
+        if (!active) return;
         if (fromTray) traySelection.current = undefined;
         if (fromTray && isTerminalIssueStatus(next.status)) {
           setSelectedId(undefined);
@@ -253,6 +275,7 @@ function AppContent() {
         updateIssue(next);
       })
       .catch((caught) => {
+        if (!active) return;
         if (fromTray) {
           traySelection.current = undefined;
           setSelectedId(undefined);
@@ -261,6 +284,9 @@ function AppContent() {
         }
         setError(caught instanceof Error ? caught.message : "Issue 加载失败");
       });
+    return () => {
+      active = false;
+    };
   }, [selectedId, updateIssue]);
 
   const goTo = (next: View) => {
@@ -274,7 +300,9 @@ function AppContent() {
   const goToProjectIssues = (projectId: string) => {
     goTo("issues");
     setActiveProjectId(projectId);
-    const nextIssue = issues.find((issue) => issue.projectId === projectId);
+    const nextIssue = issues.find((issue) =>
+      issue.projectId === projectId && visibleIssueStatuses.has(issue.status)
+    );
     setSelectedId(nextIssue?.id);
     setSelectedIssue((current) => current?.id === nextIssue?.id ? current : undefined);
   };
@@ -306,15 +334,30 @@ function AppContent() {
   const projectEditing = view === "projects" && Boolean(projectEditor);
   const viewTitle = projectEditing ? "项目配置" : pageTitle;
   const activeProject = projects.find((project) => project.id === activeProjectId);
-  const visibleIssues = activeProjectId
+  const projectIssues = activeProjectId
     ? issues.filter((issue) => issue.projectId === activeProjectId)
     : issues;
+  const visibleIssues = projectIssues.filter((issue) =>
+    visibleIssueStatuses.has(issue.status)
+  );
+  const toggleIssueStatus = (status: IssueDto["status"]) => {
+    if (selectedIssue?.status === status && visibleIssueStatuses.has(status)) {
+      setSelectedId(undefined);
+      setSelectedIssue(undefined);
+    }
+    setVisibleIssueStatuses((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  };
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><img alt="" className="brand-mark" draggable="false" src={appIconUrl} /><span className="brand-name">Oh My Bug ?!</span></div>
-        {canCreateIssue ? <NewIssueDialog open={newIssueOpen} preferredProjectId={activeProjectId} projects={projects} trigger={<Button aria-label="新建 Issue" className="new-issue" type="button"><span>新建 Issue</span><Plus aria-hidden="true" size={14} /></Button>} onOpenChange={setNewIssueOpen} onCreated={(issue) => { setIssues((current) => newestIssuesFirst([...current, issue])); setSelectedId(issue.id); setSelectedIssue(issue); goTo("issues"); }} /> : null}
+        {canCreateIssue ? <NewIssueDialog open={newIssueOpen} preferredProjectId={activeProjectId} projects={projects} trigger={<Button aria-label="新建 Issue" className="new-issue" type="button"><span>新建 Issue</span><Plus aria-hidden="true" size={14} /></Button>} onOpenChange={setNewIssueOpen} onCreated={(issue) => { issueRevisions.current.set(issue.id, issue.revision); setIssues((current) => newestIssuesFirst([...current, issue])); setSelectedId(issue.id); setSelectedIssue(issue); goTo("issues"); }} /> : null}
         <nav aria-label="主导航" className="nav-list">
           <a aria-label="Issues" aria-current={view === "issues" && !activeProjectId ? "page" : undefined} className="nav-item" href={routeHref("issues")} onClick={navigate("issues")}><CircleDot aria-hidden="true" size={15} strokeWidth={1.7} /><span>Issues</span></a>
           <a aria-label="Projects" aria-current={view === "projects" ? "page" : undefined} className="nav-item" href={routeHref("projects")} onClick={navigate("projects")}><FolderKanban aria-hidden="true" size={15} strokeWidth={1.7} /><span>Projects</span></a>
@@ -341,7 +384,7 @@ function AppContent() {
         </header> : null}
 
         {view === "issues" ? (
-          <IssueWorkspace issues={visibleIssues} projects={projects} selected={selectedIssue} selectedId={selectedId} onSelect={setSelectedId} onDeselect={() => { setSelectedId(undefined); setSelectedIssue(undefined); }} onRefresh={refreshIssue} onUpdated={updateIssue} />
+          <IssueWorkspace issues={visibleIssues} observedIssues={projectIssues} totalIssueCount={projectIssues.length} visibleIssueStatuses={visibleIssueStatuses} projects={projects} selected={selectedIssue} selectedId={selectedId} onToggleIssueStatus={toggleIssueStatus} onSelect={setSelectedId} onDeselect={() => { setSelectedId(undefined); setSelectedIssue(undefined); }} onRefresh={refreshIssue} onUpdated={updateIssue} />
         ) : view === "projects" ? (
           <ProjectsWorkspace
             editor={projectEditor}
@@ -365,12 +408,16 @@ function AppContent() {
   );
 }
 
-function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDeselect, onRefresh, onUpdated }: {
+function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueStatuses, projects, selected, selectedId, onToggleIssueStatus, onSelect, onDeselect, onRefresh, onUpdated }: {
   issues: IssueDto[];
+  observedIssues: IssueDto[];
+  totalIssueCount: number;
+  visibleIssueStatuses: ReadonlySet<IssueDto["status"]>;
   projects: ProjectDto[];
   selected?: IssueDto;
   selectedId?: string;
   onSelect: (id: string) => void;
+  onToggleIssueStatus: (status: IssueDto["status"]) => void;
   onDeselect: () => void;
   onRefresh: () => Promise<void>;
   onUpdated: (issue: IssueDto) => void;
@@ -402,7 +449,7 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
       setBranches((current) => ({ ...current, [issue.id]: result.branch! }));
     }
   });
-  useIssueListUpdates(issues, selectedId, onUpdated);
+  useIssueListUpdates(observedIssues, selectedId, onUpdated);
   const events = useIssueEvents(selectedId, onRefresh);
   const durableBranch = completedBranchFromEvents(events);
   const selectedBranch = selected
@@ -435,13 +482,17 @@ function IssueWorkspace({ issues, projects, selected, selectedId, onSelect, onDe
     <header className="view-header">
       <h1>Issues</h1>
       <div className="filters">
+        <IssueStatusFilter
+          onToggle={onToggleIssueStatus}
+          selectedStatuses={visibleIssueStatuses}
+        />
         {selected && !metadataOpen ? <MetadataRailToggle open={false} onToggle={() => setMetadataOpen(true)} /> : null}
       </div>
     </header>
     <section className={`workspace ${selected ? "has-selection" : ""} ${metadataOpen && selected ? "metadata-open" : "metadata-closed"}`} aria-label="Issue 工作区">
     <section className="issue-pane" aria-label="Issue 列表">
       <div className="issue-pane-heading"><span>当前 Issues</span><span>{issues.length}</span></div>
-      {issues.length ? <div className="issue-list">{issues.map((issue) => <Button aria-current={issue.id === selectedId ? "true" : undefined} className="issue-row h-auto w-full" key={issue.id} type="button" variant="ghost" onClick={() => onSelect(issue.id)}><span className="issue-row-top"><code>{issue.identifier}</code><IssueStatusBadge status={issue.status} recoveryKind={issue.finalizationRecovery?.context?.recoveryKind} recoveryStep={issue.finalizationRecovery?.diagnostic?.step} reviewKind={issue.review?.kind} /></span><strong>{issue.title}</strong><small>{issue.inputs.at(-1)?.integration ?? "manual"} · {new Date(issue.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small></Button>)}</div> : <div className="empty-list"><div><CircleDot aria-hidden="true" size={18} strokeWidth={1.5} /><h2>暂无 Issue</h2><p>手动创建，或为项目连接 Sentry 与 DingTalk。</p></div></div>}
+      {issues.length ? <div className="issue-list">{issues.map((issue) => <Button aria-current={issue.id === selectedId ? "true" : undefined} className="issue-row h-auto w-full" key={issue.id} type="button" variant="ghost" onClick={() => onSelect(issue.id)}><span className="issue-row-top"><code>{issue.identifier}</code><IssueStatusBadge status={issue.status} recoveryKind={issue.finalizationRecovery?.context?.recoveryKind} recoveryStep={issue.finalizationRecovery?.diagnostic?.step} reviewKind={issue.review?.kind} /></span><strong>{issue.title}</strong><small>{issue.inputs.at(-1)?.integration ?? "manual"} · {new Date(issue.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small></Button>)}</div> : <div className="empty-list"><div><CircleDot aria-hidden="true" size={18} strokeWidth={1.5} /><h2>{totalIssueCount > 0 ? "没有符合筛选条件的 Issue" : "暂无 Issue"}</h2><p>{totalIssueCount > 0 ? "调整状态过滤器以显示其他 Issue。" : "手动创建，或为项目连接 Sentry 与 DingTalk。"}</p></div></div>}
     </section>
     <section className={`detail-pane ${selected ? "detail-pane-scroll" : ""}`} aria-label={selected ? "Issue 详情" : "开始使用"}>
       {selected ? <><div className="mobile-detail-toolbar"><Button type="button" variant="ghost" onClick={onDeselect}><ChevronLeft aria-hidden="true" size={15} />返回 Issue 列表</Button></div><IssueDetail branch={selectedBranch} issue={selected} onRefresh={onRefresh} onSubmitReview={(input) => action(api.submitReview(selected.id, input))} onApproveDelivery={() => approveDelivery(selected)} onCancel={() => action(api.cancel(selected.id))} onRetry={() => action(api.retry(selected.id))} onRebuildSession={() => action(api.rebuildSession(selected.id, selected.revision))} onGrantCapabilities={(expectedRevision, requestId) => action(api.grantIssueCapabilities(selected.id, expectedRevision, requestId))} /></> : <Welcome />}
