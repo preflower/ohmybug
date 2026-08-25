@@ -197,21 +197,16 @@ function AppContent() {
     const currentRevision = issueRevisions.current.get(issue.id);
     if (currentRevision !== undefined && issue.revision < currentRevision) return;
     issueRevisions.current.set(issue.id, issue.revision);
-    if (issue.id === selectedId && !visibleIssueStatuses.has(issue.status)) {
-      setSelectedId((current) => current === issue.id ? undefined : current);
-      setSelectedIssue((current) => current?.id === issue.id ? undefined : current);
-    } else {
-      setSelectedIssue((current) =>
-        issue.id === selectedId
-          && (current?.id !== issue.id || issue.revision >= current.revision)
-          ? issue
-          : current
-      );
-    }
+    setSelectedIssue((current) =>
+      issue.id === selectedId
+        && (current?.id !== issue.id || issue.revision >= current.revision)
+        ? issue
+        : current
+    );
     setIssues((current) => newestIssuesFirst(current.map((entry) =>
       entry.id === issue.id && issue.revision >= entry.revision ? issue : entry
     )));
-  }, [selectedId, visibleIssueStatuses]);
+  }, [selectedId]);
 
   const refreshIssue = useCallback(async () => {
     if (!selectedId) return;

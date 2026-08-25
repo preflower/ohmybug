@@ -330,6 +330,37 @@ describe("control center workbench", () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
+  it("keeps the canceled Issue selected after its row leaves the default filter", async () => {
+    const canceledIssue: IssueDto = {
+      ...issue,
+      status: "CANCELED",
+      review: undefined,
+      revision: issue.revision + 1,
+    };
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    const cancel = vi.spyOn(api, "cancel").mockResolvedValue(canceledIssue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "取消 Issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认取消" }));
+
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith(issue.id));
+    expect(screen.getByRole("heading", { level: 2, name: issue.title })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Issue 详情" })).toBeVisible();
+    expect(screen.getByTestId("issue-metadata-rail")).toHaveTextContent("已取消");
+    expect(screen.getByRole("region", { name: "Issue 列表" })).toHaveTextContent(
+      "没有符合筛选条件的 Issue",
+    );
+  });
+
   it("orders the Issue list newest first and selects the newest Issue", async () => {
     const newestIssue: IssueDto = {
       ...issue,
