@@ -45,7 +45,7 @@ const payload = JSON.stringify({
   conversationId: "allowed",
   msgId: "message-1",
   isInAtList: true,
-  text: { content: "@Oh My Bug checkout fails" },
+  text: { content: "@OhMyBug checkout fails" },
 });
 
 describe("DingTalk stream", () => {
@@ -59,7 +59,7 @@ describe("DingTalk stream", () => {
     const controller = new AbortController();
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput: async () => {},
       now: () => now,
       secretValues: ["client-token", "client-secret"],
@@ -104,7 +104,7 @@ describe("DingTalk stream", () => {
       const controller = new AbortController();
       const stream = new DingTalkStream({
         client,
-        adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+        adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
         onInput: async () => {},
         baseRetryMs: 1_000,
         jitter: (delayMs) => delayMs,
@@ -134,7 +134,7 @@ describe("DingTalk stream", () => {
     const controller = new AbortController();
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput: async () => {},
       jitter: (delayMs) => delayMs,
       wait: async () => new Promise<void>(() => {}),
@@ -156,7 +156,7 @@ describe("DingTalk stream", () => {
     const controller = new AbortController();
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput: async () => {},
     });
 
@@ -179,7 +179,7 @@ describe("DingTalk stream", () => {
     const jitter = vi.fn((delayMs: number) => delayMs === 1 ? 0 : delayMs + 500);
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput: async () => {},
       baseRetryMs: 0,
       jitter,
@@ -198,7 +198,7 @@ describe("DingTalk stream", () => {
     const cappedController = new AbortController();
     const capped = new DingTalkStream({
       client: cappedClient,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput: async () => {},
       baseRetryMs: 10_000,
       jitter: (delayMs) => delayMs + 500,
@@ -227,7 +227,7 @@ describe("DingTalk stream", () => {
     const controller = new AbortController();
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput: async () => {},
       jitter: (delayMs) => delayMs,
       wait: retryWait.wait,
@@ -255,7 +255,7 @@ describe("DingTalk stream", () => {
     const retryWait = controllableWait();
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput: async () => {},
       baseRetryMs: 1_000,
       jitter: (delayMs) => delayMs,
@@ -288,7 +288,7 @@ describe("DingTalk stream", () => {
     const onInput = vi.fn(async () => undefined);
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput,
     });
     stream.register();
@@ -310,7 +310,7 @@ describe("DingTalk stream", () => {
       .mockResolvedValueOnce(undefined);
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput,
     });
     stream.register();
@@ -331,7 +331,7 @@ describe("DingTalk stream", () => {
     const controller = new AbortController();
     const stream = new DingTalkStream({
       client,
-      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"], mention: "@Oh My Bug" }),
+      adapter: new DingTalkIntegrationAdapter({ conversationIds: ["allowed"] }),
       onInput: async () => {},
       secretValues: ["secret-value"],
       wait: retryWait.wait,

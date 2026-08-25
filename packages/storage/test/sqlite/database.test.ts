@@ -1,11 +1,156 @@
 import { describe, expect, it } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 
-import { openRuntimeDatabase, SqliteRuntimeStore } from "../../src/index.js";
+import {
+  openRuntimeDatabase,
+  openRuntimeDatabaseReadOnly,
+  SqliteRuntimeStore,
+} from "../../src/index.js";
 import { runtimeSchema } from "../../src/sqlite/schema.js";
 import { createStore, databasePath, input, issue, now, project } from "../helpers.js";
 
 describe("SQLite Runtime database", () => {
+  it("migrates legacy assessment and acceptance review rows", () => {
+    const path = databasePath();
+    const legacy = new BetterSqlite3(path);
+    legacy.exec(runtimeSchema);
+    legacy.prepare(
+      `INSERT INTO projects (id, project_key, revision, next_issue_sequence, data_json)
+       VALUES (?, ?, 1, 3, ?)`,
+    ).run(project.id, project.key, JSON.stringify(project));
+    const insert = legacy.prepare(
+      `INSERT INTO issues
+        (id, project_id, identifier, status, revision, pending_operation, data_json)
+       VALUES (?, ?, ?, ?, 7, NULL, ?)`,
+    );
+    const assessment = {
+      revision: 2,
+      contentHash: "a".repeat(64),
+      verdict: "BUG",
+      suggestedTitle: "Fix payment route",
+      reasoning: "The route is missing",
+      rootCause: "Route registration was removed",
+      solution: "Restore the route",
+    };
+    insert.run(
+      "legacy-assessment",
+      project.id,
+      "OMB-1",
+      "ASSESSMENT_REVIEW",
+      JSON.stringify({
+        ...issue,
+        id: "legacy-assessment",
+        status: "ASSESSMENT_REVIEW",
+        revision: 7,
+        assessment,
+      }),
+    );
+    insert.run(
+      "legacy-delivery",
+      project.id,
+      "OMB-2",
+      "ACCEPTANCE_REVIEW",
+      JSON.stringify({
+        ...issue,
+        id: "legacy-delivery",
+        identifier: "OMB-2",
+        status: "ACCEPTANCE_REVIEW",
+        revision: 7,
+        assessment,
+        repair: {
+          iteration: 1,
+          delivery: {
+            summary: "Payment route restored",
+            evidence: [{
+              type: "screenshot",
+              label: "Payment page",
+              evidenceId: `sha256-${"b".repeat(64)}`,
+            }],
+          },
+        },
+      }),
+    );
+    legacy.close();
+
+    const store = new SqliteRuntimeStore(openRuntimeDatabase(path));
+    expect(store.getIssue("legacy-assessment")).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      revision: 8,
+      review: {
+        id: "legacy:legacy-assessment:7:assessment",
+        kind: "assessment",
+        requestedFrom: "ASSESSING",
+      },
+    });
+    expect(store.getIssue("legacy-delivery")).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      revision: 8,
+      review: {
+        id: "legacy:legacy-delivery:7:delivery",
+        kind: "delivery",
+        requestedFrom: "EVIDENCE_CHECK",
+      },
+    });
+    const rows = store.listIssues();
+    expect(rows).toHaveLength(2);
+    store.close();
+
+    const raw = new BetterSqlite3(path, { readonly: true });
+    expect(raw.prepare("SELECT status, revision FROM issues ORDER BY id").all()).toEqual([
+      { status: "REVIEW_REQUIRED", revision: 8 },
+      { status: "REVIEW_REQUIRED", revision: 8 },
+    ]);
+    raw.close();
+  });
+
+  it("decodes a legacy review from a read-only database without writing", () => {
+    const path = databasePath();
+    const legacy = new BetterSqlite3(path);
+    legacy.exec(runtimeSchema);
+    legacy.prepare(
+      `INSERT INTO projects (id, project_key, revision, next_issue_sequence, data_json)
+       VALUES (?, ?, 1, 2, ?)`,
+    ).run(project.id, project.key, JSON.stringify(project));
+    legacy.prepare(
+      `INSERT INTO issues
+        (id, project_id, identifier, status, revision, pending_operation, data_json)
+       VALUES (?, ?, ?, 'ASSESSMENT_REVIEW', 7, NULL, ?)`,
+    ).run(
+      "legacy-read-only",
+      project.id,
+      "OMB-1",
+      JSON.stringify({
+        ...issue,
+        id: "legacy-read-only",
+        status: "ASSESSMENT_REVIEW",
+        revision: 7,
+        assessment: {
+          revision: 1,
+          contentHash: "a".repeat(64),
+          verdict: "NOT_A_BUG",
+          suggestedTitle: "Expected behavior",
+          reasoning: "The product intentionally behaves this way",
+        },
+      }),
+    );
+    legacy.close();
+
+    const store = new SqliteRuntimeStore(openRuntimeDatabaseReadOnly(path));
+    expect(store.getIssue("legacy-read-only")).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      revision: 8,
+      review: { kind: "assessment" },
+    });
+    store.close();
+
+    const raw = new BetterSqlite3(path, { readonly: true });
+    expect(raw.prepare("SELECT status, revision FROM issues").get()).toEqual({
+      status: "ASSESSMENT_REVIEW",
+      revision: 7,
+    });
+    raw.close();
+  });
+
   it("rolls back every write when the transaction callback throws", () => {
     const store = createStore();
     store.registerProject(project);

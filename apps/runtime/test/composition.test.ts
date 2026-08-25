@@ -215,7 +215,7 @@ describe("Runtime composition boundary", () => {
       await composition.runtime.drain();
 
       expect(composition.runtime.getIssue(created.issue.id)).toMatchObject({
-        status: "ASSESSMENT_REVIEW",
+        status: "REVIEW_REQUIRED",
         agentSession: { agent: "codex" },
       });
     } finally {

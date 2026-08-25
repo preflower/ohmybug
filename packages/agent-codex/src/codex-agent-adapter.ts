@@ -5,6 +5,7 @@ import {
   AgentTurnInterruptedError,
   assessmentSchema,
   canonicalHash,
+  validateRepairResult,
   type AgentAdapter,
   type AgentInterruptionReason,
   type AgentActivityReporter,
@@ -149,14 +150,17 @@ export class CodexAgentAdapter implements AgentAdapter {
       await this.reportFailure(session.sessionId, "REPAIR", error);
       throw error;
     }
-    return {
-      summary: output.summary,
+    if (output.kind === "BUSINESS_DECISION_REQUIRED") {
+      return validateRepairResult(input, output);
+    }
+    return validateRepairResult(input, {
+      ...output,
       evidence: output.evidence.map((evidence) => ({
         type: evidence.type,
         label: evidence.label,
         relativePath: validateEvidencePath(evidence.relativePath),
       })),
-    };
+    });
   }
 
   async captureEvidence(

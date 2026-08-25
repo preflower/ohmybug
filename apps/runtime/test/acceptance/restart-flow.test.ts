@@ -104,7 +104,12 @@ describe("SQLite-backed review and recovery acceptance", () => {
     const projectRoot = join(dirname(databasePath), "project");
     mkdirSync(projectRoot);
     const agent = new CapabilityRequestAgent();
-    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [],
+    };
     const options = runtimeOptions(databasePath, agent);
     const runtime = createRuntime(options);
     runtime.registerProject({ ...project, path: projectRoot });
@@ -133,7 +138,7 @@ describe("SQLite-backed review and recovery acceptance", () => {
     if (otherCreated.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
     await runtime.drain();
     const otherIssue = runtime.getIssue(otherCreated.issue.id);
-    expect(otherIssue.status).toBe("ASSESSMENT_REVIEW");
+    expect(otherIssue.status).toBe("REVIEW_REQUIRED");
     expect(otherIssue).not.toHaveProperty("capabilityGrants");
     await runtime.stop();
 
@@ -157,7 +162,7 @@ describe("SQLite-backed review and recovery acceptance", () => {
     );
     await reopened.drain();
     const assessed = reopened.getIssue(stillPaused.id);
-    expect(assessed.status).toBe("ASSESSMENT_REVIEW");
+    expect(assessed.status).toBe("REVIEW_REQUIRED");
     expect(agent.assessSessions.filter((session) => session === "session-1")).toHaveLength(2);
     expect(agent.assessInputs.at(-1)?.continuation).toEqual({
       reason: "CAPABILITY_GRANTED",
@@ -188,7 +193,7 @@ describe("SQLite-backed review and recovery acceptance", () => {
     await reopened.drain();
     const delivered = reopened.getIssue(repairPaused.id);
     expect(delivered).toMatchObject({
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       capabilityGrants: [
         { capability: "NETWORK_ACCESS" },
         { capability: "HOST_EXECUTION" },
@@ -254,7 +259,7 @@ describe("SQLite-backed review and recovery acceptance", () => {
     agent.repair = async (session, input) => {
       const result = await repair(session, input);
       attempt += 1;
-      return attempt === 1
+      return attempt === 1 && result.kind === "DELIVERY_READY"
         ? { ...result, evidence: [{ ...result.evidence[0]!, relativePath: "missing.png" }] }
         : result;
     };
@@ -273,14 +278,14 @@ describe("SQLite-backed review and recovery acceptance", () => {
     await runtime.drain();
 
     expect(runtime.getIssue(issue.id)).toMatchObject({
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       repair: { iteration: 1, evidenceRetries: 1 },
     });
     expect(agent.evidenceInputs[0]?.feedback).toContain("Evidence could not be imported or verified");
     runtime.rejectDelivery(issue.id, "Please show the restored payment route.");
     await runtime.drain();
     expect(runtime.getIssue(issue.id)).toMatchObject({
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       repair: { iteration: 2 },
     });
     expect(agent.repairInputs[1]?.feedback).toBe("Please show the restored payment route.");
@@ -320,7 +325,7 @@ describe("SQLite-backed review and recovery acceptance", () => {
     });
     await reopened.start();
     await reopened.drain();
-    expect(reopened.getIssue(failed.id).status).toBe("ASSESSMENT_REVIEW");
+    expect(reopened.getIssue(failed.id).status).toBe("REVIEW_REQUIRED");
     expect(agent.assessSessions).toEqual(["session-1", "session-2"]);
     await reopened.stop();
   });
@@ -365,11 +370,11 @@ describe("SQLite-backed review and recovery acceptance", () => {
     const recoveredPending = runtime.getIssue(pending.issue.id);
     const recoveredAbandoned = runtime.getIssue(abandoned.id);
     expect(recoveredPending).toMatchObject({
-      status: "ASSESSMENT_REVIEW",
+      status: "REVIEW_REQUIRED",
       agentSession: { sessionId: expect.stringMatching(/^session-/) },
     });
     expect(recoveredAbandoned).toMatchObject({
-      status: "ASSESSMENT_REVIEW",
+      status: "REVIEW_REQUIRED",
       agentSession: { sessionId: expect.stringMatching(/^session-/) },
     });
     expect(recoveredAbandoned.agentSession?.sessionId)
@@ -420,7 +425,7 @@ describe("SQLite-backed review and recovery acceptance", () => {
     await runtime.drain();
 
     expect(runtime.getIssue(interrupted.id)).toMatchObject({
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       agentSession: interrupted.agentSession,
       repair: { iteration: 2 },
     });

@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { Assessment } from "@oh-my-bug/core";
 
 import { CodexAgentAdapter } from "../src/codex-agent-adapter.js";
+import {
+  parseRepairOutput,
+  repairOutputSchema,
+} from "../src/output-schemas.js";
 import { repairPrompt } from "../src/prompts.js";
 import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
@@ -16,7 +20,133 @@ const assessment: Assessment = {
   solution: "Handle expiry",
 };
 
+function deliveryOutput(summary: string, evidence: unknown[]) {
+  return {
+    kind: "DELIVERY_READY",
+    summary,
+    evidence,
+    integration: null,
+    verification: [{
+      command: "pnpm test",
+      outcome: "PASSED",
+      summary: "Configured tests passed",
+    }],
+  };
+}
+
 describe("Codex repair", () => {
+  const integration = {
+    baseBranch: "main",
+    observedBaseCommit: "a".repeat(40),
+    issueBranch: "ohmybug/ohmybug-19",
+  };
+  const deliveryReady = {
+    kind: "DELIVERY_READY",
+    summary: "Integrated main and fixed checkout",
+    evidence: [],
+    integration: {
+      baseCommit: integration.observedBaseCommit,
+      issueCommit: "b".repeat(40),
+      conflicts: [],
+    },
+    verification: [{
+      command: "pnpm test",
+      outcome: "PASSED",
+      summary: "Configured tests passed",
+    }],
+  } as const;
+
+  it("parses delivery-ready and business-decision output branches", () => {
+    const decision = {
+      kind: "BUSINESS_DECISION_REQUIRED",
+      summary: "Only one rounding behavior can remain",
+      decision: {
+        baseCommit: integration.observedBaseCommit,
+        issueCommit: "b".repeat(40),
+        conflictPaths: ["src/billing/total.ts"],
+        baseIntent: "Round the invoice total",
+        issueIntent: "Round every line",
+        incompatibility: "The same invoice produces different totals",
+        recommendation: "Use Issue behavior",
+        rationale: "It matches the acceptance examples",
+        choices: [{
+          id: "use-issue",
+          label: "Use Issue behavior",
+          description: "Apply per-line rounding",
+        }],
+      },
+    } as const;
+
+    expect(parseRepairOutput({
+      outcome: "RESULT",
+      result: deliveryReady,
+      capabilityRequest: null,
+    })).toEqual(deliveryReady);
+    expect(parseRepairOutput({
+      outcome: "RESULT",
+      result: decision,
+      capabilityRequest: null,
+    })).toEqual(decision);
+    expect(repairOutputSchema).toMatchObject({ type: "object" });
+  });
+
+  it("rejects incomplete integration results and unbounded business decisions", () => {
+    expect(() => parseRepairOutput({ ...deliveryReady, verification: [] }))
+      .toThrow();
+    expect(() => parseRepairOutput({
+      kind: "BUSINESS_DECISION_REQUIRED",
+      summary: "Choose",
+      decision: {
+        baseCommit: "a".repeat(40),
+        issueCommit: "b".repeat(40),
+        conflictPaths: ["../outside.ts"],
+        baseIntent: "x".repeat(5_000),
+        issueIntent: "Issue",
+        incompatibility: "Different behavior",
+        recommendation: "Choose Issue",
+        rationale: "Matches acceptance",
+        choices: [],
+      },
+    })).toThrow();
+  });
+
+  it("grants only Issue-Worktree Git authority and includes review continuation", () => {
+    const prompt = repairPrompt({
+      issue: issue({
+        projectPath: "/tmp/worktrees/OHMYBUG-19",
+        status: "REPAIRING",
+        assessment,
+        repair: { iteration: 1 },
+      }),
+      project,
+      assessment,
+      evidenceDirectory: "/private/intake/issue-1/1",
+      integration,
+      continuation: {
+        reason: "REVIEW_SUBMITTED",
+        requestId: "review-19",
+        kind: "business-merge-conflict",
+        choiceId: "use-issue",
+        feedback: "Keep the public API stable",
+        data: { approvedBy: "owner" },
+      },
+    });
+
+    for (const text of [
+      `Observed base: main@${integration.observedBaseCommit}`,
+      "Issue branch: ohmybug/ohmybug-19",
+      "Merge the observed base commit into the Issue branch in this Issue Worktree.",
+      "Resolve textual and compatible business conflicts yourself.",
+      "Return BUSINESS_DECISION_REQUIRED only when the observable business behaviors are mutually exclusive.",
+      "You may stage and commit only in this Issue Worktree.",
+      "Do not mutate the base Worktree, another Worktree, non-Issue refs, remotes, hooks, or Git configuration.",
+      "Do not rebase or rewrite accepted history.",
+      'Selected review choice: "use-issue"',
+      "Keep the public API stable",
+      '{"approvedBy":"owner"}',
+    ]) expect(prompt).toContain(text);
+  });
+
   it("returns a completed Repair result when thread disposal fails", async () => {
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-cleanup", "thread-cleanup");
@@ -25,7 +155,7 @@ describe("Codex repair", () => {
     const adapter = new CodexAgentAdapter({
       sessions,
       client: new FixtureClient([
-        JSON.stringify({ summary: "Implemented", evidence: [] }),
+        JSON.stringify(deliveryOutput("Implemented", [])),
       ], cleanupError),
       reportActivity,
     });
@@ -38,7 +168,16 @@ describe("Codex repair", () => {
         assessment,
         evidenceDirectory: "/private/intake/issue-1/1",
       },
-    )).resolves.toEqual({ summary: "Implemented", evidence: [] });
+    )).resolves.toEqual({
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [{
+        command: "pnpm test",
+        outcome: "PASSED",
+        summary: "Configured tests passed",
+      }],
+    });
     expect(reportActivity).toHaveBeenCalledWith(expect.objectContaining({
       type: "AGENT_TEMP_CLEANUP_FAILED",
       stage: "REPAIR",
@@ -130,7 +269,7 @@ describe("Codex repair", () => {
   it("applies Issue grants to Repair turn options", async () => {
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-granted", "thread-granted");
-    const client = new FixtureClient([JSON.stringify({ summary: "Implemented", evidence: [] })]);
+    const client = new FixtureClient([JSON.stringify(deliveryOutput("Implemented", []))]);
     const adapter = new CodexAgentAdapter({ client, sessions });
 
     await adapter.repair(
@@ -179,6 +318,10 @@ describe("Codex repair", () => {
     expect(prompt).toContain("lower-privilege alternative");
     expect(prompt).toContain('"NETWORK_ACCESS"');
     expect(prompt).toContain("Do not request a capability that is already available");
+    expect(prompt).toContain("outcome=RESULT");
+    expect(prompt).toContain("capabilityRequest=null");
+    expect(prompt).toContain("outcome=CAPABILITY_REQUIRED");
+    expect(prompt).toContain("result=null");
   });
 
   it("explains a capability grant continuation", () => {
@@ -203,7 +346,7 @@ describe("Codex repair", () => {
     await bindSession(sessions, "logical-draft", "thread-draft");
     const adapter = new CodexAgentAdapter({
       sessions,
-      client: new FixtureClient([JSON.stringify({ summary: "Implemented", evidence: [] })]),
+      client: new FixtureClient([JSON.stringify(deliveryOutput("Implemented", []))]),
     });
 
     await expect(adapter.repair(
@@ -214,7 +357,11 @@ describe("Codex repair", () => {
         assessment,
         evidenceDirectory: "/private/intake/issue-1/1",
       },
-    )).resolves.toEqual({ summary: "Implemented", evidence: [] });
+    )).resolves.toMatchObject({
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+    });
   });
 
   it("implements an approved Feature assessment", async () => {
@@ -227,10 +374,10 @@ describe("Codex repair", () => {
     };
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-feature", "thread-feature");
-    const client = new FixtureClient([JSON.stringify({
-      summary: "Added CSV export",
-      evidence: [{ type: "screenshot", label: "Export action", relativePath: "export.png" }],
-    })]);
+    const client = new FixtureClient([JSON.stringify(deliveryOutput(
+      "Added CSV export",
+      [{ type: "screenshot", label: "Export action", relativePath: "export.png" }],
+    ))]);
     const adapter = new CodexAgentAdapter({ client, sessions });
 
     await expect(adapter.repair(
@@ -246,10 +393,10 @@ describe("Codex repair", () => {
   });
 
   it("resumes the same native thread and returns path-only visual evidence", async () => {
-    const client = new FixtureClient([JSON.stringify({
-      summary: "Fixed",
-      evidence: [{ type: "screenshot", label: "Proof", relativePath: "proof.png" }],
-    })]);
+    const client = new FixtureClient([JSON.stringify(deliveryOutput(
+      "Fixed",
+      [{ type: "screenshot", label: "Proof", relativePath: "proof.png" }],
+    ))]);
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-1", "thread-1");
     const adapter = new CodexAgentAdapter({ client, sessions });
@@ -276,8 +423,14 @@ describe("Codex repair", () => {
     );
 
     expect(result).toEqual({
+      kind: "DELIVERY_READY",
       summary: "Fixed",
       evidence: [{ type: "screenshot", label: "Proof", relativePath: "proof.png" }],
+      verification: [{
+        command: "pnpm test",
+        outcome: "PASSED",
+        summary: "Configured tests passed",
+      }],
     });
     expect(client.resumes[0]).toMatchObject({
       threadId: "thread-1",
@@ -288,7 +441,7 @@ describe("Codex repair", () => {
       },
     });
     expect(client.prompts[0]).toContain("/private/intake/issue-1/2");
-    expect(client.prompts[0]).toContain("Oh My Bug does not manage Git");
+    expect(client.prompts[0]).toContain("You may stage and commit only in this Issue Worktree");
     expect(client.prompts[0]).toContain("Show the fixed result");
     expect(client.prompts[0]).toContain(
       "The previous turn was interrupted by a Runtime restart.",
@@ -308,10 +461,10 @@ describe("Codex repair", () => {
     await bindSession(sessions, "logical-empty-label", "thread-empty-label");
     const adapter = new CodexAgentAdapter({
       sessions,
-      client: new FixtureClient([JSON.stringify({
-        summary: "Fixed",
-        evidence: [{ type: "screenshot", label: "", relativePath: "proof.png" }],
-      })]),
+      client: new FixtureClient([JSON.stringify(deliveryOutput(
+        "Fixed",
+        [{ type: "screenshot", label: "", relativePath: "proof.png" }],
+      ))]),
     });
 
     await expect(adapter.repair(
@@ -340,10 +493,10 @@ describe("Codex repair", () => {
       await bindSession(sessions, "logical-1", "thread-1");
       const adapter = new CodexAgentAdapter({
         sessions,
-        client: new FixtureClient([JSON.stringify({
-          summary: "Fixed",
-          evidence: [{ type: "screenshot", label: "Proof", relativePath }],
-        })]),
+        client: new FixtureClient([JSON.stringify(deliveryOutput(
+          "Fixed",
+          [{ type: "screenshot", label: "Proof", relativePath }],
+        ))]),
       });
 
       await expect(adapter.repair(

@@ -11,7 +11,6 @@ import type { IntegrationInput } from "../integration/input.js";
 export type IssueStatus =
   | "RECEIVED"
   | "ASSESSING"
-  | "ASSESSMENT_REVIEW"
   | "ASSESSMENT_FAILED"
   | "REPAIRING"
   | "EVIDENCE_CAPTURE"
@@ -19,7 +18,7 @@ export type IssueStatus =
   | "EVIDENCE_FAILED"
   | "REPAIR_FAILED"
   | "PERMISSION_REQUIRED"
-  | "ACCEPTANCE_REVIEW"
+  | "REVIEW_REQUIRED"
   | "FINALIZING"
   | "FINALIZATION_RECOVERY"
   | "FINALIZATION_FAILED"
@@ -34,6 +33,48 @@ export type IssueResolution =
   | "DUPLICATE"
   | "CANCELED";
 export type IssueTitleSource = "integration" | "assessment" | "user";
+
+export type ReviewJson =
+  | null
+  | boolean
+  | number
+  | string
+  | ReviewJson[]
+  | { [key: string]: ReviewJson };
+
+export type ReviewSourceStatus = "ASSESSING" | "REPAIRING" | "EVIDENCE_CHECK";
+export type ReviewOperation = "ASSESS" | "REPAIR" | "FINALIZE";
+export type ReviewResumeStatus = "ASSESSING" | "REPAIRING" | "FINALIZING" | "CLOSED";
+
+export interface ReviewContinuation {
+  operation?: ReviewOperation;
+  resumeStatus: ReviewResumeStatus;
+  resolution?: IssueResolution;
+}
+
+export interface ReviewChoice {
+  id: string;
+  label: string;
+  feedbackRequired?: boolean;
+  continuation: ReviewContinuation;
+}
+
+export interface ReviewRequest {
+  id: string;
+  kind: string;
+  requestedFrom: ReviewSourceStatus;
+  payload: ReviewJson;
+  choices: ReviewChoice[];
+  requestedAt: string;
+}
+
+export interface ReviewSubmission {
+  expectedRevision: number;
+  requestId: string;
+  choiceId: string;
+  feedback?: string;
+  data?: ReviewJson;
+}
 
 export interface RepairState {
   iteration: number;
@@ -128,6 +169,7 @@ export interface Issue {
   lastFailure?: IssueFailure;
   capabilityGrants?: CapabilityGrant[];
   pendingCapabilityRequest?: PendingCapabilityRequest;
+  review?: ReviewRequest;
   finalizationRecovery?: FinalizationRecoveryState;
   revision: number;
   createdAt: string;

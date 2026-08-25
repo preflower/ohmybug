@@ -46,23 +46,26 @@ Runtime Worker 使用单进程有界调度器，同时推进最多 3 个不同 I
 stateDiagram-v2
   [*] --> RECEIVED: IntegrationInput accepted
   RECEIVED --> ASSESSING
-  ASSESSING --> ASSESSMENT_REVIEW: Assessment ready
+  ASSESSING --> REVIEW_REQUIRED: Assessment ready
   ASSESSING --> ASSESSMENT_FAILED: Agent failure
   ASSESSMENT_FAILED --> ASSESSING: retry or confirmed session rebuild
 
-  ASSESSMENT_REVIEW --> CLOSED: confirm NOT_A_BUG
-  ASSESSMENT_REVIEW --> CLOSED: confirm DUPLICATE
-  ASSESSMENT_REVIEW --> ASSESSING: request reassessment
-  ASSESSMENT_REVIEW --> REPAIRING: approve BUG
+  REVIEW_REQUIRED --> CLOSED: confirm NOT_A_BUG or DUPLICATE
+  REVIEW_REQUIRED --> ASSESSING: request reassessment
+  REVIEW_REQUIRED --> REPAIRING: approve implementation, request changes, or choose business intent
+  REVIEW_REQUIRED --> FINALIZING: accept Delivery
 
-  REPAIRING --> EVIDENCE_CHECK: Delivery ready
+  REPAIRING --> REVIEW_REQUIRED: mutually exclusive business behavior
+  REPAIRING --> EVIDENCE_CHECK: integrated Delivery ready
   EVIDENCE_CHECK --> REPAIRING: invalid visual evidence
-  EVIDENCE_CHECK --> ACCEPTANCE_REVIEW: evidence accepted
+  EVIDENCE_CHECK --> REVIEW_REQUIRED: evidence accepted
   REPAIRING --> REPAIR_FAILED: Agent failure
   REPAIR_FAILED --> REPAIRING: retry or confirmed session rebuild
 
-  ACCEPTANCE_REVIEW --> REPAIRING: reject Delivery
-  ACCEPTANCE_REVIEW --> COMPLETED: approve Delivery / FIXED or IMPLEMENTED
+  FINALIZING --> REPAIRING: base advanced or publication requires revalidation
+  FINALIZING --> COMPLETED: guarded fast-forward publication
 ```
 
-Assessment 与全部 Repair iteration 使用同一个 provider-native 会话。会话缺失时 Runtime 以 `AGENT_SESSION_UNAVAILABLE` 明确失败，只有用户点击重建后才退休旧记录、创建新会话并恢复原阶段。Runtime 只接受截图或录屏证据；批准 Delivery 后 Issue 以 `COMPLETED / FIXED` 或 `COMPLETED / IMPLEMENTED` 结束。`CLOSED` 保留给 `NOT_A_BUG` 和 `DUPLICATE`。
+所有人工暂停统一表示为 `REVIEW_REQUIRED + ReviewRequest`；Core 只校验有限选项、revision、request identity 和后续状态，不理解 Assessment、Delivery 或业务冲突的具体原因。Runtime 根据 `review.kind` 生成界面语义并提交一个 `submitReview` 命令。
+
+Assessment 与全部 Repair iteration 使用同一个 provider-native 会话。对于配置为合并到基线的 Git Workspace，每次 Repair 都重新观察最新基线 commit，并要求 Agent 在 Issue worktree 内完成实现、基线集成、冲突处理、提交和验证。文本冲突及可兼容的业务改动由 Agent 处理；只有双方业务行为互斥时才生成 `business-merge-conflict` 审核。通过证据验收后，Git Provider 仅以受保护的 fast-forward 发布已验证 commit；基线再次前进则回到新一轮 Repair。会话缺失时 Runtime 以 `AGENT_SESSION_UNAVAILABLE` 明确失败，只有用户点击重建后才退休旧记录、创建新会话并恢复原阶段。Runtime 只接受截图或录屏证据；批准 Delivery 后 Issue 以 `COMPLETED / FIXED` 或 `COMPLETED / IMPLEMENTED` 结束。`CLOSED` 保留给 `NOT_A_BUG` 和 `DUPLICATE`。

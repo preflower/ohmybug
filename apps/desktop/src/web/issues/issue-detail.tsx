@@ -3,10 +3,9 @@ import { type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEv
 
 import { api } from "../api/client.js";
 import type {
-  ApproveAssessmentInput,
-  AssessmentReference,
   BranchInfoDto,
   IssueDto,
+  ReviewSubmissionInput,
 } from "../api/types.js";
 import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
@@ -17,20 +16,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/ui/dialog.js";
-import { ApprovalPanel } from "./approval-panel.js";
 import { CapabilityRequestPanel } from "./capability-request-panel.js";
 import { IssueStatusBadge } from "./issue-status.js";
+import { ReviewPanel } from "./review-panel.js";
 
 interface IssueDetailProps {
   issue: IssueDto;
   branch?: BranchInfoDto;
   onRefresh: () => Promise<void>;
-  onApproveAssessment?: (input: ApproveAssessmentInput) => Promise<void>;
-  onConfirmNotABug?: (reference: AssessmentReference) => Promise<void>;
-  onConfirmDuplicate?: (reference: AssessmentReference, duplicateOf: string) => Promise<void>;
-  onRequestReassessment?: (feedback: string) => Promise<void>;
-  onRejectDelivery?: (feedback: string) => Promise<void>;
   onApproveDelivery?: () => Promise<void>;
+  onSubmitReview?: (input: ReviewSubmissionInput) => Promise<void>;
   onCancel?: () => Promise<void>;
   onRetry?: () => Promise<void>;
   onRebuildSession?: () => Promise<void>;
@@ -76,12 +71,8 @@ export function IssueDetail({
   issue,
   branch,
   onRefresh,
-  onApproveAssessment,
-  onConfirmNotABug,
-  onConfirmDuplicate,
-  onRequestReassessment,
-  onRejectDelivery,
   onApproveDelivery,
+  onSubmitReview,
   onCancel,
   onRetry,
   onRebuildSession,
@@ -109,11 +100,6 @@ export function IssueDetail({
     "PERMISSION_REQUIRED",
     "FINALIZATION_RECOVERY",
   ].includes(issue.status);
-  const compactAssessment = issue.status === "ASSESSMENT_REVIEW"
-    && Boolean(assessment)
-    && (assessment?.verdict === "BUG" || assessment?.verdict === "FEATURE")
-    && !assessment?.suspectedDuplicateOf
-    && Boolean(onRequestReassessment);
   const sessionUnavailable = issue.lastFailure?.code === "AGENT_SESSION_UNAVAILABLE";
   const mergeRecovery = issue.finalizationRecovery?.context?.recoveryKind === "MERGE_CONFLICT"
     || issue.finalizationRecovery?.context?.recoveryKind === "MERGE_ENVIRONMENT"
@@ -144,6 +130,7 @@ export function IssueDetail({
               status={issue.status}
               recoveryKind={issue.finalizationRecovery?.context?.recoveryKind}
               recoveryStep={issue.finalizationRecovery?.diagnostic?.step}
+              reviewKind={issue.review?.kind}
             />
           </div>
         </div>
@@ -210,8 +197,8 @@ export function IssueDetail({
       {issue.status === "FINALIZATION_FAILED" && onApproveDelivery ? (
         <section aria-label="交付恢复" className="failure-actions">
           <div>
-            <strong>交付失败，待重试</strong>
-            <span>代码和工作目录已保留，可安全重试交付收尾。</span>
+            <strong>交付失败，待重新验证</strong>
+            <span>代码和工作目录已保留；AI 会从 Repair 重新验证、修复后再发布。</span>
             {issue.finalizationRecovery?.automaticAttempts === 1 ? (
               <span>自动恢复尝试 1/1 已用尽</span>
             ) : null}
@@ -241,13 +228,13 @@ export function IssueDetail({
               setFinalizationRetryError("");
               void refreshAfter(onApproveDelivery)
                 .catch((caught) => setFinalizationRetryError(
-                  caught instanceof Error ? caught.message : "重试交付失败",
+                  caught instanceof Error ? caught.message : "重新验证失败",
                 ))
                 .finally(() => setFinalizationRetrying(false));
             }}
           >
             <RotateCcw size={13} />
-            {finalizationRetrying ? "重试中…" : "重试交付"}
+            {finalizationRetrying ? "重新验证中…" : "重新验证并修复"}
           </Button>
         </section>
       ) : null}
@@ -264,21 +251,6 @@ export function IssueDetail({
         </section>
       ) : null}
 
-      {issue.status === "ASSESSMENT_REVIEW" && assessment && onRequestReassessment && !compactAssessment ? (
-        <ApprovalPanel
-          stage="ASSESSMENT"
-          revision={assessment.revision}
-          contentHash={assessment.contentHash}
-          title={assessment.suggestedTitle}
-          verdict={assessment.verdict}
-          suspectedDuplicateOf={assessment.suspectedDuplicateOf}
-          onApprove={onApproveAssessment ? (input) => refreshAfter(() => onApproveAssessment(input)) : undefined}
-          onConfirmNotABug={onConfirmNotABug ? (reference) => refreshAfter(() => onConfirmNotABug(reference)) : undefined}
-          onConfirmDuplicate={onConfirmDuplicate ? (reference, duplicateOf) => refreshAfter(() => onConfirmDuplicate(reference, duplicateOf)) : undefined}
-          onRequestChanges={(feedback) => refreshAfter(() => onRequestReassessment(feedback))}
-        />
-      ) : null}
-
       {delivery ? (
         <section className="review-section">
           <div className="review-heading"><div><span className="eyebrow">Delivery · 迭代 {issue.repair?.iteration ?? 1}</span><p className="delivery-summary">{delivery.summary}</p></div></div>
@@ -286,29 +258,15 @@ export function IssueDetail({
         </section>
       ) : null}
 
-      {issue.status === "ACCEPTANCE_REVIEW" && delivery && onApproveDelivery && onRejectDelivery ? (
-        <ApprovalPanel
-          stage="DELIVERY"
-          revision={issue.repair?.iteration ?? 1}
-          verdict={assessment?.verdict === "FEATURE" ? "FEATURE" : "BUG"}
-          onApprove={() => refreshAfter(onApproveDelivery)}
-          onRequestChanges={(feedback) => refreshAfter(() => onRejectDelivery(feedback))}
+      {issue.status === "REVIEW_REQUIRED" && issue.review && onSubmitReview ? (
+        <ReviewPanel
+          issue={issue}
+          onCancel={onCancel ? () => refreshAfter(onCancel) : undefined}
+          onSubmit={(input) => refreshAfter(() => onSubmitReview(input))}
         />
       ) : null}
         </div>
       </div>
-      {compactAssessment && assessment && onRequestReassessment ? (
-        <ApprovalPanel
-          stage="ASSESSMENT"
-          revision={assessment.revision}
-          contentHash={assessment.contentHash}
-          title={assessment.suggestedTitle}
-          verdict={assessment.verdict as "BUG" | "FEATURE"}
-          onApprove={onApproveAssessment ? (input) => refreshAfter(() => onApproveAssessment(input)) : undefined}
-          onClose={onCancel ? () => refreshAfter(onCancel) : undefined}
-          onRequestChanges={(feedback) => refreshAfter(() => onRequestReassessment(feedback))}
-        />
-      ) : null}
     </article>
   );
 }

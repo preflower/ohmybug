@@ -90,6 +90,9 @@ export class OhMyBugRuntime {
   readIssueEvents(...args: Parameters<RuntimeCommands["readIssueEvents"]>) {
     return this.dependencies.commands.readIssueEvents(...args);
   }
+  submitReview(...args: Parameters<RuntimeCommands["submitReview"]>) {
+    return this.dependencies.commands.submitReview(...args);
+  }
   approveAssessment(...args: Parameters<RuntimeCommands["approveAssessment"]>) {
     return this.dependencies.commands.approveAssessment(...args);
   }

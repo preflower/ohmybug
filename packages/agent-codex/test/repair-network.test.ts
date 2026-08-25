@@ -15,6 +15,14 @@ const assessment: Assessment = {
   solution: "Handle expiry",
 };
 
+const completed = {
+  kind: "DELIVERY_READY",
+  summary: "Implemented",
+  evidence: [],
+  integration: null,
+  verification: [{ command: "pnpm test", outcome: "PASSED", summary: "Passed" }],
+};
+
 function input(): RepairInput {
   return {
     issue: issue({ status: "REPAIRING", assessment, repair: { iteration: 1 } }),
@@ -29,7 +37,7 @@ describe("Codex Repair network baseline", () => {
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-network", "thread-network");
     const client = new FixtureClient([
-      JSON.stringify({ summary: "Implemented", evidence: [] }),
+      JSON.stringify(completed),
     ]);
     const adapter = new CodexAgentAdapter({ client, sessions });
 
@@ -58,14 +66,18 @@ describe("Codex Repair network baseline", () => {
         blockedCommand: "pnpm install",
         requestedBy: null,
       }),
-      JSON.stringify({ summary: "Implemented", evidence: [] }),
+      JSON.stringify(completed),
     ]);
     const adapter = new CodexAgentAdapter({ client, sessions });
 
     await expect(adapter.repair(
       { agent: "codex", sessionId: "logical-redundant" },
       input(),
-    )).resolves.toEqual({ summary: "Implemented", evidence: [] });
+    )).resolves.toMatchObject({
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+    });
     expect(client.prompts).toHaveLength(2);
     expect(client.prompts[1]).toContain("already available in this stage");
   });

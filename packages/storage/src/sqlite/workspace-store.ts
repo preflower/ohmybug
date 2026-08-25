@@ -1,5 +1,6 @@
 import {
   issueSchema,
+  parsePersistedIssue,
   type Issue,
   type NewIssueEvent,
 } from "@oh-my-bug/core";
@@ -171,7 +172,7 @@ export class SqliteWorkspaceStore implements WorkspacePersistence, ModuleStateSt
       if (!currentRow || currentRow.revision !== input.expectedRevision) {
         throw new Error("CONCURRENT_UPDATE");
       }
-      const current = issueSchema.parse(JSON.parse(currentRow.data_json));
+      const current = parsePersistedIssue(JSON.parse(currentRow.data_json));
       if (current.projectPath && current.projectPath !== issue.projectPath) {
         throw new Error("PROJECT_PATH_CONFLICT");
       }

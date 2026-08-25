@@ -27,6 +27,16 @@ function installRuntimeProtocolFixture() {
     agent?: { plugin: string };
     integrations?: Record<string, { enabled: boolean; config: Record<string, ConfigValue> }>;
   }
+  type SecretPatches = Record<string, Record<string, string | null>>;
+  type SaveProjectSettingsInput =
+    | { mode: "create"; project: ProjectMutation; secretPatches: SecretPatches }
+    | {
+      mode: "update";
+      id: string;
+      expectedRevision: number;
+      project: ProjectMutation;
+      secretPatches: SecretPatches;
+    };
   interface FixtureProject extends Omit<ProjectMutation, "expectedRevision" | "integrations"> {
     id: string;
     integrations: Record<string, FixtureIntegration>;
@@ -44,6 +54,11 @@ function installRuntimeProtocolFixture() {
     inputs: unknown[];
     assessment?: unknown;
     repair?: unknown;
+    review?: {
+      id: string;
+      kind: string;
+      choices: Array<{ id: string; label: string } & Record<string, unknown>>;
+    } & Record<string, unknown>;
     resolution?: string;
     duplicateOf?: string;
     lastFailure?: { stage: "ASSESSMENT" | "REPAIR"; code: string };
@@ -59,7 +74,7 @@ function installRuntimeProtocolFixture() {
   const now = () => new Date().toISOString();
   const manifests = [
     {
-      id: "sentry", name: "Sentry",
+      id: "sentry", name: "Sentry", icon: "sentry",
       configFields: [
         { key: "organization", type: "string", label: "Organization", required: true },
         { key: "project", type: "string", label: "Project", required: true },
@@ -69,16 +84,28 @@ function installRuntimeProtocolFixture() {
       secretFields: [{ key: "token", label: "Auth token", required: true }],
     },
     {
-      id: "dingtalk", name: "DingTalk",
+      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从指定群聊接收消息并创建 Issue。",
+      sections: [
+        { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
+        { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
+        { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
+      ],
       configFields: [
-        { key: "conversationIds", type: "string[]", label: "Conversation IDs", required: true },
-        { key: "mention", type: "string", label: "Mention", required: true },
-        { key: "messageRule", type: "string", label: "Message rule", required: false },
-        { key: "threadKeyField", type: "string", label: "Thread key field", required: false },
+        {
+          key: "conversationIds",
+          type: "string[]",
+          label: "群聊 ID",
+          description: "仅处理来自这些群聊且 @ 机器人的消息。",
+          required: true,
+          section: "rules",
+          addLabel: "添加群聊",
+        },
+        { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
+        { key: "threadKeyField", type: "string", label: "消息归并字段", required: false, section: "advanced" },
       ],
       secretFields: [
-        { key: "clientId", label: "Client ID", required: true },
-        { key: "clientSecret", label: "Client secret", required: true },
+        { key: "clientId", label: "Client ID", required: true, section: "credentials" },
+        { key: "clientSecret", label: "Client Secret", required: true, section: "credentials" },
       ],
     },
   ];
@@ -120,6 +147,28 @@ function installRuntimeProtocolFixture() {
       workspaces: { local: { available: true } },
     }),
     getProject: async (id: string) => clone(read().projects.find((project) => project.id === id)),
+    saveProjectSettings: async (input: SaveProjectSettingsInput) => {
+      const state = read();
+      const current = input.mode === "update"
+        ? state.projects.find((project) => project.id === input.id)
+        : undefined;
+      if (input.mode === "update" && !current) throw new Error("PROJECT_NOT_FOUND");
+      if (input.mode === "update" && current?.revision !== input.expectedRevision) {
+        throw new Error("STALE_PROJECT_REVISION");
+      }
+      const project = projectDto(input.project, current);
+      for (const [pluginId, patch] of Object.entries(input.secretPatches)) {
+        const integration = project.integrations[pluginId];
+        if (!integration) throw new Error("PROJECT_INTEGRATION_NOT_FOUND");
+        for (const [key, value] of Object.entries(patch)) {
+          integration.secretConfigured[key] = value !== null;
+        }
+      }
+      if (input.mode === "create") state.projects.push(project);
+      else state.projects[state.projects.findIndex((candidate) => candidate.id === input.id)] = project;
+      write(state);
+      return clone(project);
+    },
     createProject: async (input: ProjectMutation) => {
       const state = read();
       const project = projectDto(input);
@@ -150,7 +199,11 @@ function installRuntimeProtocolFixture() {
       write(state);
       return clone(project);
     },
-    integrationHealth: async () => ({}),
+    integrationHealth: async () => Object.fromEntries(read().projects.flatMap((project) =>
+      Object.entries(project.integrations).flatMap(([pluginId, integration]) => integration.enabled
+        ? [[`${project.id}:${pluginId}`, { state: "connected" }]]
+        : []),
+    )),
     listIssues: async (projectId?: string) => clone(read().issues.filter((candidate) => !projectId || candidate.projectId === projectId)),
     getIssue: async (id: string) => clone(requireIssue(id)),
     getIssueWorkspace: async () => null,
@@ -162,27 +215,65 @@ function installRuntimeProtocolFixture() {
       const timestamp = now();
       const created: FixtureIssue = {
         id: crypto.randomUUID(), projectId: project.id, identifier: `${project.key}-${sequence}`,
-        title: input.summary ?? input.content, titleSource: "integration", status: "ASSESSMENT_REVIEW",
+        title: input.summary ?? input.content, titleSource: "integration", status: "REVIEW_REQUIRED",
         inputs: [{ id: crypto.randomUUID(), integration: "manual", inputKey: input.commandId, rawData: { content: input.content, summary: input.summary }, data: { content: input.content, ...(input.summary ? { summary: input.summary } : {}) }, receivedAt: timestamp }],
         assessment: { revision: 1, contentHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", verdict: "BUG", suggestedTitle: input.summary ?? "Checkout returns 500", reasoning: "The fixture reproduced the checkout failure.", rootCause: "Expired sessions are not handled.", solution: "Return a recoverable response." },
+        review: {
+          id: `assessment:${input.commandId}`,
+          kind: "assessment",
+          requestedFrom: "ASSESSING",
+          payload: { verdict: "BUG" },
+          choices: [{ id: "implement", label: "开始实现", continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" } }],
+          requestedAt: timestamp,
+        },
         revision: 3, createdAt: timestamp, updatedAt: timestamp,
       };
       state.issues.unshift(created);
       write(state);
       return clone(created);
     },
+    submitReview: async (id: string, input: { expectedRevision: number; requestId: string; choiceId: string; data?: { title?: string } }) => {
+      const current = requireIssue(id);
+      if (current.revision !== input.expectedRevision) throw new Error("REVIEW_SUBMISSION_STALE");
+      if (!current.review || current.review.id !== input.requestId) throw new Error("REVIEW_REQUEST_STALE");
+      if (!current.review.choices.some((choice) => choice.id === input.choiceId)) throw new Error("REVIEW_CHOICE_NOT_FOUND");
+      if (current.review.kind === "assessment" && input.choiceId === "implement") {
+        const timestamp = now();
+        return saveIssue({
+          ...current,
+          title: input.data?.title ?? current.title,
+          titleSource: "user",
+          status: "REVIEW_REQUIRED",
+          repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } },
+          review: {
+            id: `delivery:${current.id}:1`,
+            kind: "delivery",
+            requestedFrom: "EVIDENCE_CHECK",
+            payload: { repairIteration: 1, evidenceCount: 2 },
+            choices: [{ id: "accept", label: "接受交付", continuation: { operation: "FINALIZE", resumeStatus: "FINALIZING", resolution: "FIXED" } }, { id: "request-changes", label: "要求修改", continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" } }],
+            requestedAt: timestamp,
+          },
+          revision: current.revision + 3,
+          updatedAt: timestamp,
+        });
+      }
+      if (current.review.kind === "delivery" && input.choiceId === "accept") {
+        return saveIssue({ ...current, status: "COMPLETED", resolution: "FIXED", review: undefined, revision: current.revision + 1, updatedAt: now() });
+      }
+      throw new Error("REVIEW_CHOICE_UNSUPPORTED");
+    },
     approveAssessment: async (id: string, input: { title: string }) => {
       const current = requireIssue(id);
-      return saveIssue({ ...current, title: input.title, titleSource: "user", status: "ACCEPTANCE_REVIEW", repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } }, revision: current.revision + 3, updatedAt: now() });
+      return saveIssue({ ...current, title: input.title, titleSource: "user", status: "REVIEW_REQUIRED", repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } }, revision: current.revision + 3, updatedAt: now() });
     },
     approveBugAssessment: async (id: string, input: { title: string }) => {
       const current = requireIssue(id);
-      return saveIssue({ ...current, title: input.title, titleSource: "user", status: "ACCEPTANCE_REVIEW", repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } }, revision: current.revision + 3, updatedAt: now() });
+      return saveIssue({ ...current, title: input.title, titleSource: "user", status: "REVIEW_REQUIRED", repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } }, revision: current.revision + 3, updatedAt: now() });
     },
     confirmNotABug: async (id: string) => saveIssue({ ...requireIssue(id), status: "CLOSED", resolution: "NOT_A_BUG", updatedAt: now() }),
     confirmDuplicate: async (id: string, _reference: unknown, duplicateOf: string) => saveIssue({ ...requireIssue(id), status: "CLOSED", resolution: "DUPLICATE", duplicateOf, updatedAt: now() }),
-    requestReassessment: async (id: string) => saveIssue({ ...requireIssue(id), status: "ASSESSMENT_REVIEW", updatedAt: now() }),
-    rejectDelivery: async (id: string) => saveIssue({ ...requireIssue(id), status: "ACCEPTANCE_REVIEW", updatedAt: now() }),
+    requestReassessment: async (id: string) => saveIssue({ ...requireIssue(id), status: "REVIEW_REQUIRED", updatedAt: now() }),
+    rejectDelivery: async (id: string) => saveIssue({ ...requireIssue(id), status: "REVIEW_REQUIRED", updatedAt: now() }),
     approveDelivery: async (id: string) => {
       const current = requireIssue(id);
       return { issue: saveIssue({ ...current, status: "COMPLETED", resolution: "FIXED", revision: current.revision + 1, updatedAt: now() }) };

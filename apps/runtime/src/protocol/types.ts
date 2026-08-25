@@ -1,10 +1,10 @@
 import type {
-  ApproveAssessmentInput,
   ConfigValue,
   IntegrationHealth,
   IntegrationPluginManifest,
   Issue,
   IssueEvent,
+  ReviewSubmission,
   ProjectAgentConfiguration,
   ProjectCommands,
 } from "@oh-my-bug/core";
@@ -76,6 +76,22 @@ export interface UpdateProjectInput extends Partial<CreateProjectInput> {
   expectedRevision: number;
 }
 
+export type IntegrationSecretPatches = Record<string, Record<string, string | null>>;
+
+export type SaveProjectSettingsInput =
+  | {
+      mode: "create";
+      project: CreateProjectInput;
+      secretPatches: IntegrationSecretPatches;
+    }
+  | {
+      mode: "update";
+      id: string;
+      expectedRevision: number;
+      project: CreateProjectInput;
+      secretPatches: IntegrationSecretPatches;
+    };
+
 export interface ManualIssueCommand {
   projectId: string;
   commandId: string;
@@ -87,6 +103,10 @@ export interface ManualIssueCommand {
 export interface AssessmentReference {
   assessmentRevision: number;
   assessmentContentHash: string;
+}
+
+export interface ApproveAssessmentInput extends AssessmentReference {
+  title: string;
 }
 
 export interface IssueEventPage {
@@ -123,6 +143,7 @@ export interface RuntimeApi {
     refreshRemote: boolean;
   }): Promise<WorkspaceBranchDiscovery>;
   getProject(input: { id: string }): Promise<ProductProject>;
+  saveProjectSettings(input: SaveProjectSettingsInput): Promise<ProductProject>;
   createProject(input: CreateProjectInput): Promise<ProductProject>;
   updateProject(input: { id: string; input: UpdateProjectInput }): Promise<ProductProject>;
   setIntegrationSecrets(input: {
@@ -135,6 +156,7 @@ export interface RuntimeApi {
   getIssue(input: { id: string }): Promise<Issue>;
   getIssueWorkspace(input: { id: string }): Promise<IssueWorkspaceInfo | null>;
   submitManual(input: ManualIssueCommand): Promise<Issue>;
+  submitReview(input: { id: string; input: ReviewSubmission }): Promise<Issue>;
   approveAssessment(input: { id: string; input: ApproveAssessmentInput }): Promise<Issue>;
   /** @deprecated Use approveAssessment. */
   approveBugAssessment(input: { id: string; input: ApproveAssessmentInput }): Promise<Issue>;

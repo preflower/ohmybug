@@ -28,7 +28,7 @@ const issue: IssueDto = {
   identifier: "CHK-1",
   title: "Checkout returns 500",
   titleSource: "integration",
-  status: "ASSESSMENT_REVIEW",
+  status: "REVIEW_REQUIRED",
   inputs: [{
     id: "input-1",
     integration: "manual",
@@ -45,6 +45,23 @@ const issue: IssueDto = {
     reasoning: "The failure follows cart hydration.",
     rootCause: "Cart hydration returns null.",
     solution: "Return a recoverable result.",
+  },
+  review: {
+    id: "review-assessment-1",
+    kind: "assessment",
+    requestedFrom: "ASSESSING",
+    payload: { verdict: "BUG" },
+    choices: [{
+      id: "implement",
+      label: "开始实现",
+      continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+    }, {
+      id: "reassess",
+      label: "要求重新分析",
+      feedbackRequired: true,
+      continuation: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+    }],
+    requestedAt: "2026-08-19T09:01:00.000Z",
   },
   revision: 4,
   createdAt: "2026-08-19T09:00:00.000Z",
@@ -394,6 +411,102 @@ describe("control center workbench", () => {
     expect(screen.getByText("Storefront", { selector: ".breadcrumb span:last-child" })).toBeVisible();
   });
 
+  it("opens a tray-selected Issue in the unfiltered workbench and cleans up the listener", async () => {
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    const storefrontIssue: IssueDto = {
+      ...issue,
+      id: "issue-2",
+      projectId: storefront.id,
+      identifier: "STO-1",
+      title: "Storefront search is stale",
+      updatedAt: "2026-08-20T09:01:00.000Z",
+    };
+    let navigate: ((target: { issueId?: string }) => void) | undefined;
+    const stopNavigation = vi.fn();
+    Object.defineProperty(window, "ohMyBug", {
+      configurable: true,
+      value: Object.freeze({
+        onTrayNavigation: vi.fn((listener) => {
+          navigate = listener;
+          return stopNavigation;
+        }),
+      }),
+    });
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue, storefrontIssue]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) => {
+      if (id === "missing-issue") throw new Error("ISSUE_NOT_FOUND");
+      return id === issue.id ? issue : storefrontIssue;
+    });
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    const view = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Storefront" }));
+    expect(within(screen.getByRole("region", { name: "Issue 列表" }))
+      .queryByText(issue.title)).not.toBeInTheDocument();
+
+    act(() => navigate?.({ issueId: issue.id }));
+    expect(window.location.hash).toBe("#/issues");
+    expect(screen.getByText("全部", { selector: ".breadcrumb span:last-child" })).toBeVisible();
+    expect(await screen.findByRole("heading", { level: 2, name: issue.title })).toBeVisible();
+
+    act(() => navigate?.({ issueId: "missing-issue" }));
+    await waitFor(() => expect(api.issue).toHaveBeenCalledWith("missing-issue"));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Issue 详情" }))
+      .not.toBeInTheDocument());
+
+    view.unmount();
+    expect(stopNavigation).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to the full Issue list when a tray target has already completed", async () => {
+    const terminal: IssueDto = {
+      ...issue,
+      id: "issue-completed",
+      identifier: "CHK-2",
+      title: "Already completed",
+      status: "COMPLETED",
+    };
+    let navigate: ((target: { issueId?: string }) => void) | undefined;
+    Object.defineProperty(window, "ohMyBug", {
+      configurable: true,
+      value: Object.freeze({
+        onTrayNavigation: vi.fn((listener) => {
+          navigate = listener;
+          return () => undefined;
+        }),
+      }),
+    });
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) => id === terminal.id ? terminal : issue);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { level: 2, name: issue.title })).toBeVisible();
+
+    act(() => navigate?.({ issueId: terminal.id }));
+    await waitFor(() => expect(api.issue).toHaveBeenCalledWith(terminal.id));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Issue 详情" }))
+      .not.toBeInTheDocument());
+    expect(within(screen.getByRole("region", { name: "Issue 列表" }))
+      .getByText(issue.title)).toBeVisible();
+  });
+
   it("defaults a new Issue to the active sidebar project", async () => {
     const storefront: ProjectDto = {
       ...project,
@@ -467,6 +580,112 @@ describe("control center workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建并开始分析" }));
 
     await waitFor(() => expect(localStorage.getItem("oh-my-bug:last-issue-project")).toBe(storefront.id));
+  });
+
+  it("creates a valid Issue when Enter is pressed in the content field", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue({
+      ...issue,
+      id: "issue-2",
+      identifier: "CHK-2",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed after login" } });
+    expect(screen.getByRole("button", { name: "创建并开始分析" })).toBeEnabled();
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(submitManual).toHaveBeenCalledWith({
+      projectId: "project-1",
+      commandId: expect.stringMatching(/^manual-/),
+      content: "Checkout failed after login",
+    }));
+  });
+
+  it("keeps Shift+Enter available for a newline in the content field", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed" } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter", shiftKey: true });
+
+    expect(submitManual).not.toHaveBeenCalled();
+  });
+
+  it("does not submit when Enter confirms an IME composition", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "结账失败" } });
+    fireEvent.keyDown(contentField, {
+      key: "Enter",
+      code: "Enter",
+      isComposing: true,
+    });
+
+    expect(submitManual).not.toHaveBeenCalled();
+  });
+
+  it("does not submit again when Enter is pressed while creation is busy", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual")
+      .mockReturnValue(new Promise<IssueDto>(() => undefined));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed" } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(submitManual).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    expect(submitManual).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps creation disabled and ignores Enter when content is blank", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    const createButton = screen.getByRole("button", { name: "创建并开始分析" });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(contentField, { target: { value: "   " } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    expect(createButton).toBeDisabled();
+    expect(submitManual).not.toHaveBeenCalled();
   });
 
   it("does not remember a project when Issue creation fails", async () => {
@@ -586,7 +805,7 @@ describe("control center workbench", () => {
     expect(screen.queryByRole("button", { name: "返回项目列表" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "保存项目（顶部）" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "保存项目" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "保存更改" })).toBeVisible();
   });
 
   it("shows a persisted branch with a Worktree tag and hides the row without a branch", async () => {
@@ -622,7 +841,7 @@ describe("control center workbench", () => {
   it("restores a completed branch from the durable Issue event", async () => {
     const acceptanceReview: IssueDto = {
       ...issue,
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       revision: 10,
       repair: {
         iteration: 1,
@@ -635,6 +854,18 @@ describe("control center workbench", () => {
           summary: "Checkout recovery implemented",
           evidence: [],
         },
+      },
+      review: {
+        id: "review-delivery-1",
+        kind: "delivery",
+        requestedFrom: "EVIDENCE_CHECK",
+        payload: { repairIteration: 1, evidenceCount: 0 },
+        choices: [{
+          id: "accept",
+          label: "接受交付",
+          continuation: { operation: "FINALIZE", resumeStatus: "FINALIZING", resolution: "FIXED" },
+        }],
+        requestedAt: "2026-08-24T10:00:00.000Z",
       },
     };
     const finalizing: IssueDto = {
@@ -653,10 +884,9 @@ describe("control center workbench", () => {
     vi.spyOn(api, "issue").mockImplementation(async () => snapshot);
     vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
     vi.spyOn(api, "integrationHealth").mockResolvedValue({});
-    vi.spyOn(api, "rejectDelivery").mockResolvedValue(acceptanceReview);
-    vi.spyOn(api, "approveDelivery").mockImplementation(async () => {
+    const submitReview = vi.spyOn(api, "submitReview").mockImplementation(async () => {
       snapshot = finalizing;
-      return { issue: finalizing };
+      return finalizing;
     });
     vi.spyOn(api, "subscribeIssueEvents").mockImplementation(
       (_id, _cursor, next) => {
@@ -668,8 +898,13 @@ describe("control center workbench", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", {
-      name: "批准验收并完成 Issue",
+      name: "接受交付",
     }));
+    expect(submitReview).toHaveBeenCalledWith(acceptanceReview.id, {
+      expectedRevision: 10,
+      requestId: "review-delivery-1",
+      choiceId: "accept",
+    });
     expect(await screen.findAllByText("交付处理中")).not.toHaveLength(0);
     expect(screen.queryByRole("region", { name: "交付分支" })).not.toBeInTheDocument();
     expect(listener).toBeDefined();
@@ -721,8 +956,7 @@ describe("control center workbench", () => {
 
     const rail = await screen.findByTestId("issue-metadata-rail");
     expect(await within(rail).findByText("ohmybug/chk-1")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "关闭 Issue" }));
-    fireEvent.click(await screen.findByRole("button", { name: "确认关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
     await waitFor(() => expect(cancel).toHaveBeenCalledWith(issue.id));
     await waitFor(() => expect(workspace).toHaveBeenCalledTimes(2));
 

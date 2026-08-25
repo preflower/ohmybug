@@ -1,10 +1,11 @@
-import { access, lstat, mkdir, readdir, realpath } from "node:fs/promises";
+import { access, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 
 import type {
   ConfigValue,
   FinalizationRecoveryResult,
   Issue,
+  RepairResult,
   RuntimeProject,
   WorkspaceFinalizationDiagnostic,
   WorkspaceFinalizationStep,
@@ -18,6 +19,8 @@ import type {
   WorkspaceProvider,
   WorkspaceProviderFactory,
   WorkspaceProviderInspection,
+  WorkspacePublishResult,
+  WorkspaceRepairObservation,
 } from "@oh-my-bug/module-api";
 import { z } from "zod";
 
@@ -40,6 +43,14 @@ import {
   validateGitFinalizationRecovery,
   type GitFinalizationFingerprint,
 } from "./finalization-recovery.js";
+import {
+  assertInitializedSubmodulesClean,
+  assertNoHiddenIndexEntries,
+  assertNoUndeclaredGitlinks,
+  assertWorktreeAndSubmodulesClean,
+  observeGitRepair,
+  validateGitRepair,
+} from "./repair-integration.js";
 
 const MODULE_ID = "workspace-git";
 
@@ -395,7 +406,103 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     return { branch: state.branch };
   }
 
+  async observeRepair(input: {
+    issue: Issue;
+    resourceId: string;
+  }): Promise<WorkspaceRepairObservation> {
+    return observeGitRepair(this.getSavedState(input.issue, input.resourceId));
+  }
+
+  async validateRepair(input: {
+    issue: Issue;
+    resourceId: string;
+    observation: WorkspaceRepairObservation;
+    result: RepairResult;
+    runtimeIntakeDirectory?: string;
+  }) {
+    return validateGitRepair({
+      state: this.getSavedState(input.issue, input.resourceId),
+      issue: input.issue,
+      observation: input.observation,
+      result: input.result,
+      ...(input.runtimeIntakeDirectory
+        ? { runtimeIntakeDirectory: input.runtimeIntakeDirectory }
+        : {}),
+    });
+  }
+
   async publish(input: {
+    issue: Issue;
+    resourceId: string;
+  }): Promise<WorkspacePublishResult> {
+    const state = this.getSavedState(input.issue, input.resourceId);
+    if (state.branchInfo) return { kind: "PUBLISHED", branch: state.branchInfo };
+    if (input.issue.status !== "FINALIZING") {
+      throw new Error("GIT_WORKSPACE_NOT_FINALIZING");
+    }
+    if (state.finalizationRecovery !== undefined) {
+      const branch = await this.publishLegacyRecoveredDelivery(input);
+      return { kind: "PUBLISHED", branch };
+    }
+
+    let step: WorkspaceFinalizationStep = "status";
+    try {
+      await assertWorktreeAndSubmodulesClean(state.worktreePath);
+      const commit = await runGit(state.worktreePath, ["rev-parse", "HEAD"]);
+      if (state.mergeToBaseBranch) {
+        const integration = input.issue.repair?.deliveryDraft?.integration;
+        if (!integration) throw new Error("GIT_PUBLISH_INTEGRATION_REQUIRED");
+        if (
+          integration.issueBranch !== state.branch ||
+          integration.issueCommit !== commit
+        ) throw new Error("GIT_PUBLISH_HEAD_MISMATCH");
+        if (await tryRunGit(
+          state.repositoryPath,
+          ["merge-base", "--is-ancestor", integration.baseCommit, commit],
+          [1],
+        ) === undefined) throw new Error("GIT_PUBLISH_INTEGRATION_INVALID");
+        step = "merge";
+        const currentBaseCommit = await fastForwardIntegratedBase(state, commit);
+        if (currentBaseCommit) {
+          return { kind: "BASE_STALE", currentBaseCommit };
+        }
+      }
+
+      const pushToRemote = shouldPushToRemote(state);
+      if (pushToRemote) {
+        step = "push";
+        await runGit(state.worktreePath, [
+          "push",
+          state.remote!,
+          `refs/heads/${state.branch}:refs/heads/${state.branch}`,
+        ]);
+      }
+      const branchInfo: BranchInfo = {
+        name: state.branch,
+        commit,
+        ...(pushToRemote ? { remote: state.remote } : {}),
+      };
+      const {
+        finalizationRecovery: _recovery,
+        lastMergeFailure: _lastMergeFailure,
+        ...completedState
+      } = state;
+      this.options.state.set(MODULE_ID, input.resourceId, {
+        ...completedState,
+        branchInfo,
+      });
+      return { kind: "PUBLISHED", branch: branchInfo };
+    } catch (error) {
+      throw finalizationError({
+        error,
+        providerId: this.id,
+        step,
+        worktreePath: state.worktreePath,
+      });
+    }
+  }
+
+  private async publishLegacyRecoveredDelivery(input: {
     issue: Issue;
     resourceId: string;
   }): Promise<BranchInfo> {
@@ -780,6 +887,57 @@ function recoveryDeliveryToken(issue: Issue): string | undefined {
 
 const MAX_BASE_ADVANCE_ATTEMPTS = 3;
 
+async function fastForwardIntegratedBase(
+  state: GitWorkspaceState,
+  issueCommit: string,
+): Promise<string | undefined> {
+  const baseRef = `refs/heads/${state.baseBranch}`;
+  if (!(await gitRefExists(state.repositoryPath, baseRef))) {
+    throw new Error("GIT_PUBLISH_REQUIRES_LOCAL_BASE_BRANCH");
+  }
+  const currentBase = await runGit(state.repositoryPath, ["rev-parse", baseRef]);
+  if (await tryRunGit(
+    state.repositoryPath,
+    ["merge-base", "--is-ancestor", issueCommit, currentBase],
+    [1],
+  ) !== undefined) return undefined;
+  if (await tryRunGit(
+    state.repositoryPath,
+    ["merge-base", "--is-ancestor", currentBase, issueCommit],
+    [1],
+  ) === undefined) return currentBase;
+
+  const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
+  const checkedOutPath = worktreePathForBranch(listed, baseRef);
+  if (checkedOutPath) {
+    await assertBaseCheckoutMergeSafe(
+      state.repositoryPath,
+      checkedOutPath,
+      currentBase,
+      issueCommit,
+    );
+    try {
+      await runGit(checkedOutPath, ["merge", "--ff-only", issueCommit]);
+      return undefined;
+    } catch (error) {
+      const latest = await runGit(state.repositoryPath, ["rev-parse", baseRef]);
+      if (latest !== currentBase) return latest;
+      throw error;
+    }
+  }
+  try {
+    await runGit(state.repositoryPath, [
+      "update-ref",
+      baseRef,
+      issueCommit,
+      currentBase,
+    ]);
+    return undefined;
+  } catch {
+    return runGit(state.repositoryPath, ["rev-parse", baseRef]);
+  }
+}
+
 export async function retryOnBaseAdvance<T>(
   readBase: () => Promise<string>,
   attempt: (baseCommit: string) => Promise<T>,
@@ -835,14 +993,7 @@ async function mergeIntoBaseBranch(
     );
     if (checkedOutPath !== undefined) {
       try {
-        await assertWorktreeAndSubmodulesClean(checkedOutPath);
-        await assertNoIgnoredMergeCollisions(
-          state.repositoryPath,
-          checkedOutPath,
-          baseCommit,
-          resultCommit,
-        );
-        await assertNoInitializedGitlinkUpdates(
+        await assertBaseCheckoutMergeSafe(
           state.repositoryPath,
           checkedOutPath,
           baseCommit,
@@ -857,7 +1008,7 @@ async function mergeIntoBaseBranch(
       try {
         await runGit(checkedOutPath, ["merge", "--ff-only", resultCommit]);
       } catch (error) {
-        throw new Error("GIT_AUTO_MERGE_FAILED", { cause: error });
+        throw new Error("GIT_AUTO_MERGE_BASE_DIRTY", { cause: error });
       }
       return;
     }
@@ -918,18 +1069,7 @@ async function unresolvedMergeEnvironmentReason(
     }
   }
   if (diagnosticCode === "GIT_AUTO_MERGE_BASE_DIRTY") {
-    if (!(await gitRefExists(state.repositoryPath, baseRef))) {
-      return "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH";
-    }
-    const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
-    const checkedOutPath = worktreePathForBranch(listed, baseRef);
-    if (!checkedOutPath) return undefined;
-    try {
-      await assertWorktreeAndSubmodulesClean(checkedOutPath);
-      return undefined;
-    } catch {
-      return diagnosticCode;
-    }
+    return await automaticMergePreflightReason(state);
   }
   return "GIT_MERGE_ENVIRONMENT_UNRESOLVED";
 }
@@ -940,25 +1080,39 @@ async function automaticMergePreflightReason(
   const baseRef = `refs/heads/${state.baseBranch}`;
   try {
     await assertGitSupportsAutomaticMerge(state.repositoryPath);
+  } catch {
+    return "GIT_AUTO_MERGE_REQUIRES_GIT_2_38";
+  }
+  if (!(await gitRefExists(state.repositoryPath, baseRef))) {
+    return "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH";
+  }
+  try {
     const listed = await runGit(state.repositoryPath, ["worktree", "list", "--porcelain", "-z"]);
     const checkedOutPath = worktreePathForBranch(listed, baseRef);
-    if (checkedOutPath) {
-      try {
-        await assertWorktreeAndSubmodulesClean(checkedOutPath);
-      } catch {
-        return "GIT_AUTO_MERGE_BASE_DIRTY";
-      }
-    }
     const [baseCommit, issueCommit] = await Promise.all([
       runGit(state.repositoryPath, ["rev-parse", baseRef]),
       runGit(state.worktreePath, ["rev-parse", "HEAD"]),
     ]);
-    await runGit(state.repositoryPath, [
+    const treeOutput = await runGit(state.repositoryPath, [
       "merge-tree",
       "--write-tree",
       baseCommit,
       issueCommit,
     ]);
+    const resultTree = treeOutput.split("\n", 1)[0]?.trim();
+    if (!resultTree) return "GIT_MERGE_ENVIRONMENT_UNRESOLVED";
+    if (checkedOutPath) {
+      try {
+        await assertBaseCheckoutMergeSafe(
+          state.repositoryPath,
+          checkedOutPath,
+          baseCommit,
+          resultTree,
+        );
+      } catch {
+        return "GIT_AUTO_MERGE_BASE_DIRTY";
+      }
+    }
     return undefined;
   } catch (error) {
     return error instanceof GitCommandError && error.exitCode === 1
@@ -1036,6 +1190,53 @@ function gitErrorExitCode(error: unknown): number | undefined {
   return typeof processError.code === "number" ? processError.code : undefined;
 }
 
+async function assertBaseCheckoutMergeSafe(
+  repositoryPath: string,
+  worktreePath: string,
+  baseCommit: string,
+  resultObject: string,
+): Promise<void> {
+  await assertNoHiddenIndexEntries(worktreePath);
+  await assertInitializedSubmodulesClean(worktreePath);
+
+  const [mergePaths, trackedOutput, untrackedOutput] = await Promise.all([
+    getChangedPaths(repositoryPath, baseCommit, resultObject),
+    runGit(worktreePath, ["diff", "--name-only", "--no-renames", "-z", "HEAD"]),
+    runGit(worktreePath, ["ls-files", "--others", "--exclude-standard", "-z"]),
+  ]);
+  const localPaths = [
+    ...parseNulPaths(trackedOutput),
+    ...parseNulPaths(untrackedOutput),
+  ];
+  if (localPaths.some((localPath) =>
+    mergePaths.some((mergePath) => gitPathsOverlap(localPath, mergePath)))) {
+    throw new Error("GIT_WORKTREE_NOT_CLEAN");
+  }
+
+  await assertNoIgnoredMergeCollisions(
+    repositoryPath,
+    worktreePath,
+    baseCommit,
+    resultObject,
+  );
+  await assertNoInitializedGitlinkUpdates(
+    repositoryPath,
+    worktreePath,
+    baseCommit,
+    resultObject,
+  );
+}
+
+function parseNulPaths(output: string): string[] {
+  return output.split("\0").filter(Boolean);
+}
+
+function gitPathsOverlap(left: string, right: string): boolean {
+  return left === right
+    || left.startsWith(`${right}/`)
+    || right.startsWith(`${left}/`);
+}
+
 async function assertNoIgnoredMergeCollisions(
   repositoryPath: string,
   worktreePath: string,
@@ -1043,25 +1244,16 @@ async function assertNoIgnoredMergeCollisions(
   resultCommit: string,
 ): Promise<void> {
   const changedPaths = await getChangedPaths(repositoryPath, baseCommit, resultCommit);
-  const pathsAndParents = new Set<string>();
-  for (const path of changedPaths) {
-    const segments = path.split("/");
-    for (let index = 1; index <= segments.length; index += 1) {
-      pathsAndParents.add(segments.slice(0, index).join("/"));
-    }
-  }
-  const pathspecs = [...pathsAndParents].map((path) => `:(literal)${path}`);
-  for (let offset = 0; offset < pathspecs.length; offset += 128) {
-    const ignored = await runGit(worktreePath, [
-      "ls-files",
-      "--others",
-      "--ignored",
-      "--exclude-standard",
-      "-z",
-      "--",
-      ...pathspecs.slice(offset, offset + 128),
-    ]);
-    if (ignored) throw new Error("GIT_WORKTREE_NOT_CLEAN");
+  const ignoredPaths = parseNulPaths(await runGit(worktreePath, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "-z",
+  ]));
+  if (ignoredPaths.some((localPath) =>
+    changedPaths.some((changedPath) => gitPathsOverlap(localPath, changedPath)))) {
+    throw new Error("GIT_WORKTREE_NOT_CLEAN");
   }
 }
 
@@ -1086,8 +1278,15 @@ async function getChangedPaths(
   before: string,
   after: string,
 ): Promise<string[]> {
-  const output = await runGit(repositoryPath, ["diff", "--name-only", "-z", before, after]);
-  return output.split("\0").filter(Boolean);
+  const output = await runGit(repositoryPath, [
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "-z",
+    before,
+    after,
+  ]);
+  return parseNulPaths(output);
 }
 
 async function getCommitGitlinks(
@@ -1117,95 +1316,6 @@ function worktreePathForBranch(list: string, branchRef: string): string | undefi
     }
   }
   return undefined;
-}
-
-async function assertNoHiddenIndexEntries(worktreePath: string): Promise<void> {
-  const entries = await runGit(worktreePath, ["ls-files", "-v", "-z"]);
-  if (entries.split("\0").some((entry) => /^[a-zS] /.test(entry))) {
-    throw new Error("GIT_WORKTREE_NOT_CLEAN");
-  }
-}
-
-async function assertInitializedSubmodulesClean(
-  worktreePath: string,
-  visited = new Set<string>(),
-): Promise<void> {
-  visited.add(await realpath(worktreePath));
-  for (const gitlink of await getIndexGitlinks(worktreePath)) {
-    const submodulePath = join(worktreePath, gitlink);
-    if (!(await gitlinkDirectoryExists(submodulePath))) continue;
-    if (await pathExists(join(submodulePath, ".git"))) {
-      await assertWorktreeAndSubmodulesClean(submodulePath, visited);
-    } else if ((await readdir(submodulePath)).length > 0) {
-      throw new Error("GIT_WORKTREE_NOT_CLEAN");
-    }
-  }
-}
-
-async function gitlinkDirectoryExists(path: string): Promise<boolean> {
-  let stats;
-  try {
-    stats = await lstat(path);
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-  if (!stats.isDirectory()) throw new Error("GIT_WORKTREE_NOT_CLEAN");
-  return true;
-}
-
-async function assertWorktreeAndSubmodulesClean(
-  worktreePath: string,
-  visited = new Set<string>(),
-): Promise<void> {
-  const canonicalPath = await realpath(worktreePath);
-  if (visited.has(canonicalPath)) return;
-  visited.add(canonicalPath);
-  await assertNoHiddenIndexEntries(worktreePath);
-  await assertInitializedSubmodulesClean(worktreePath, visited);
-  const changes = await runGit(worktreePath, [
-    "status",
-    "--porcelain",
-    "--untracked-files=all",
-    "--ignore-submodules=none",
-  ]);
-  if (changes) throw new Error("GIT_WORKTREE_NOT_CLEAN");
-}
-
-async function getIndexGitlinks(worktreePath: string): Promise<string[]> {
-  const entries = await runGit(worktreePath, ["ls-files", "--stage", "-z"]);
-  return entries.split("\0").flatMap((entry) => {
-    const separator = entry.indexOf("\t");
-    if (separator === -1) return [];
-    const [mode, , stage] = entry.slice(0, separator).split(" ");
-    return mode === "160000" && stage === "0" ? [entry.slice(separator + 1)] : [];
-  });
-}
-
-async function assertNoUndeclaredGitlinks(worktreePath: string): Promise<void> {
-  try {
-    const gitlinks = await getIndexGitlinks(worktreePath);
-    if (gitlinks.length === 0) return;
-
-    const mappings = await tryRunGit(
-      worktreePath,
-      ["config", "-z", "--blob", ":.gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
-      [1],
-    );
-    const declaredPaths = new Set(
-      mappings?.split("\0").flatMap((mapping) => {
-        const separator = mapping.indexOf("\n");
-        return separator === -1 ? [] : [mapping.slice(separator + 1)];
-      }) ?? [],
-    );
-    if (gitlinks.some((path) => !declaredPaths.has(path))) {
-      throw new Error("UNDECLARED_GITLINK");
-    }
-  } catch (error) {
-    throw new Error("GIT_EMBEDDED_REPOSITORY_NOT_ALLOWED", { cause: error });
-  }
 }
 
 function assertSavedState(

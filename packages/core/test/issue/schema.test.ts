@@ -49,6 +49,69 @@ const issue: Issue = {
 };
 
 describe("Issue persistence schema", () => {
+  it.each(["ASSESSMENT_REVIEW", "ACCEPTANCE_REVIEW"] as const)(
+    "rejects legacy %s as a current Issue write",
+    (status) => {
+      expect(() => issueStatusSchema.parse(status)).toThrow();
+      expect(() => issueSchema.parse({ ...issue, status })).toThrow();
+    },
+  );
+
+  it("round-trips one bounded generic review request", () => {
+    const review = {
+      id: "review-19",
+      kind: "business-merge-conflict",
+      requestedFrom: "REPAIRING",
+      payload: {
+        baseIntent: "Keep legacy rounding",
+        issueIntent: "Use per-line rounding",
+        paths: ["packages/billing/src/total.ts"],
+      },
+      choices: [{
+        id: "use-issue-behavior",
+        label: "采用 Issue 行为",
+        continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+      }],
+      requestedAt: "2026-08-25T00:00:00.000Z",
+    };
+
+    expect(issueStatusSchema.parse("REVIEW_REQUIRED")).toBe("REVIEW_REQUIRED");
+    expect(issueSchema.parse({
+      ...issue,
+      status: "REVIEW_REQUIRED",
+      review,
+    })).toMatchObject({ status: "REVIEW_REQUIRED", review });
+  });
+
+  it("rejects unbounded generic review content", () => {
+    const baseReview = {
+      id: "review-19",
+      kind: "business-merge-conflict",
+      requestedFrom: "REPAIRING",
+      payload: { summary: "Choose one behavior" },
+      choices: [{
+        id: "use-issue-behavior",
+        label: "Use Issue behavior",
+        continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+      }],
+      requestedAt: "2026-08-25T00:00:00.000Z",
+    };
+
+    expect(() => issueSchema.parse({
+      ...issue,
+      status: "REVIEW_REQUIRED",
+      review: { ...baseReview, payload: { summary: "x".repeat(33_000) } },
+    })).toThrow();
+    expect(() => issueSchema.parse({
+      ...issue,
+      status: "REVIEW_REQUIRED",
+      review: {
+        ...baseReview,
+        choices: [baseReview.choices[0], baseReview.choices[0]],
+      },
+    })).toThrow("REVIEW_CHOICE_DUPLICATE");
+  });
+
   it("round-trips the complete durable Issue aggregate", () => {
     expect(issueSchema.parse(issue)).toEqual(issue);
   });

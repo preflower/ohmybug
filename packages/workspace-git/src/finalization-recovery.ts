@@ -234,12 +234,18 @@ export async function validateGitFinalizationRecovery(input: {
   return { kind: "UNCHANGED", changedPaths: [] };
 }
 
-export async function assertPublicationPreflight(worktreePath: string): Promise<void> {
+export async function assertPublicationPreflight(
+  worktreePath: string,
+  ignoredUntrackedRoots: string[] = [],
+): Promise<void> {
   const untrackedPaths = splitNull(await runGit(worktreePath, [
     "ls-files",
     "--others",
     "--exclude-standard",
     "-z",
+    "--",
+    ".",
+    ...ignoredUntrackedRoots.map((root) => `:(exclude,literal)${root}`),
   ]));
   const generatedRoots = collapseRoots(normalizePaths(
     untrackedPaths.flatMap(generatedRoot),
@@ -265,7 +271,13 @@ export async function assertPublicationPreflight(worktreePath: string): Promise<
       },
     };
     await runGit(worktreePath, ["read-tree", "HEAD"], options);
-    await runGit(worktreePath, ["add", "-A"], options);
+    await runGit(worktreePath, [
+      "add",
+      "-A",
+      "--",
+      ".",
+      ...ignoredUntrackedRoots.map((root) => `:(exclude,literal)${root}`),
+    ], options);
     await assertNoUndeclaredGitlinks(worktreePath, options);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true }).catch(() => undefined);

@@ -42,9 +42,14 @@ describe("project settings layout", () => {
 
   it("keeps a quiet single-row footer inside the right settings column", () => {
     expect(styles).toMatch(/\.project-settings-main\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\) auto;/s);
-    expect(styles).toMatch(/\.project-settings-actions\s*\{[^}]*min-height:\s*54px;/s);
+    expect(styles).toMatch(/\.project-settings-actions\s*\{[^}]*min-height:\s*108px;/s);
     expect(styles).toMatch(/\.project-settings-actions\s*\{[^}]*flex-wrap:\s*nowrap;/s);
     expect(styles).toMatch(/\.project-settings-actions\s*\{[^}]*box-shadow:\s*none;/s);
     expect(styles).toMatch(/\.project-path-control \[data-slot="button"\]\s*\{[^}]*height:\s*32px;/s);
+  });
+
+  it("optically aligns the narrower DingTalk brand mark with Sentry", () => {
+    expect(styles).toMatch(/\[data-brand-icon="dingtalk"\]\s*\{[^}]*transform:\s*scale\(1\.15\);/s);
+    expect(styles).toMatch(/\[data-brand-icon="dingtalk"\]\s*\{[^}]*transform-origin:\s*center;/s);
   });
 });

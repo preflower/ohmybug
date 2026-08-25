@@ -354,22 +354,35 @@ describe("Issue detail", () => {
     expect(cancel.querySelector(".lucide-square")).toBeNull();
   });
 
-  it("keeps Assessment actions outside the scrolling document and closes through cancel", async () => {
+  it("renders the unified Assessment review and cancels through the generic control", async () => {
     const onCancel = vi.fn(async () => undefined);
     const onRefresh = vi.fn(async () => undefined);
     render(<IssueDetail
-      issue={{ ...issue, status: "ASSESSMENT_REVIEW", repair: undefined, resolution: undefined }}
-      onApproveAssessment={async () => undefined}
+      issue={{
+        ...issue,
+        status: "REVIEW_REQUIRED",
+        repair: undefined,
+        resolution: undefined,
+        review: {
+          id: "review-assessment-1",
+          kind: "assessment",
+          requestedFrom: "ASSESSING",
+          payload: { verdict: "BUG" },
+          choices: [{
+            id: "implement",
+            label: "开始实现",
+            continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+          }],
+          requestedAt: "2026-08-25T08:00:00.000Z",
+        },
+      }}
       onCancel={onCancel}
       onRefresh={onRefresh}
-      onRequestReassessment={async () => undefined}
+      onSubmitReview={async () => undefined}
     />);
 
-    const dock = screen.getByTestId("assessment-approval-dock");
-    expect(dock.parentElement).toHaveClass("issue-detail");
-    expect(dock.previousElementSibling).toHaveClass("issue-detail-document");
-    fireEvent.click(screen.getByRole("button", { name: "关闭 Issue" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认关闭" }));
+    expect(screen.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
     await vi.waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
     expect(onRefresh).toHaveBeenCalledOnce();
   });
@@ -551,14 +564,14 @@ describe("Issue detail", () => {
     />);
 
     const recovery = within(screen.getByRole("region", { name: "交付恢复" }));
-    expect(recovery.getByText("交付失败，待重试")).toBeVisible();
-    expect(recovery.getByText("代码和工作目录已保留，可安全重试交付收尾。")).toBeVisible();
+    expect(recovery.getByText("交付失败，待重新验证")).toBeVisible();
+    expect(recovery.getByText("代码和工作目录已保留；AI 会从 Repair 重新验证、修复后再发布。")).toBeVisible();
     expect(recovery.getByText("自动恢复尝试 1/1 已用尽")).toBeVisible();
     expect(recovery.getByText("自动恢复结果：未找到可安全自动修复的路径")).toBeVisible();
     expect(recovery.getByText("commit · GIT_COMMAND_FAILED:commit")).toBeVisible();
     expect(recovery.getByText("提交钩子拒绝了交付")).toBeVisible();
     await act(async () => {
-      fireEvent.click(recovery.getByRole("button", { name: "重试交付" }));
+      fireEvent.click(recovery.getByRole("button", { name: "重新验证并修复" }));
     });
     expect(onApproveDelivery).toHaveBeenCalledOnce();
   });
@@ -570,9 +583,9 @@ describe("Issue detail", () => {
       onRefresh={async () => undefined}
     />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重试交付" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新验证并修复" }));
 
-    expect(await screen.findByText("重试交付失败")).toBeVisible();
+    expect(await screen.findByText("重新验证失败")).toBeVisible();
   });
 
   it("shows the returned branch separately from the completed Issue", () => {

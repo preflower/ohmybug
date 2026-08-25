@@ -2,6 +2,7 @@ import type { DesktopApi } from "../../electron/desktop-api.js";
 import type { AgentEventDto } from "./types.js";
 import {
   createProjectPayload,
+  saveProjectSettingsPayload,
   updateProjectPayload,
   type DirectorySelection,
   type ProductTransport,
@@ -18,12 +19,15 @@ export function createDesktopTransport(bridge: Readonly<DesktopApi>): ProductTra
     project: (id) => bridge.getProject(id),
     createProject: (project) => bridge.createProject(createProjectPayload(project)),
     updateProject: (id, project) => bridge.updateProject(id, updateProjectPayload(project)),
+    saveProjectSettings: (project, secretPatches) =>
+      bridge.saveProjectSettings(saveProjectSettingsPayload(project, secretPatches)),
     saveIntegrationSecrets: (id, pluginId, patch) =>
       bridge.setIntegrationSecrets(id, pluginId, patch),
     issues: () => bridge.listIssues(),
     issue: (id) => bridge.getIssue(id),
     issueWorkspace: (id) => bridge.getIssueWorkspace(id),
     submitManual: (input) => bridge.submitManual(input),
+    submitReview: (id, input) => bridge.submitReview(id, input),
     approveAssessment: (id, input) => bridge.approveAssessment(id, input),
     confirmNotABug: (id, reference) => bridge.confirmNotABug(id, reference),
     confirmDuplicate: (id, reference, duplicateOf) =>

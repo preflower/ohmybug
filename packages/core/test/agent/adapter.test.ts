@@ -5,6 +5,7 @@ import {
   AgentTurnInterruptedError,
   isAgentCapabilityRequiredError,
   isAgentTurnInterruptedError,
+  validateRepairResult,
   type AgentContinuation,
   type AgentInterruptionReason,
   AgentAdapter,
@@ -61,6 +62,54 @@ describe("AgentAdapter", () => {
     expect(continuation.reason).toBe("CAPABILITY_GRANTED");
   });
 
+  it("carries a generic review response back to the same Agent session", () => {
+    const continuation: AgentContinuation = {
+      reason: "REVIEW_SUBMITTED",
+      requestId: "review-19",
+      kind: "business-merge-conflict",
+      choiceId: "use-issue",
+      feedback: "Preserve the Issue behavior",
+      data: { source: "human" },
+    };
+
+    expect(continuation).toMatchObject({
+      reason: "REVIEW_SUBMITTED",
+      requestId: "review-19",
+      choiceId: "use-issue",
+    });
+  });
+
+  it("requires integrated metadata only for an observed Git base", () => {
+    const result = {
+      kind: "DELIVERY_READY" as const,
+      summary: "Implemented",
+      evidence: [],
+      verification: [{ command: "pnpm test", outcome: "PASSED" as const, summary: "Passed" }],
+    };
+    const repairInput = {
+      issue,
+      project,
+      assessment: {
+        revision: 1,
+        contentHash: "a".repeat(64),
+        verdict: "BUG" as const,
+        suggestedTitle: "Payment page",
+        reasoning: "Route missing",
+      },
+      evidenceDirectory: "/tmp/evidence",
+    };
+
+    expect(validateRepairResult(repairInput, result)).toEqual(result);
+    expect(() => validateRepairResult({
+      ...repairInput,
+      integration: {
+        baseBranch: "main",
+        observedBaseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/omb-19",
+      },
+    }, result)).toThrow("REPAIR_INTEGRATION_RESULT_REQUIRED");
+  });
+
   it.each(["RUNTIME_STOPPING", "USER_CANCELED"] as const)(
     "preserves the typed %s interruption reason",
     (reason) => {
@@ -98,6 +147,7 @@ describe("AgentAdapter", () => {
       reasoning: "可复现",
     };
     const repair: RepairResult = {
+      kind: "DELIVERY_READY",
       summary: "恢复支付页",
       evidence: [
         {
@@ -106,6 +156,11 @@ describe("AgentAdapter", () => {
           relativePath: "proof.png",
         },
       ],
+      verification: [{
+        command: "pnpm test",
+        outcome: "PASSED",
+        summary: "Tests passed",
+      }],
     };
     const recovery: FinalizationRecoveryResult = {
       summary: "Removed generated cache",
@@ -152,7 +207,7 @@ describe("AgentAdapter", () => {
       project,
       assessment,
       deliveryDraft: {
-        summary: repair.summary,
+        summary: repair.kind === "DELIVERY_READY" ? repair.summary : "unreachable",
         repairIteration: 1,
         implementationCompletedAt: "2026-08-20T06:15:00.000Z",
       },

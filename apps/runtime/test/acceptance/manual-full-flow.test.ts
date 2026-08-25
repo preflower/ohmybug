@@ -50,7 +50,7 @@ describe("SQLite-backed Runtime acceptance", () => {
     if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
     await runtime.drain();
     const assessed = runtime.getIssue(created.issue.id);
-    expect(assessed.status).toBe("ASSESSMENT_REVIEW");
+    expect(assessed.status).toBe("REVIEW_REQUIRED");
 
     runtime.approveAssessment(assessed.id, {
       assessmentRevision: assessed.assessment!.revision,
@@ -59,7 +59,7 @@ describe("SQLite-backed Runtime acceptance", () => {
     });
     await runtime.drain();
     const delivered = runtime.getIssue(assessed.id);
-    expect(delivered.status).toBe("ACCEPTANCE_REVIEW");
+    expect(delivered.status).toBe("REVIEW_REQUIRED");
     const evidence = delivered.repair?.delivery?.evidence[0];
     if (!evidence) throw new Error("EVIDENCE_REQUIRED");
     const intakeDirectory = agent.repairInputs[0]?.evidenceDirectory;
@@ -93,13 +93,15 @@ describe("SQLite-backed Runtime acceptance", () => {
       "WORKSPACE_READY",
       "ASSESSMENT_STARTED",
       "ASSESSMENT_READY",
-      "ASSESSMENT_APPROVED",
+      "REVIEW_REQUESTED",
+      "REVIEW_SUBMITTED",
       "REPAIR_STARTED",
       "IMPLEMENTATION_READY",
       "DELIVERY_READY",
       "EVIDENCE_CHECK_STARTED",
       "EVIDENCE_ACCEPTED",
-      "DELIVERY_APPROVED",
+      "REVIEW_REQUESTED",
+      "REVIEW_SUBMITTED",
       "ISSUE_COMPLETED",
     ]);
     await runtime.stop();

@@ -80,6 +80,7 @@ export function createBrowserDevelopmentTransport(
     },
     createProject: readOnly,
     updateProject: readOnly,
+    saveProjectSettings: readOnly,
     saveIntegrationSecrets: readOnly,
     issues: async () => (await snapshot()).issues,
     issue: async (id) => {
@@ -89,6 +90,7 @@ export function createBrowserDevelopmentTransport(
     },
     issueWorkspace: async (id) => (await snapshot()).issueWorkspaces?.[id] ?? null,
     submitManual: readOnly,
+    submitReview: readOnly,
     approveAssessment: readOnly,
     confirmNotABug: readOnly,
     confirmDuplicate: readOnly,

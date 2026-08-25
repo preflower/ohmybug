@@ -17,6 +17,7 @@ export * from "./ports/evidence-store.js";
 export * from "./ports/integration-checkpoint-store.js";
 export * from "./ports/runtime-store.js";
 export * from "./issue/create.js";
+export * from "./issue/legacy-review.js";
 export * from "./issue/results.js";
 export * from "./issue/schema.js";
 export * from "./issue/title.js";

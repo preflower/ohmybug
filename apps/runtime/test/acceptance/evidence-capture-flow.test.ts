@@ -38,7 +38,12 @@ describe("independent evidence capture acceptance", () => {
       copyFixtures(projectRoot);
       const configured = await captureProject(mode, projectRoot);
       const agent = new FakeAgent();
-      agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+      agent.nextRepairResult = {
+        kind: "DELIVERY_READY",
+        summary: "Implemented",
+        evidence: [],
+        verification: [],
+      };
       const runtime = createRuntime({
         databasePath: join(root, "runtime.sqlite"),
         agent,
@@ -51,7 +56,7 @@ describe("independent evidence capture acceptance", () => {
         await runtime.drain();
 
         expect(runtime.getIssue(issue.id)).toMatchObject({
-          status: "ACCEPTANCE_REVIEW",
+          status: "REVIEW_REQUIRED",
           repair: {
             iteration: 1,
             deliveryDraft: { summary: "Implemented" },
@@ -72,7 +77,12 @@ describe("independent evidence capture acceptance", () => {
     mkdirSync(projectRoot);
     const configured = await captureProject("browser", projectRoot);
     const agent = new FakeAgent();
-    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [],
+    };
     const provider = new RestartCaptureProvider();
     let sequence = 0;
     const options = {
@@ -101,7 +111,7 @@ describe("independent evidence capture acceptance", () => {
     await reopened.drain();
 
     expect(reopened.getIssue(issue.id)).toMatchObject({
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       repair: {
         iteration: 1,
         evidenceRetries: 1,
@@ -118,7 +128,12 @@ describe("independent evidence capture acceptance", () => {
     mkdirSync(projectRoot);
     const configured = await captureProject("browser", projectRoot);
     const agent = new FakeAgent();
-    agent.nextRepairResult = { summary: "Implemented", evidence: [] };
+    agent.nextRepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Implemented",
+      evidence: [],
+      verification: [],
+    };
     const provider = new FakeEvidenceCaptureProvider();
     provider.error = new EvidenceCaptureError(
       "EVIDENCE_TARGET_UNREACHABLE",
@@ -145,7 +160,7 @@ describe("independent evidence capture acceptance", () => {
     provider.error = undefined;
     runtime.retryIssue(issue.id);
     await runtime.drain();
-    expect(runtime.getIssue(issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    expect(runtime.getIssue(issue.id)?.status).toBe("REVIEW_REQUIRED");
     expect(agent.repairSessions).toEqual(["session-1"]);
     await runtime.stop();
   });

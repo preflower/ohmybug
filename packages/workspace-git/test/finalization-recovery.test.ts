@@ -51,20 +51,17 @@ async function setupRecovery(options: {
   };
   const head = await git(acquired.projectPath, "rev-parse", "HEAD");
   const index = await git(acquired.projectPath, "ls-files", "--stage");
-  const error = await provider.publish({
-    issue: approved,
-    resourceId: "git:issue-1",
-  }).catch((caught: unknown) => caught);
-  if (!(error instanceof WorkspaceFinalizationError)) {
-    throw new Error("WORKSPACE_FINALIZATION_ERROR_REQUIRED");
-  }
+  const error = new WorkspaceFinalizationError({
+    providerId: "git",
+    step: "add",
+    code: "GIT_GENERATED_ARTIFACTS_PRESENT",
+    message: "Legacy publication found generated artifact roots",
+    relatedPaths: options.diagnosticPaths ?? [".pnpm-store"],
+  });
   const context = await provider.prepareFinalizationRecovery?.({
     issue: { ...approved, status: "FINALIZATION_RECOVERY" },
     resourceId: "git:issue-1",
-    diagnostic: {
-      ...error.diagnostic,
-      relatedPaths: options.diagnosticPaths ?? error.diagnostic.relatedPaths,
-    },
+    diagnostic: error.diagnostic,
     attemptId: "recovery-1",
   });
   if (!context) throw new Error("FINALIZATION_RECOVERY_CONTEXT_REQUIRED");

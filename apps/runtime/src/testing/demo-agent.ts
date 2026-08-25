@@ -28,6 +28,7 @@ export interface DemoAgentAdapterOptions extends AgentPluginContext {
   unavailableOnce?: boolean;
   agentId?: string;
   finalizationRecoveryResult?: FinalizationRecoveryResult;
+  repairResults?: RepairResult[];
 }
 
 interface ActiveTurn {
@@ -37,16 +38,19 @@ interface ActiveTurn {
 }
 
 export class DemoAgentAdapter implements AgentAdapter {
+  readonly repairInputs: RepairInput[] = [];
   private readonly active = new Map<string, ActiveTurn>();
   private readonly now: () => Date;
   private readonly agentId: string;
   private sessionSequence = 0;
   private unavailablePending: boolean;
+  private readonly repairResults: RepairResult[];
 
   constructor(private readonly options: DemoAgentAdapterOptions) {
     this.now = options.now ?? (() => new Date());
     this.agentId = options.agentId ?? "demo";
     this.unavailablePending = options.unavailableOnce ?? false;
+    this.repairResults = [...(options.repairResults ?? [])];
   }
 
   async createSession(input: CreateSessionInput): Promise<AgentSessionRef> {
@@ -79,9 +83,27 @@ export class DemoAgentAdapter implements AgentAdapter {
     return this.runTurn(session, async (signal) => {
       await this.prepareNativeSession(session, input.issue.id, input.project.id);
       await this.wait(signal);
+      this.repairInputs.push(input);
+      const queued = this.repairResults.shift();
+      if (queued) return queued;
       return {
+        kind: "DELIVERY_READY",
         summary: "The failing path now returns a recoverable result.",
         evidence: [],
+        ...(input.integration
+          ? {
+              integration: {
+                baseCommit: input.integration.observedBaseCommit,
+                issueCommit: input.integration.observedBaseCommit,
+                conflicts: [],
+              },
+            }
+          : {}),
+        verification: [{
+          command: input.project.commands?.test ?? "pnpm test",
+          outcome: "PASSED",
+          summary: "configured tests passed",
+        }],
       };
     });
   }

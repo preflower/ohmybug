@@ -5,6 +5,7 @@ import type {
   FinalizationRecoveryResult,
   Issue,
   NewIssueEvent,
+  RepairResult,
   RuntimeProject,
   WorkspaceFinalizationDiagnostic,
 } from "@oh-my-bug/core";
@@ -89,6 +90,21 @@ export type WorkspaceFinalizationRecoveryValidation =
   | { kind: "CHANGED"; changedPaths: string[] }
   | { kind: "UNSAFE"; changedPaths: string[]; reason: string };
 
+export interface WorkspaceRepairObservation {
+  required: boolean;
+  baseBranch?: string;
+  baseCommit?: string;
+  issueBranch?: string;
+}
+
+export type WorkspaceRepairValidation =
+  | { kind: "DELIVERY_READY"; branch: BranchInfo }
+  | { kind: "BUSINESS_DECISION_REQUIRED" };
+
+export type WorkspacePublishResult =
+  | { kind: "PUBLISHED"; branch?: BranchInfo }
+  | { kind: "BASE_STALE"; currentBaseCommit: string };
+
 export interface WorkspaceProvider {
   readonly id: string;
   acquire(input: { issue: Issue; project: RuntimeProject }): Promise<{
@@ -99,10 +115,21 @@ export interface WorkspaceProvider {
     issue: Issue;
     resourceId: string;
   }): Promise<WorkspaceDescription>;
+  observeRepair?(input: {
+    issue: Issue;
+    resourceId: string;
+  }): Promise<WorkspaceRepairObservation>;
+  validateRepair?(input: {
+    issue: Issue;
+    resourceId: string;
+    observation: WorkspaceRepairObservation;
+    result: RepairResult;
+    runtimeIntakeDirectory?: string;
+  }): Promise<WorkspaceRepairValidation>;
   publish(input: {
     issue: Issue;
     resourceId: string;
-  }): Promise<BranchInfo | undefined>;
+  }): Promise<WorkspacePublishResult>;
   prepareFinalizationRecovery?(input: {
     issue: Issue;
     resourceId: string;

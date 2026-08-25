@@ -1,14 +1,11 @@
 import {
   acceptIntegrationInput as acceptCoreInput,
-  approveAssessment,
-  confirmAssessmentResolution,
   grantCapabilityRequest,
   replaceAgentSession,
-  requestAssessmentChanges,
-  requestDeliveryChanges,
   retryEvidence,
+  submitReview as submitCoreReview,
   transitionIssue,
-  type ApproveAssessmentInput,
+  retryFinalizationAsRepair,
   type IntegrationAdapter,
   type IntegrationInput,
   type IntakeResult,
@@ -16,6 +13,7 @@ import {
   type PendingOperation,
   type RuntimeProject,
   type RuntimeStore,
+  type ReviewSubmission,
 } from "@oh-my-bug/core";
 import type { LifecycleEventMap } from "@oh-my-bug/module-api";
 
@@ -24,6 +22,10 @@ import type {
   LifecycleHookFailure,
   RuntimeLifecycleHooks,
 } from "../modules/lifecycle-hooks.js";
+import {
+  applyReviewSideEffects,
+  reviewResponseDuplicate,
+} from "./reviews.js";
 
 export interface ManualSubmission {
   commandId: string;
@@ -35,6 +37,10 @@ export interface ManualSubmission {
 export interface AssessmentReference {
   assessmentRevision: number;
   assessmentContentHash: string;
+}
+
+export interface ApproveAssessmentInput extends AssessmentReference {
+  title: string;
 }
 
 export interface RuntimeCommandDependencies {
@@ -101,9 +107,48 @@ export class RuntimeCommands {
     return this.dependencies.store.readEvents(issueId, afterSequence);
   }
 
+  submitReview(issueId: string, submission: ReviewSubmission): Issue {
+    this.assertAccepting();
+    const before = this.getIssue(issueId);
+    let duplicateOf: string | undefined;
+    if (before.review?.kind === "assessment" && submission.choiceId === "duplicate") {
+      duplicateOf = this.resolveDuplicateTarget(before, reviewResponseDuplicate(submission));
+    }
+    const now = this.dependencies.now();
+    const selected = this.dependencies.store.transaction((transaction) => {
+      const current = this.getIssue(issueId);
+      const submitted = submitCoreReview(current, submission, now);
+      const next = applyReviewSideEffects({
+        previous: current,
+        next: submitted.issue,
+        submission,
+        ...(duplicateOf ? { duplicateOf } : {}),
+      });
+      transaction.updateIssue(next, current.revision, submitted.operation);
+      transaction.appendEvent(this.event(issueId, "REVIEW_SUBMITTED", {
+        requestId: submitted.request.id,
+        kind: submitted.request.kind,
+        choiceId: submitted.choice.id,
+        operation: submitted.operation,
+        revision: next.revision,
+        ...(submission.feedback ? { feedback: submission.feedback } : {}),
+        ...(submission.data !== undefined ? { response: submission.data } : {}),
+      }));
+      return { issue: next, operation: submitted.operation, request: submitted.request };
+    });
+    if (selected.operation) this.dependencies.wake();
+    if (selected.request.kind === "delivery" && selected.operation === "FINALIZE") {
+      const project = this.dependencies.store.getProject(selected.issue.projectId);
+      if (!project) throw new Error("PROJECT_NOT_FOUND");
+      this.emitLifecycle("issue.userApproved", { issue: selected.issue, project });
+    }
+    return selected.issue;
+  }
+
   approveAssessment(issueId: string, approval: ApproveAssessmentInput): Issue {
-    return this.change(issueId, "ASSESSMENT_APPROVED", "REPAIR", (issue, now) =>
-      approveAssessment(issue, approval, now));
+    const issue = this.getIssue(issueId);
+    this.assertAssessmentReference(issue, approval);
+    return this.submitChoice(issue, "implement", { title: approval.title });
   }
 
   /** @deprecated Use approveAssessment. */
@@ -112,41 +157,23 @@ export class RuntimeCommands {
   }
 
   confirmNotABug(issueId: string, reference: AssessmentReference): Issue {
-    return this.change(issueId, "NOT_A_BUG_CONFIRMED", null, (issue, now) =>
-      confirmAssessmentResolution(issue, { ...reference, resolution: "NOT_A_BUG" }, now));
+    const issue = this.getIssue(issueId);
+    this.assertAssessmentReference(issue, reference);
+    return this.submitChoice(issue, "not-a-bug");
   }
 
   confirmDuplicate(issueId: string, reference: AssessmentReference, duplicateOf: string): Issue {
-    this.assertAccepting();
-    const source = this.getIssue(issueId);
-    const targetReference = duplicateOf.trim();
-    if (targetReference === source.id || targetReference === source.identifier) {
-      throw new Error("DUPLICATE_TARGET_SELF");
-    }
-    const directTarget = this.dependencies.store.getIssue(targetReference);
-    if (directTarget && directTarget.projectId !== source.projectId) {
-      throw new Error("DUPLICATE_TARGET_NOT_FOUND");
-    }
-    const target = directTarget ?? this.dependencies.store.listIssues(source.projectId)
-      .find((candidate) => candidate.id === targetReference || candidate.identifier === targetReference);
-    if (!target) throw new Error("DUPLICATE_TARGET_NOT_FOUND");
-    if (target.id === source.id) throw new Error("DUPLICATE_TARGET_SELF");
-    return this.change(issueId, "DUPLICATE_CONFIRMED", null, (issue, now) =>
-      confirmAssessmentResolution(issue, {
-        ...reference,
-        resolution: "DUPLICATE",
-        duplicateOf: target.identifier,
-      }, now));
+    const issue = this.getIssue(issueId);
+    this.assertAssessmentReference(issue, reference);
+    return this.submitChoice(issue, "duplicate", { duplicateOf });
   }
 
   requestReassessment(issueId: string, feedback: string): Issue {
-    return this.change(issueId, "REASSESSMENT_REQUESTED", "ASSESS", (issue, now) =>
-      requestAssessmentChanges(issue, feedback, now), { detail: feedback.trim() });
+    return this.submitChoice(this.getIssue(issueId), "reassess", undefined, feedback);
   }
 
   rejectDelivery(issueId: string, feedback: string): Issue {
-    return this.change(issueId, "DELIVERY_REJECTED", "REPAIR", (issue, now) =>
-      requestDeliveryChanges(issue, feedback, now));
+    return this.submitChoice(this.getIssue(issueId), "request-changes", undefined, feedback);
   }
 
   approveDelivery(issueId: string): Issue {
@@ -155,18 +182,13 @@ export class RuntimeCommands {
     if (current.status === "FINALIZATION_FAILED") {
       return this.change(
         issueId,
-        "DELIVERY_FINALIZATION_RETRIED",
-        "FINALIZE",
-        (issue, now) => transitionIssue(issue, "RETRY_FINALIZATION", now),
+        "DELIVERY_FINALIZATION_REPAIR_REQUESTED",
+        "REPAIR",
+        retryFinalizationAsRepair,
       );
     }
 
-    const approved = this.change(issueId, "DELIVERY_APPROVED", "FINALIZE", (issue, now) =>
-      transitionIssue(issue, "APPROVE_DELIVERY", now));
-    const project = this.dependencies.store.getProject(approved.projectId);
-    if (!project) throw new Error("PROJECT_NOT_FOUND");
-    this.emitLifecycle("issue.userApproved", { issue: approved, project });
-    return approved;
+    return this.submitChoice(current, "accept");
   }
 
   retryIssue(issueId: string): Issue {
@@ -312,6 +334,53 @@ export class RuntimeCommands {
     });
     if (pendingOperation) this.dependencies.wake();
     return updated;
+  }
+
+  private submitChoice(
+    issue: Issue,
+    choiceId: string,
+    data?: ReviewSubmission["data"],
+    feedback?: string,
+  ): Issue {
+    if (issue.status !== "REVIEW_REQUIRED" || !issue.review) {
+      throw new Error("REVIEW_NOT_AVAILABLE");
+    }
+    return this.submitReview(issue.id, {
+      expectedRevision: issue.revision,
+      requestId: issue.review.id,
+      choiceId,
+      ...(feedback ? { feedback: feedback.trim() } : {}),
+      ...(data !== undefined ? { data } : {}),
+    });
+  }
+
+  private assertAssessmentReference(
+    issue: Issue,
+    reference: AssessmentReference,
+  ): void {
+    if (
+      !issue.assessment
+      || issue.assessment.revision !== reference.assessmentRevision
+      || issue.assessment.contentHash !== reference.assessmentContentHash
+    ) throw new Error("Stale Assessment approval");
+  }
+
+  private resolveDuplicateTarget(source: Issue, rawReference: string): string {
+    const targetReference = rawReference.trim();
+    if (!targetReference) throw new Error("DUPLICATE_TARGET_NOT_FOUND");
+    if (targetReference === source.id || targetReference === source.identifier) {
+      throw new Error("DUPLICATE_TARGET_SELF");
+    }
+    const directTarget = this.dependencies.store.getIssue(targetReference);
+    if (directTarget && directTarget.projectId !== source.projectId) {
+      throw new Error("DUPLICATE_TARGET_NOT_FOUND");
+    }
+    const target = directTarget ?? this.dependencies.store.listIssues(source.projectId)
+      .find((candidate) =>
+        candidate.id === targetReference || candidate.identifier === targetReference);
+    if (!target) throw new Error("DUPLICATE_TARGET_NOT_FOUND");
+    if (target.id === source.id) throw new Error("DUPLICATE_TARGET_SELF");
+    return target.identifier;
   }
 
   private event(issueId: string, type: string, data = {}) {

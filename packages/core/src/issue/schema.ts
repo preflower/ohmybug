@@ -4,14 +4,14 @@ import {
   agentSessionRefSchema,
   assessmentSchema,
   deliverySchema,
+  deliveryIntegrationSnapshotSchema,
 } from "../agent/schemas.js";
 import { integrationInputSchema } from "../integration/input.js";
-import type { Issue } from "./types.js";
+import type { Issue, ReviewJson } from "./types.js";
 
 export const issueStatusSchema = z.enum([
   "RECEIVED",
   "ASSESSING",
-  "ASSESSMENT_REVIEW",
   "ASSESSMENT_FAILED",
   "REPAIRING",
   "EVIDENCE_CAPTURE",
@@ -19,7 +19,7 @@ export const issueStatusSchema = z.enum([
   "EVIDENCE_FAILED",
   "REPAIR_FAILED",
   "PERMISSION_REQUIRED",
-  "ACCEPTANCE_REVIEW",
+  "REVIEW_REQUIRED",
   "FINALIZING",
   "FINALIZATION_RECOVERY",
   "FINALIZATION_FAILED",
@@ -27,6 +27,68 @@ export const issueStatusSchema = z.enum([
   "CLOSED",
   "CANCELED",
 ]);
+
+const MAX_REVIEW_JSON_BYTES = 32_768;
+const MAX_REVIEW_JSON_DEPTH = 8;
+
+function reviewJsonDepth(value: ReviewJson): number {
+  if (value === null || typeof value !== "object") return 0;
+  const values: ReviewJson[] = Array.isArray(value) ? value : Object.values(value);
+  let childDepth = 0;
+  for (const item of values) {
+    childDepth = Math.max(childDepth, reviewJsonDepth(item));
+  }
+  return 1 + childDepth;
+}
+
+export const reviewJsonSchema: z.ZodType<ReviewJson> = z.lazy(() => z.union([
+  z.null(),
+  z.boolean(),
+  z.number().finite(),
+  z.string().max(MAX_REVIEW_JSON_BYTES),
+  z.array(reviewJsonSchema).max(1_000),
+  z.record(z.string().trim().min(1).max(200), reviewJsonSchema),
+])).superRefine((value, context) => {
+  if (reviewJsonDepth(value) > MAX_REVIEW_JSON_DEPTH) {
+    context.addIssue({ code: "custom", message: "REVIEW_PAYLOAD_TOO_DEEP" });
+  }
+  if (Buffer.byteLength(JSON.stringify(value), "utf8") > MAX_REVIEW_JSON_BYTES) {
+    context.addIssue({ code: "custom", message: "REVIEW_PAYLOAD_TOO_LARGE" });
+  }
+});
+
+const reviewContinuationSchema = z.object({
+  operation: z.enum(["ASSESS", "REPAIR", "FINALIZE"]).optional(),
+  resumeStatus: z.enum(["ASSESSING", "REPAIRING", "FINALIZING", "CLOSED"]),
+  resolution: z.enum(["FIXED", "IMPLEMENTED", "NOT_A_BUG", "DUPLICATE"]).optional(),
+}).strict();
+
+const reviewChoiceSchema = z.object({
+  id: z.string().trim().min(1).max(100),
+  label: z.string().trim().min(1).max(200),
+  feedbackRequired: z.boolean().optional(),
+  continuation: reviewContinuationSchema,
+}).strict();
+
+export const reviewRequestSchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  kind: z.string().trim().min(1).max(100),
+  requestedFrom: z.enum(["ASSESSING", "REPAIRING", "EVIDENCE_CHECK"]),
+  payload: reviewJsonSchema,
+  choices: z.array(reviewChoiceSchema).min(1).max(10).refine(
+    (choices) => new Set(choices.map((choice) => choice.id)).size === choices.length,
+    "REVIEW_CHOICE_DUPLICATE",
+  ),
+  requestedAt: z.iso.datetime(),
+}).strict();
+
+export const reviewSubmissionSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  requestId: z.string().trim().min(1).max(200),
+  choiceId: z.string().trim().min(1).max(100),
+  feedback: z.string().trim().min(1).max(4_000).optional(),
+  data: reviewJsonSchema.optional(),
+}).strict();
 
 const agentCapabilitySchema = z.enum(["HOST_EXECUTION", "NETWORK_ACCESS"]);
 const capabilityRequesterSchema = z.object({
@@ -156,6 +218,7 @@ export const issueSchema: z.ZodType<Issue> = z
           summary: z.string().trim().min(1),
           repairIteration: z.number().int().positive(),
           implementationCompletedAt: z.iso.datetime(),
+          integration: deliveryIntegrationSnapshotSchema.optional(),
         }).strict().optional(),
         delivery: deliverySchema.optional(),
       })
@@ -178,6 +241,7 @@ export const issueSchema: z.ZodType<Issue> = z
       "CAPABILITY_GRANT_DUPLICATE",
     ).optional(),
     pendingCapabilityRequest: pendingCapabilityRequestSchema.optional(),
+    review: reviewRequestSchema.optional(),
     finalizationRecovery: finalizationRecoverySchema.optional(),
     revision: z.number().int().positive(),
     createdAt: z.iso.datetime(),
