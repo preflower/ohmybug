@@ -584,6 +584,7 @@ export class RuntimeWorker {
     const attemptId = current.finalizationRecovery?.attemptId;
     const diagnostic = current.finalizationRecovery?.diagnostic;
     const fingerprintRef = current.finalizationRecovery?.fingerprintRef;
+    const recoveryContext = current.finalizationRecovery?.context;
     const contextEvent = this.dependencies.store.readEvents(current.id).findLast((event) =>
       event.type === "DELIVERY_FINALIZATION_RECOVERY_STARTED"
       && event.data.attemptId === attemptId);
@@ -596,6 +597,7 @@ export class RuntimeWorker {
       || !attemptId
       || !diagnostic
       || !fingerprintRef
+      || !recoveryContext
       || typeof workspaceStatus !== "string"
       || typeof fingerprintSummary !== "string"
     ) {
@@ -636,6 +638,8 @@ export class RuntimeWorker {
         diagnostic,
         workspaceStatus,
         fingerprintSummary,
+        recoveryKind: recoveryContext.recoveryKind,
+        ...(recoveryContext.merge ? { merge: recoveryContext.merge } : {}),
         continuation: this.continuation(claimed, "RECOVER_FINALIZATION"),
       });
       await this.dependencies.workspaces.validateFinalizationRecovery(

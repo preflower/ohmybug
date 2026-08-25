@@ -55,6 +55,7 @@ describe("demo Agent adapter", () => {
       },
       workspaceStatus: "?? .pnpm-store/",
       fingerprintSummary: "approved content unchanged",
+      recoveryKind: "GENERATED_ARTIFACT_CLEANUP" as const,
     };
 
     await expect(unsafeAdapter.recoverFinalization!(session, input)).resolves.toMatchObject({

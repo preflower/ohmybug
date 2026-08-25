@@ -228,6 +228,10 @@ export class WorkspaceCoordinator {
             attemptId,
             diagnostic,
             fingerprintRef: context.fingerprintRef,
+            context: {
+              recoveryKind: context.recoveryKind,
+              ...(context.merge ? { merge: context.merge } : {}),
+            },
           }, this.dependencies.now());
           this.dependencies.persistence.transaction(() => {
             this.dependencies.store.transaction((transaction) => {
@@ -250,8 +254,23 @@ export class WorkspaceCoordinator {
                   fingerprintRef: context.fingerprintRef,
                   fingerprintSummary: context.fingerprintSummary,
                   workspaceStatus: context.workspaceStatus,
+                  recoveryKind: context.recoveryKind,
+                  ...(context.merge ? { merge: context.merge } : {}),
                 },
               ));
+              if (context.recoveryKind === "MERGE_CONFLICT" && context.merge) {
+                transaction.appendEvent(this.event(
+                  issue.id,
+                  "DELIVERY_FINALIZATION_MERGE_PREPARED",
+                  {
+                    attemptId,
+                    baseCommit: context.merge.baseCommit,
+                    issueCommit: context.merge.issueCommit,
+                    conflictCount: context.merge.conflictPaths.length,
+                    conflictPaths: context.merge.conflictPaths,
+                  },
+                ));
+              }
             });
           });
           return;
@@ -362,6 +381,19 @@ export class WorkspaceCoordinator {
           "DELIVERY_FINALIZATION_RECOVERY_COMPLETED",
           eventData,
         ));
+        if (
+          validation.kind === "CHANGED"
+          && issue.finalizationRecovery?.context?.recoveryKind === "MERGE_CONFLICT"
+        ) {
+          transaction.appendEvent(this.event(
+            issue.id,
+            "DELIVERY_FINALIZATION_MERGE_RESOLVED",
+            {
+              ...eventData,
+              resolvedPathCount: validation.changedPaths.length,
+            },
+          ));
+        }
         transaction.appendEvent(this.event(
           issue.id,
           validation.kind === "UNCHANGED"

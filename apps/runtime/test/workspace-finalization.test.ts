@@ -279,6 +279,7 @@ describe("Workspace finalization", () => {
               fingerprintRef: "fingerprint-1",
               workspaceStatus: "?? .pnpm-store/shared/v11/tmp/_tmp_fixture/",
               fingerprintSummary: "1 diagnostic root",
+              recoveryKind: "GENERATED_ARTIFACT_CLEANUP" as const,
             };
           },
           async validateFinalizationRecovery() {

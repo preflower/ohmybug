@@ -2,8 +2,12 @@ import {
   AgentCapabilityRequiredError,
   type AgentAdapter,
   type FinalizationRecoveryResult,
+  type WorkspaceFinalizationDiagnostic,
 } from "@oh-my-bug/core";
-import type { WorkspaceFinalizationRecoveryValidation } from "@oh-my-bug/module-api";
+import type {
+  WorkspaceFinalizationRecoveryContext,
+  WorkspaceFinalizationRecoveryValidation,
+} from "@oh-my-bug/module-api";
 import { describe, expect, it } from "vitest";
 
 import { RuntimeWorker } from "../src/orchestration/worker.js";
@@ -18,6 +22,62 @@ const recoveredResult: FinalizationRecoveryResult = {
 };
 
 describe("finalization recovery worker", () => {
+  it("passes prepared merge context to the Agent and emits merge lifecycle events", async () => {
+    const mergeDiagnostic: WorkspaceFinalizationDiagnostic = {
+      providerId: "recoverable",
+      step: "merge",
+      code: "GIT_AUTO_MERGE_CONFLICT",
+      message: "Automatic merge found a content conflict",
+      relatedPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+    };
+    const mergeContext: WorkspaceFinalizationRecoveryContext = {
+      fingerprintRef: "merge-fingerprint-1",
+      workspaceStatus: "UU apps/desktop/src/web/issues/issue-detail.tsx",
+      fingerprintSummary: "prepared merge with 1 conflict path",
+      recoveryKind: "MERGE_CONFLICT",
+      merge: {
+        kind: "MERGE_CONFLICT",
+        baseBranch: "main",
+        baseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/ohmybug-21",
+        issueCommit: "b".repeat(40),
+        conflictPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+        mergeMessages: ["CONFLICT (content): Merge conflict in issue-detail.tsx"],
+        mergePrepared: true,
+      },
+    };
+    const setup = await recoveryHarness(
+      { kind: "CHANGED", changedPaths: mergeContext.merge!.conflictPaths },
+      async () => ({
+        ...recoveredResult,
+        disposition: "REVALIDATION_REQUIRED",
+        affectedPaths: mergeContext.merge!.conflictPaths,
+      }),
+      { diagnostic: mergeDiagnostic, context: mergeContext },
+    );
+
+    await setup.worker.drainOne();
+
+    expect(setup.recoveryInputs).toEqual([expect.objectContaining({
+      recoveryKind: "MERGE_CONFLICT",
+      merge: mergeContext.merge,
+    })]);
+    expect(setup.fixture.store.getIssue(setup.issueId)).toMatchObject({
+      status: "EVIDENCE_CAPTURE",
+      finalizationRecovery: {
+        context: {
+          recoveryKind: "MERGE_CONFLICT",
+          merge: mergeContext.merge,
+        },
+      },
+    });
+    expect(setup.fixture.store.readEvents(setup.issueId).map((event) => event.type))
+      .toEqual(expect.arrayContaining([
+        "DELIVERY_FINALIZATION_MERGE_PREPARED",
+        "DELIVERY_FINALIZATION_MERGE_RESOLVED",
+      ]));
+  });
+
   it.each([
     {
       validation: { kind: "UNCHANGED" as const, changedPaths: [] as string[] },
@@ -159,6 +219,10 @@ describe("finalization recovery worker", () => {
 async function recoveryHarness(
   validation: WorkspaceFinalizationRecoveryValidation,
   recover: NonNullable<AgentAdapter["recoverFinalization"]> = async () => recoveredResult,
+  options?: {
+    diagnostic: WorkspaceFinalizationDiagnostic;
+    context: WorkspaceFinalizationRecoveryContext;
+  },
 ) {
   const recoveryInputs: Parameters<NonNullable<AgentAdapter["recoverFinalization"]>>[1][] = [];
   const recoverFinalization: NonNullable<AgentAdapter["recoverFinalization"]> = async (
@@ -170,7 +234,7 @@ async function recoveryHarness(
   };
   const agent: AgentAdapter = Object.assign(new FakeAgent(), { recoverFinalization });
   const fixture = createHarness(agent);
-  const diagnostic = {
+  const diagnostic: WorkspaceFinalizationDiagnostic = options?.diagnostic ?? {
     providerId: "recoverable",
     step: "add" as const,
     code: "GIT_COMMAND_FAILED:add",
@@ -195,10 +259,11 @@ async function recoveryHarness(
           throw Object.assign(new Error(diagnostic.code), { diagnostic });
         },
         async prepareFinalizationRecovery() {
-          return {
+          return options?.context ?? {
             fingerprintRef: "fingerprint-1",
             workspaceStatus: "?? .pnpm-store/shared/v11/tmp/_tmp_fixture/",
             fingerprintSummary: "1 diagnostic root",
+            recoveryKind: "GENERATED_ARTIFACT_CLEANUP",
           };
         },
         async validateFinalizationRecovery() { return validation; },
