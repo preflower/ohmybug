@@ -291,16 +291,7 @@ async function captureFingerprint(input: {
 }
 
 async function repositoryStateHash(worktreePath: string): Promise<string> {
-  const [configuration, refs] = await Promise.all([
-    runGit(worktreePath, ["config", "--local", "--null", "--list"]),
-    runGit(worktreePath, [
-      "for-each-ref",
-      "--format=%(refname)%00%(objectname)",
-      "refs/heads",
-      "refs/remotes",
-    ]),
-  ]);
-  return digest(`${configuration}\0${refs}`);
+  return digest(await runGit(worktreePath, ["config", "--local", "--null", "--list"]));
 }
 
 function assertRecoverableGitDiagnostic(

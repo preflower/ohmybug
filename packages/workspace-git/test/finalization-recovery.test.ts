@@ -163,10 +163,23 @@ describe("Git finalization recovery", () => {
     });
   });
 
-  it("rejects an unrelated ref mutation during the Agent turn", async () => {
+  it("ignores an unrelated ref mutation during the Agent turn", async () => {
     const fixture = await setupRecovery();
     await rm(fixture.diagnosticRoot, { recursive: true });
     await git(fixture.acquired.projectPath, "branch", "unrelated-concurrent-issue");
+
+    await expect(fixture.provider.validateFinalizationRecovery?.({
+      issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },
+      resourceId: "git:issue-1",
+      fingerprintRef: fixture.context.fingerprintRef,
+      result: recovered,
+    })).resolves.toEqual({ kind: "UNCHANGED", changedPaths: [] });
+  });
+
+  it("rejects a repository-local Git configuration mutation", async () => {
+    const fixture = await setupRecovery();
+    await rm(fixture.diagnosticRoot, { recursive: true });
+    await git(fixture.acquired.projectPath, "config", "core.autocrlf", "true");
 
     await expect(fixture.provider.validateFinalizationRecovery?.({
       issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },
