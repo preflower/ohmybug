@@ -67,6 +67,19 @@ function migrateDeliveryFinalizationStatuses(database: RuntimeDatabase): void {
   ).run();
 }
 
+function migrateFinalizationRecoveryBudget(database: RuntimeDatabase): void {
+  database.prepare(
+    `UPDATE issues
+     SET data_json = json_set(
+       data_json,
+       '$.finalizationRecovery',
+       json_object('automaticAttempts', 0)
+     )
+     WHERE status IN ('FINALIZING', 'FINALIZATION_FAILED')
+       AND json_type(data_json, '$.finalizationRecovery') IS NULL`,
+  ).run();
+}
+
 export function openRuntimeDatabase(path: string): RuntimeDatabase {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const database = new BetterSqlite3(path);
@@ -74,6 +87,7 @@ export function openRuntimeDatabase(path: string): RuntimeDatabase {
   if (path !== ":memory:") database.pragma("journal_mode = WAL");
   database.exec(runtimeSchema);
   migrateDeliveryFinalizationStatuses(database);
+  migrateFinalizationRecoveryBudget(database);
   migrateIntegrationInputsToProjectScope(database);
   database.prepare(
     `UPDATE issues

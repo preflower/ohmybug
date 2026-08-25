@@ -75,7 +75,9 @@ describe("Git Workspace restart acceptance", () => {
     await runtime.drain();
 
     const failed = await runtime.approveDelivery(assessed.id);
-    expect(failed.issue.status).toBe("FINALIZATION_FAILED");
+    expect(failed.issue.status).toBe("FINALIZING");
+    await runtime.drain();
+    expect(runtime.getIssue(assessed.id).status).toBe("FINALIZATION_FAILED");
     expect(fixture.agent.repairInputs).toHaveLength(1);
     await runtime.stop();
 
@@ -90,7 +92,9 @@ describe("Git Workspace restart acceptance", () => {
 
     expect(reopened.getIssue(assessed.id).status).toBe("FINALIZATION_FAILED");
     const completed = await reopened.approveDelivery(assessed.id);
-    expect(completed.issue.status).toBe("COMPLETED");
+    expect(completed.issue.status).toBe("FINALIZING");
+    await reopened.drain();
+    expect(reopened.getIssue(assessed.id).status).toBe("COMPLETED");
     expect(fixture.agent.repairInputs).toHaveLength(1);
     expect(reopened.readIssueEvents(assessed.id)).toEqual(expect.arrayContaining([
       expect.objectContaining({

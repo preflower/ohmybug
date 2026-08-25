@@ -412,10 +412,60 @@ describe("Issue detail", () => {
     expect(screen.queryByText(/发布/)).not.toBeInTheDocument();
   });
 
+  it("shows bounded AI finalization recovery state without duplicate delivery actions", () => {
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "FINALIZATION_RECOVERY",
+        resolution: "FIXED",
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-1",
+          fingerprintRef: "fingerprint-1",
+          diagnostic: {
+            providerId: "git",
+            step: "add",
+            code: "GIT_ADD_FAILED",
+            message: "生成的临时目录阻塞了 Git 暂存",
+            relatedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
+          },
+        },
+      }}
+      onApproveDelivery={async () => undefined}
+      onCancel={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.getByText("AI 正在恢复交付")).toBeVisible();
+    const recovery = screen.getByRole("status", { name: "自动交付恢复" });
+    expect(within(recovery).getByText("第 1/1 次自动恢复")).toBeVisible();
+    expect(within(recovery).getByText("生成的临时目录阻塞了 Git 暂存")).toBeVisible();
+    expect(within(recovery).getByText(".pnpm-store/shared/v11/tmp/_tmp_fixture")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消 Agent 运行" })).toBeVisible();
+  });
+
   it("retries only a failed finalization", async () => {
     const onApproveDelivery = vi.fn(async () => undefined);
     render(<IssueDetail
-      issue={{ ...issue, status: "FINALIZATION_FAILED", repair: undefined }}
+      issue={{
+        ...issue,
+        status: "FINALIZATION_FAILED",
+        repair: undefined,
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-1",
+          fingerprintRef: "fingerprint-1",
+          summary: "未找到可安全自动修复的路径",
+          diagnostic: {
+            providerId: "git",
+            step: "commit",
+            code: "GIT_COMMAND_FAILED:commit",
+            message: "提交钩子拒绝了交付",
+            relatedPaths: [],
+          },
+        },
+      }}
       onApproveDelivery={onApproveDelivery}
       onRefresh={async () => undefined}
     />);
@@ -423,6 +473,10 @@ describe("Issue detail", () => {
     const recovery = within(screen.getByRole("region", { name: "交付恢复" }));
     expect(recovery.getByText("交付失败，待重试")).toBeVisible();
     expect(recovery.getByText("代码和工作目录已保留，可安全重试交付收尾。")).toBeVisible();
+    expect(recovery.getByText("自动恢复尝试 1/1 已用尽")).toBeVisible();
+    expect(recovery.getByText("自动恢复结果：未找到可安全自动修复的路径")).toBeVisible();
+    expect(recovery.getByText("commit · GIT_COMMAND_FAILED:commit")).toBeVisible();
+    expect(recovery.getByText("提交钩子拒绝了交付")).toBeVisible();
     await act(async () => {
       fireEvent.click(recovery.getByRole("button", { name: "重试交付" }));
     });

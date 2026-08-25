@@ -115,4 +115,127 @@ describe("SQLite Runtime database", () => {
     }]);
     store.close();
   });
+
+  it("idempotently adds a recovery budget only to legacy active and failed finalizations", () => {
+    const path = databasePath();
+    const legacy = new BetterSqlite3(path);
+    legacy.exec(runtimeSchema);
+    legacy.prepare(
+      `INSERT INTO projects (id, project_key, revision, next_issue_sequence, data_json)
+       VALUES (?, ?, 1, 6, ?)`,
+    ).run(project.id, project.key, JSON.stringify(project));
+    const insert = legacy.prepare(
+      `INSERT INTO issues
+        (id, project_id, identifier, status, revision, pending_operation, data_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const seeded = [
+      {
+        id: "legacy-finalizing",
+        identifier: "OMB-11",
+        status: "FINALIZING",
+        revision: 11,
+        pending: "FINALIZE",
+      },
+      {
+        id: "legacy-finalization-failed",
+        identifier: "OMB-12",
+        status: "FINALIZATION_FAILED",
+        revision: 12,
+        pending: null,
+      },
+      {
+        id: "legacy-completed",
+        identifier: "OMB-13",
+        status: "COMPLETED",
+        revision: 13,
+        pending: null,
+      },
+      {
+        id: "existing-recovery",
+        identifier: "OMB-14",
+        status: "FINALIZATION_FAILED",
+        revision: 14,
+        pending: null,
+        finalizationRecovery: {
+          automaticAttempts: 1,
+          attemptId: "attempt-existing",
+          fingerprintRef: "fingerprint-existing",
+          summary: "Existing recovery summary",
+        },
+      },
+    ] as const;
+    for (const row of seeded) {
+      insert.run(
+        row.id,
+        project.id,
+        row.identifier,
+        row.status,
+        row.revision,
+        row.pending,
+        JSON.stringify({
+          ...issue,
+          id: row.id,
+          identifier: row.identifier,
+          status: row.status,
+          revision: row.revision,
+          updatedAt: `2026-08-20T15:${row.revision}:00.000Z`,
+          repair: {
+            iteration: 1,
+            delivery: {
+              summary: "Approved",
+              evidence: [{
+                type: "screenshot",
+                label: "Approved evidence",
+                evidenceId: `sha256-${"a".repeat(64)}`,
+              }],
+            },
+          },
+          ...(row.id === "existing-recovery"
+            ? { finalizationRecovery: row.finalizationRecovery }
+            : {}),
+        }),
+      );
+    }
+    legacy.prepare(
+      `INSERT INTO issue_events
+        (id, issue_id, event_sequence, event_type, actor, occurred_at, data_json)
+       VALUES ('event-before-migration', 'legacy-finalizing', 1, 'DELIVERY_APPROVED',
+         'USER', ?, '{"preserved":true}')`,
+    ).run(now);
+    legacy.close();
+
+    for (let open = 0; open < 2; open += 1) {
+      const store = new SqliteRuntimeStore(openRuntimeDatabase(path));
+      expect(store.getIssue("legacy-finalizing")).toMatchObject({
+        revision: 11,
+        updatedAt: "2026-08-20T15:11:00.000Z",
+        finalizationRecovery: { automaticAttempts: 0 },
+        repair: { delivery: { summary: "Approved" } },
+      });
+      expect(store.getIssue("legacy-finalization-failed")).toMatchObject({
+        revision: 12,
+        finalizationRecovery: { automaticAttempts: 0 },
+      });
+      expect(store.getIssue("legacy-completed")?.finalizationRecovery).toBeUndefined();
+      expect(store.getIssue("existing-recovery")?.finalizationRecovery).toEqual({
+        automaticAttempts: 1,
+        attemptId: "attempt-existing",
+        fingerprintRef: "fingerprint-existing",
+        summary: "Existing recovery summary",
+      });
+      expect(store.listPendingOperations()).toEqual([{
+        issue: expect.objectContaining({ id: "legacy-finalizing", revision: 11 }),
+        operation: "FINALIZE",
+      }]);
+      expect(store.readEvents("legacy-finalizing")).toEqual([
+        expect.objectContaining({
+          id: "event-before-migration",
+          type: "DELIVERY_APPROVED",
+          data: { preserved: true },
+        }),
+      ]);
+      store.close();
+    }
+  });
 });

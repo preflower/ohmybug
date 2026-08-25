@@ -59,6 +59,49 @@ describe("Issue persistence schema", () => {
     },
   );
 
+  it("round-trips bounded finalization recovery state and permission resume", () => {
+    const recovering = {
+      ...issue,
+      status: "PERMISSION_REQUIRED" as const,
+      finalizationRecovery: {
+        automaticAttempts: 1 as const,
+        attemptId: "recovery-1",
+        fingerprintRef: "fingerprint-1",
+        summary: "Removed generated package-manager cache",
+        diagnostic: {
+          providerId: "git",
+          step: "add" as const,
+          code: "GIT_COMMAND_FAILED:add",
+          exitCode: 128,
+          message: "Git could not add a generated directory",
+          stderr: "fatal: adding files failed",
+          relatedPaths: [".pnpm-store/shared/v11/tmp/_tmp_fixture"],
+        },
+      },
+      pendingCapabilityRequest: {
+        id: "request-recovery",
+        operation: "RECOVER_FINALIZATION" as const,
+        stage: "FINALIZATION_RECOVERY" as const,
+        resumeStatus: "FINALIZATION_RECOVERY" as const,
+        capabilities: ["HOST_EXECUTION" as const],
+        reason: "Inspect generated files outside the sandbox",
+        requestedAt: "2026-08-24T08:01:00.000Z",
+      },
+    };
+
+    expect(issueSchema.parse(recovering)).toEqual(recovering);
+    expect(() => issueSchema.parse({
+      ...recovering,
+      finalizationRecovery: {
+        ...recovering.finalizationRecovery,
+        diagnostic: {
+          ...recovering.finalizationRecovery.diagnostic,
+          relatedPaths: ["/Users/example/secret"],
+        },
+      },
+    })).toThrow();
+  });
+
   it("rejects the legacy APPROVED status", () => {
     expect(issueStatusSchema.safeParse("APPROVED").success).toBe(false);
   });
