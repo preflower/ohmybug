@@ -99,8 +99,8 @@ describe("application icon", () => {
       ];
       for (const offset of cornerOffsets) expect(data[offset]).toBe(0);
 
-      let minX = size;
-      let minY = size;
+      let minX: number = size;
+      let minY: number = size;
       let maxX = -1;
       let maxY = -1;
       let visiblePixels = 0;

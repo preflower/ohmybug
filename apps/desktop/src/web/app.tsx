@@ -101,7 +101,7 @@ function AppContent() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [health, setHealth] = useState<Record<string, { state: string; lastError?: string; nextRetryAt?: string }>>({});
   const [error, setError] = useState("");
-  const traySelection = useRef<string>();
+  const traySelection = useRef<string | undefined>(undefined);
   const canCreateIssue = loaded && projects.length > 0;
 
   const selectProjectDirectory = useCallback(async (): Promise<DirectorySelection> => {
