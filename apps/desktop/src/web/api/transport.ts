@@ -1,6 +1,7 @@
 import type {
   CreateProjectInput,
   IntegrationPluginManifest,
+  RuntimeOperationInput,
   UpdateProjectInput,
   WorkspaceProviderManifest,
 } from "@oh-my-bug/runtime/protocol";
@@ -36,6 +37,10 @@ export interface ProductTransport {
   project(id: string): Promise<ProjectDto>;
   createProject(project: ProjectFormValue): Promise<ProjectDto>;
   updateProject(id: string, project: ProjectFormValue): Promise<ProjectDto>;
+  saveProjectSettings(
+    project: ProjectFormValue,
+    secretPatches: Record<string, Record<string, string | null>>,
+  ): Promise<ProjectDto>;
   saveIntegrationSecrets(
     id: string,
     pluginId: string,
@@ -96,4 +101,19 @@ export function createProjectPayload(project: ProjectFormValue): CreateProjectIn
 export function updateProjectPayload(project: ProjectFormValue): UpdateProjectInput {
   if (!project.revision) throw new Error("PROJECT_REVISION_REQUIRED");
   return { ...createProjectPayload(project), expectedRevision: project.revision };
+}
+
+export function saveProjectSettingsPayload(
+  project: ProjectFormValue,
+  secretPatches: Record<string, Record<string, string | null>>,
+): RuntimeOperationInput<"saveProjectSettings"> {
+  const payload = { project: createProjectPayload(project), secretPatches };
+  if (!project.id) return { mode: "create", ...payload };
+  if (!project.revision) throw new Error("PROJECT_REVISION_REQUIRED");
+  return {
+    mode: "update",
+    id: project.id,
+    expectedRevision: project.revision,
+    ...payload,
+  };
 }

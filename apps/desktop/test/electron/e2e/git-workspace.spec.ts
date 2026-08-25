@@ -37,7 +37,7 @@ test("automatically merges an approved Issue branch into its configured baseline
       });
     }
     await desktop.page.getByTestId("project-settings-form")
-      .getByRole("button", { name: "保存项目", exact: true }).click();
+      .getByRole("button", { name: "保存更改", exact: true }).click();
     await expect(desktop.page.getByRole("status").filter({ hasText: "已保存" })).toBeVisible();
 
     await desktop.page.getByRole("button", { name: "新建 Issue" }).click();

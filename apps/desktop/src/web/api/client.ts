@@ -23,6 +23,7 @@ const unavailableTransport: ProductTransport = {
   project: unavailable,
   createProject: unavailable,
   updateProject: unavailable,
+  saveProjectSettings: unavailable,
   saveIntegrationSecrets: unavailable,
   issues: unavailable,
   issue: unavailable,

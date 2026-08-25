@@ -10,7 +10,6 @@ export type DingTalkRawData = Record<string, unknown>;
 
 export interface DingTalkAdapterOptions {
   conversationIds: string[];
-  mention: string;
   messageRule?: string;
   threadKeyField?: string;
   secretValues?: string[];
@@ -38,13 +37,13 @@ implements IntegrationAdapter<DingTalkRawData> {
     const text = rawData.text && typeof rawData.text === "object" && !Array.isArray(rawData.text)
       ? stringValue((rawData.text as Record<string, unknown>).content)
       : undefined;
-    if (rawData.isInAtList !== true || !text || !includesIgnoreCase(text, this.options.mention)) {
+    if (rawData.isInAtList !== true || !text) {
       throw new Error("DINGTALK_MENTION_REQUIRED");
     }
     if (this.options.messageRule && !includesIgnoreCase(text, this.options.messageRule)) {
       throw new Error("DINGTALK_MESSAGE_RULE_REJECTED");
     }
-    const content = removeOnceIgnoreCase(text, this.options.mention).trim();
+    const content = removeLeadingMention(text);
     if (!content) throw new Error("DINGTALK_CONTENT_REQUIRED");
     const occurredAt = typeof rawData.createAt === "number" && Number.isFinite(rawData.createAt)
       ? new Date(rawData.createAt).toISOString()
@@ -79,9 +78,8 @@ function includesIgnoreCase(value: string, search: string): boolean {
   return Boolean(search) && value.toLocaleLowerCase().includes(search.toLocaleLowerCase());
 }
 
-function removeOnceIgnoreCase(value: string, search: string): string {
-  const index = value.toLocaleLowerCase().indexOf(search.toLocaleLowerCase());
-  return index < 0 ? value : `${value.slice(0, index)}${value.slice(index + search.length)}`;
+function removeLeadingMention(value: string): string {
+  return value.replace(/^\s*@[^\s]+\s*/u, "").trim();
 }
 
 function redactRecord(value: Record<string, unknown>, secrets: string[]): Record<string, unknown> {

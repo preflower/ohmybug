@@ -76,6 +76,22 @@ export interface UpdateProjectInput extends Partial<CreateProjectInput> {
   expectedRevision: number;
 }
 
+export type IntegrationSecretPatches = Record<string, Record<string, string | null>>;
+
+export type SaveProjectSettingsInput =
+  | {
+      mode: "create";
+      project: CreateProjectInput;
+      secretPatches: IntegrationSecretPatches;
+    }
+  | {
+      mode: "update";
+      id: string;
+      expectedRevision: number;
+      project: CreateProjectInput;
+      secretPatches: IntegrationSecretPatches;
+    };
+
 export interface ManualIssueCommand {
   projectId: string;
   commandId: string;
@@ -127,6 +143,7 @@ export interface RuntimeApi {
     refreshRemote: boolean;
   }): Promise<WorkspaceBranchDiscovery>;
   getProject(input: { id: string }): Promise<ProductProject>;
+  saveProjectSettings(input: SaveProjectSettingsInput): Promise<ProductProject>;
   createProject(input: CreateProjectInput): Promise<ProductProject>;
   updateProject(input: { id: string; input: UpdateProjectInput }): Promise<ProductProject>;
   setIntegrationSecrets(input: {

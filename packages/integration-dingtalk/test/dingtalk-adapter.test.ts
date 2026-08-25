@@ -8,14 +8,13 @@ const message = {
   isInAtList: true,
   createAt: 1787133480000,
   sessionWebhook: "https://oapi.dingtalk.com/robot/send?access_token=secret-token",
-  text: { content: "@Oh My Bug 结算页过期会话返回 500，请修复" },
+  text: { content: "@OhMyBug 结算页过期会话返回 500，请修复" },
 };
 
 describe("DingTalk integration adapter", () => {
   it("keeps a one-sentence message as content without inventing summary or groupKey", async () => {
     const adapter = new DingTalkIntegrationAdapter({
       conversationIds: ["cidCheckoutTeam"],
-      mention: "@Oh My Bug",
       secretValues: ["secret-token"],
       id: () => "input-1",
       now: () => new Date("2026-08-20T10:00:00.000Z"),
@@ -36,7 +35,6 @@ describe("DingTalk integration adapter", () => {
   it("rejects disallowed conversations and messages without the configured mention", async () => {
     const adapter = new DingTalkIntegrationAdapter({
       conversationIds: ["allowed"],
-      mention: "@Oh My Bug",
     });
 
     await expect(adapter.adapt(message)).rejects.toThrow("DINGTALK_CONVERSATION_NOT_ALLOWED");
@@ -50,11 +48,21 @@ describe("DingTalk integration adapter", () => {
   it("uses an upstream thread key only when that field is explicitly configured", async () => {
     const adapter = new DingTalkIntegrationAdapter({
       conversationIds: ["cidCheckoutTeam"],
-      mention: "@Oh My Bug",
       threadKeyField: "threadId",
     });
 
     await expect(adapter.adapt({ ...message, threadId: "thread-9" }))
       .resolves.toMatchObject({ groupKey: "thread-9" });
+  });
+
+  it("uses DingTalk at metadata and removes only a leading robot mention", async () => {
+    const adapter = new DingTalkIntegrationAdapter({ conversationIds: ["cidCheckoutTeam"] });
+
+    await expect(adapter.adapt({
+      ...message,
+      text: { content: "@OhMyBug checkout fails; notify @Alice" },
+    })).resolves.toMatchObject({
+      data: { content: "checkout fails; notify @Alice" },
+    });
   });
 });

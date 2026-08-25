@@ -26,11 +26,13 @@ import type {
   ApprovalResult,
   CreateProjectInput,
   EvidencePayload,
+  IntegrationSecretPatches,
   IssueWorkspaceInfo,
   ProductProject,
   ProjectInspection,
   RuntimeApi,
   RuntimeHealth,
+  SaveProjectSettingsInput,
   UpdateProjectInput,
 } from "./protocol/types.js";
 import { readIssueWorkspaceInfo } from "./workspaces/issue-workspace-info.js";
@@ -64,6 +66,12 @@ interface SecretStore {
   get(ref: string): Promise<string | null>;
   set(ref: string, value: string): Promise<void>;
   delete(ref: string): Promise<void>;
+}
+
+interface SecretChange {
+  ref: string;
+  value: string | null;
+  previous: string | null;
 }
 
 export interface RuntimeServiceDependencies {
@@ -136,6 +144,97 @@ export class RuntimeService implements RuntimeApi {
   async getProject(input: { id: string }): Promise<ProductProject> {
     this.assertAccepting();
     return this.toProductProject(this.requireProject(input.id));
+  }
+
+  async saveProjectSettings(input: SaveProjectSettingsInput): Promise<ProductProject> {
+    return this.mutateProject(async () => {
+      const current = input.mode === "update" ? this.requireProject(input.id) : undefined;
+      const projectId = current?.id ?? this.dependencies.id();
+      const path = await canonicalDirectory(input.project.path);
+      const timestamp = this.dependencies.now();
+      const existingWorkspace = current
+        ? this.dependencies.workspacePersistence.getProjectConfiguration(current.id)
+        : undefined;
+      const selectedWorkspace = cloneWorkspaceConfiguration(
+        input.project.workspace ?? existingWorkspace ?? defaultWorkspaceConfiguration(),
+      );
+      const { workspace: _workspace, ...projectFields } = input.project;
+      void _workspace;
+      const baseIntegrations = toRuntimeIntegrations(
+        input.project.integrations,
+        current?.integrations,
+      ) ?? {};
+      const prepared = await this.prepareSecretChanges(
+        projectId,
+        baseIntegrations,
+        input.secretPatches,
+      );
+      const integrations = Object.keys(prepared.integrations).length > 0
+        ? prepared.integrations
+        : undefined;
+      const nextProject: RuntimeProject = current
+        ? {
+            ...current,
+            ...projectFields,
+            path,
+            integrations,
+          }
+        : {
+            id: projectId,
+            ...projectFields,
+            path,
+            agent: input.project.agent ?? { plugin: "codex" },
+            integrations,
+            revision: 1,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          };
+
+      this.validateIntegrations(nextProject);
+      await this.dependencies.workspaceRegistry.validateProject(
+        selectedWorkspace.provider,
+        path,
+        selectedWorkspace.config,
+      );
+
+      const applied: SecretChange[] = [];
+      let persisted: RuntimeProject;
+      try {
+        for (const change of prepared.changes) {
+          applied.push(change);
+          await this.writeSecret(change, change.value);
+        }
+        persisted = this.dependencies.workspacePersistence.transaction(() => {
+          if (input.mode === "create") {
+            this.dependencies.runtime.registerProject(nextProject);
+            this.dependencies.workspacePersistence.setProjectConfiguration(
+              projectId,
+              selectedWorkspace,
+            );
+            return this.requireProject(projectId);
+          }
+          const saved = this.dependencies.store.updateProject(
+            nextProject,
+            input.expectedRevision,
+          );
+          this.dependencies.workspacePersistence.setProjectConfiguration(
+            projectId,
+            selectedWorkspace,
+          );
+          return saved;
+        });
+      } catch (error) {
+        try {
+          await this.rollbackSecrets(applied);
+        } catch (rollbackError) {
+          throw new Error("PROJECT_SETTINGS_ROLLBACK_FAILED", { cause: rollbackError });
+        }
+        throw error;
+      }
+
+      await this.dependencies.integrations.refreshProject(persisted);
+      return this.toProductProject(persisted);
+    });
   }
 
   async createProject(input: CreateProjectInput): Promise<ProductProject> {
@@ -408,6 +507,43 @@ export class RuntimeService implements RuntimeApi {
   private validateIntegrations(project: RuntimeProject): void {
     for (const [id, configuration] of Object.entries(project.integrations ?? {})) {
       this.dependencies.integrationRegistry.get(id)?.validate(configuration);
+    }
+  }
+
+  private async prepareSecretChanges(
+    projectId: string,
+    integrations: NonNullable<RuntimeProject["integrations"]>,
+    patches: IntegrationSecretPatches,
+  ): Promise<{
+      integrations: NonNullable<RuntimeProject["integrations"]>;
+      changes: SecretChange[];
+    }> {
+    const next = structuredClone(integrations);
+    const changes: SecretChange[] = [];
+    for (const [pluginId, patch] of Object.entries(patches)) {
+      const plugin = this.dependencies.integrationRegistry.require(pluginId);
+      const configuration = next[pluginId];
+      if (!configuration) throw new Error(`PROJECT_INTEGRATION_NOT_FOUND:${pluginId}`);
+      const declared = new Set(plugin.manifest.secretFields.map(({ key }) => key));
+      for (const [key, value] of Object.entries(patch)) {
+        if (!declared.has(key)) throw new Error(`SECRET_FIELD_NOT_DECLARED:${key}`);
+        const ref = configuration.secretRefs[key] ?? secretReference(projectId, pluginId, key);
+        changes.push({ ref, value, previous: await this.dependencies.secrets.get(ref) });
+        if (value === null) delete configuration.secretRefs[key];
+        else configuration.secretRefs[key] = ref;
+      }
+    }
+    return { integrations: next, changes };
+  }
+
+  private async writeSecret(change: SecretChange, value: string | null): Promise<void> {
+    if (value === null) await this.dependencies.secrets.delete(change.ref);
+    else await this.dependencies.secrets.set(change.ref, value);
+  }
+
+  private async rollbackSecrets(applied: SecretChange[]): Promise<void> {
+    for (const change of [...applied].reverse()) {
+      await this.writeSecret(change, change.previous);
     }
   }
 
