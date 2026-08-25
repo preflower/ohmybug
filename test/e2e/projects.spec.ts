@@ -146,17 +146,21 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     const visualContract = await page.locator(".project-settings-tabs").evaluate((root) => {
       const css = (selector: string) => getComputedStyle(root.querySelector(selector)!);
       return {
+        railWidth: Math.round(root.querySelector(".project-settings-nav")!.getBoundingClientRect().width),
         navRowHeight: Math.round(root.querySelector('[role="tab"]')!.getBoundingClientRect().height),
         titleSize: Number.parseFloat(css(".integration-heading h2").fontSize),
         inputHeight: Math.round(root.querySelector('[aria-label="群聊 ID 1"]')!.getBoundingClientRect().height),
         footerHeight: Math.round(root.querySelector(".project-settings-actions")!.getBoundingClientRect().height),
+        footerButtonHeight: Math.round(root.querySelector<HTMLButtonElement>('.project-settings-actions [type="submit"]')!.getBoundingClientRect().height),
       };
     });
     expect(visualContract).toEqual({
-      navRowHeight: 60,
-      titleSize: 34,
-      inputHeight: 50,
-      footerHeight: 108,
+      railWidth: 240,
+      navRowHeight: 38,
+      titleSize: 20,
+      inputHeight: 32,
+      footerHeight: 54,
+      footerButtonHeight: 30,
     });
 
     const outputDir = resolve(".artifacts", "visual-diff", "dingtalk-settings");

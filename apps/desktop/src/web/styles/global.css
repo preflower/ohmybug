@@ -2460,7 +2460,7 @@ a:focus-visible {
   height: 100%;
   min-height: 0;
   overflow: clip;
-  grid-template-columns: 329px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 0;
   border: 0;
   border-radius: 0;
@@ -2478,50 +2478,45 @@ a:focus-visible {
   justify-content: flex-start;
   align-self: start;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   border-right: 1px solid var(--border);
   border-radius: 0;
   background: color-mix(in srgb, color-mix(in srgb, var(--canvas) 78%, var(--surface-raised)) 97%, var(--info));
-  padding: 37px 14px 37px 16px;
+  padding: 26px 16px;
 }
 
 .project-settings-nav-label {
-  padding: 5px 22px 17px;
+  padding: 5px 12px 7px;
   color: var(--text-muted);
-  font-size: 17px;
-  font-weight: 400;
+  font-size: 10px;
+  font-weight: 560;
   line-height: 1.3;
 }
 
 .project-settings-nav-label-integrations {
-  margin-top: 34px;
+  margin-top: 10px;
 }
 
 .project-settings-nav [data-slot="tabs-trigger"] {
   position: relative;
   width: 100%;
-  height: 60px;
+  height: 38px;
   flex: none;
   justify-content: flex-start;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  padding: 0 28px;
+  padding: 0 12px;
   color: var(--text-secondary);
-  font-size: 20px;
-  font-weight: 400;
+  font-size: 13px;
+  font-weight: 500;
   box-shadow: none;
-  gap: 20px;
+  gap: 9px;
 }
 
 .project-settings-nav [data-slot="tabs-trigger"] svg {
-  width: 24px;
-  height: 24px;
-}
-
-[data-brand-icon="dingtalk"] {
-  transform: scale(1.15);
-  transform-origin: center;
+  width: 16px;
+  height: 16px;
 }
 
 .project-settings-nav [data-slot="tabs-trigger"]::after {
@@ -2560,12 +2555,12 @@ a:focus-visible {
 
 .project-settings-content {
   overflow: auto;
-  padding: 36px 42px 48px 52px;
+  padding: 28px clamp(24px, 3.5vw, 36px) 36px;
 }
 
 .project-settings-actions {
   display: flex;
-  min-height: 108px;
+  min-height: 54px;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
@@ -2573,7 +2568,7 @@ a:focus-visible {
   gap: 12px;
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 96%, var(--info));
-  padding: 18px 42px 18px 52px;
+  padding: 10px clamp(24px, 3.5vw, 36px);
   box-shadow: none;
 }
 
@@ -2583,7 +2578,7 @@ a:focus-visible {
   align-items: center;
   gap: 9px;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: 11px;
 }
 
 .project-settings-status .state-dot {
@@ -2594,17 +2589,17 @@ a:focus-visible {
 .project-settings-action-buttons {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
 }
 
 .project-settings-action-buttons [data-slot="button"] {
-  min-width: 136px;
-  height: 56px;
-  font-size: 20px;
+  min-width: 76px;
+  height: 30px;
+  font-size: 13px;
 }
 
 .project-settings-action-buttons [type="submit"] {
-  min-width: 210px;
+  min-width: 96px;
 }
 
 .project-settings-content [data-slot="tabs-content"] {
@@ -2857,39 +2852,39 @@ a:focus-visible {
 .integration-heading {
   align-items: flex-start;
   margin-bottom: 0;
-  padding-bottom: 23px;
+  padding-bottom: 18px;
   border-bottom: 1px solid var(--border);
 }
 
 .integration-heading h2 {
-  font-size: 34px;
-  font-weight: 620;
-  letter-spacing: -0.4px;
+  font-size: 20px;
+  font-weight: 590;
+  letter-spacing: -0.3px;
 }
 
 .integration-heading p {
   max-width: 620px;
-  margin-top: 8px;
+  margin-top: 6px;
   color: var(--text-secondary);
-  font-size: 22px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
 .integration-heading > .switch-row {
-  min-height: 40px;
+  min-height: 32px;
   color: var(--text-secondary);
-  font-size: 20px;
+  font-size: 12px;
   white-space: nowrap;
-  gap: 26px !important;
+  gap: 12px !important;
 }
 
 .integration-enabled-toggle {
   position: relative;
-  width: 70px !important;
-  height: 40px !important;
+  width: 38px !important;
+  height: 22px !important;
   border-radius: 999px !important;
   background: var(--border-strong) !important;
-  padding: 3px;
+  padding: 2px;
 }
 
 .integration-enabled-toggle[data-checked] {
@@ -2903,8 +2898,8 @@ a:focus-visible {
 
 .integration-enabled-toggle::after {
   display: block;
-  width: 32px;
-  height: 32px;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
   background: var(--text);
   box-shadow: 0 1px 3px var(--overlay);
@@ -2914,22 +2909,22 @@ a:focus-visible {
 }
 
 .integration-enabled-toggle[data-checked]::after {
-  transform: translateX(30px);
+  transform: translateX(16px);
 }
 
 .integration-health {
   display: flex;
   align-items: center;
-  gap: 17px;
-  margin-top: 17px;
+  gap: 8px;
+  margin-top: 16px;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: 12px;
 }
 
 .integration-health-dot {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
   border-radius: 999px;
   background: var(--text-muted);
 }
@@ -2979,86 +2974,86 @@ a:focus-visible {
 .integration-section {
   min-width: 0;
   border-bottom: 1px solid var(--border);
-  padding: 36px 0 33px;
+  padding: 24px 0;
 }
 
 .integration-section[data-integration-section="rules"] {
-  padding: 25px 0 13px;
+  padding: 20px 0 12px;
 }
 
 .integration-section > header {
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 }
 
 .integration-section[data-integration-section="credentials"] > header {
-  margin-bottom: 17px;
+  margin-bottom: 14px;
 }
 
 .integration-section h3 {
   margin: 0;
   color: var(--text);
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 560;
 }
 
 .integration-section header p,
 .integration-section summary p {
-  margin: 8px 0 0;
+  margin: 5px 0 0;
   color: var(--text-muted);
-  font-size: 22px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .integration-section-summary {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
+  grid-template-columns: 160px minmax(0, 1fr);
   align-items: center;
-  gap: 17px;
-  min-height: 29px;
-  margin: -4px 0 17px;
+  gap: 16px;
+  min-height: 22px;
+  margin: -2px 0 12px;
   color: var(--text-secondary);
-  font-size: 22px;
+  font-size: 12px;
 }
 
 .integration-section-summary strong {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   color: var(--text);
   font-weight: 400;
 }
 
 .integration-section-summary i {
-  width: 24px;
-  height: 24px;
-  border: 3px solid var(--accent);
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
   border-radius: 999px;
-  box-shadow: inset 0 0 0 4px var(--canvas);
+  box-shadow: inset 0 0 0 2px var(--canvas);
   background: var(--accent);
 }
 
 .integration-section-fields {
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
+  gap: 12px;
 }
 
 .integration-section-fields [data-slot="input"] {
-  height: 50px;
-  padding-inline: 16px;
-  font-size: 20px;
+  height: 32px;
+  padding-inline: 10px;
+  font-size: 13px;
 }
 
 .integration-section-fields [data-slot="button"] {
-  min-height: 50px;
-  font-size: 20px;
+  min-height: 30px;
+  font-size: 13px;
 }
 
 .integration-section-fields > label:not(.secret-field) {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
+  grid-template-columns: 160px minmax(0, 1fr);
   align-items: center;
-  gap: 8px 17px;
-  font-size: 20px;
+  gap: 5px 16px;
+  font-size: 13px;
 }
 
 .integration-section-fields > label:not(.secret-field) > small {
@@ -3068,8 +3063,8 @@ a:focus-visible {
 .integration-section-fields > fieldset {
   display: grid;
   min-width: 0;
-  grid-template-columns: 208px minmax(0, 1fr);
-  gap: 14px 17px;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 9px 16px;
   margin: 0;
   border: 0;
   padding: 0;
@@ -3077,10 +3072,10 @@ a:focus-visible {
 
 .integration-section-fields > fieldset > legend {
   float: left;
-  width: 208px;
-  padding: 10px 0 0;
+  width: 160px;
+  padding: 7px 0 0;
   color: var(--text-secondary);
-  font-size: 22px;
+  font-size: 13px;
 }
 
 .integration-section-fields > fieldset > .credential-row,
@@ -3091,23 +3086,23 @@ a:focus-visible {
 
 .integration-section-fields > fieldset > [data-slot="button"] {
   width: fit-content;
-  min-width: 136px;
+  min-width: 78px;
   color: var(--accent);
   font-weight: 400;
 }
 
 .integration-section-fields > fieldset > small {
   color: var(--text-muted);
-  font-size: 20px;
+  font-size: 11px;
 }
 
 .secret-field {
   display: grid !important;
   min-width: 0;
-  grid-template-columns: 203px minmax(0, 1fr) auto;
+  grid-template-columns: 160px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px 22px !important;
-  font-size: 20px;
+  gap: 8px 16px !important;
+  font-size: 13px;
 }
 
 .secret-field-label,
@@ -3116,19 +3111,19 @@ a:focus-visible {
 }
 
 .secret-configured {
-  min-height: 50px;
+  min-height: 32px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-raised);
-  padding: 10px 16px;
+  padding: 7px 10px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 20px;
+  font-size: 12px;
 }
 
 .secret-field > [data-slot="button"] {
-  min-width: 152px;
-  height: 50px;
+  min-width: 78px;
+  height: 30px;
   color: var(--accent);
 }
 
@@ -3153,10 +3148,9 @@ a:focus-visible {
 
 .integration-section-collapsed > summary {
   display: flex;
-  min-height: 118px;
+  min-height: 64px;
   align-items: center;
-  gap: 34px;
-  padding-left: 6px;
+  gap: 12px;
   cursor: pointer;
   list-style: none;
   outline: none;
@@ -3167,11 +3161,11 @@ a:focus-visible {
 }
 
 .integration-section-collapsed > summary::before {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 10px;
-  border-right: 2px solid var(--text-secondary);
-  border-bottom: 2px solid var(--text-secondary);
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
   content: "";
   transform: rotate(-45deg);
   transition: transform 120ms ease;
@@ -3194,7 +3188,7 @@ a:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  max-width: 766px;
+  max-width: 620px;
   gap: 0;
 }
 
@@ -3206,8 +3200,8 @@ a:focus-visible {
 }
 
 .credential-row [data-slot="button"] svg {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
 }
 
 .credential-row [data-slot="input"] {
@@ -3226,9 +3220,9 @@ a:focus-visible {
 .project-save-alert {
   position: absolute;
   z-index: 3;
-  right: clamp(32px, 4vw, 52px);
-  bottom: 74px;
-  left: clamp(32px, 4vw, 52px);
+  right: clamp(24px, 3.5vw, 36px);
+  bottom: 62px;
+  left: clamp(24px, 3.5vw, 36px);
 }
 
 .project-save-alert [data-slot="alert-description"] {
