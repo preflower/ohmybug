@@ -469,6 +469,112 @@ describe("control center workbench", () => {
     await waitFor(() => expect(localStorage.getItem("oh-my-bug:last-issue-project")).toBe(storefront.id));
   });
 
+  it("creates a valid Issue when Enter is pressed in the content field", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue({
+      ...issue,
+      id: "issue-2",
+      identifier: "CHK-2",
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed after login" } });
+    expect(screen.getByRole("button", { name: "创建并开始分析" })).toBeEnabled();
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(submitManual).toHaveBeenCalledWith({
+      projectId: "project-1",
+      commandId: expect.stringMatching(/^manual-/),
+      content: "Checkout failed after login",
+    }));
+  });
+
+  it("keeps Shift+Enter available for a newline in the content field", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed" } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter", shiftKey: true });
+
+    expect(submitManual).not.toHaveBeenCalled();
+  });
+
+  it("does not submit when Enter confirms an IME composition", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "结账失败" } });
+    fireEvent.keyDown(contentField, {
+      key: "Enter",
+      code: "Enter",
+      isComposing: true,
+    });
+
+    expect(submitManual).not.toHaveBeenCalled();
+  });
+
+  it("does not submit again when Enter is pressed while creation is busy", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual")
+      .mockReturnValue(new Promise<IssueDto>(() => undefined));
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    fireEvent.change(contentField, { target: { value: "Checkout failed" } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(submitManual).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    expect(submitManual).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps creation disabled and ignores Enter when content is blank", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    const submitManual = vi.spyOn(api, "submitManual").mockResolvedValue(issue);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Issue" }));
+    const contentField = screen.getByLabelText("问题内容");
+    const createButton = screen.getByRole("button", { name: "创建并开始分析" });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.change(contentField, { target: { value: "   " } });
+    fireEvent.keyDown(contentField, { key: "Enter", code: "Enter" });
+
+    expect(createButton).toBeDisabled();
+    expect(submitManual).not.toHaveBeenCalled();
+  });
+
   it("does not remember a project when Issue creation fails", async () => {
     const storefront: ProjectDto = {
       ...project,
