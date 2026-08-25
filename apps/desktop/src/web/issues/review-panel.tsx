@@ -1,11 +1,12 @@
 import { ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { IssueDto, ReviewSubmissionInput } from "../api/types.js";
 import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
+import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group.js";
 import { Textarea } from "../components/ui/textarea.js";
-import { ReviewRenderer, reviewTitle } from "./review-renderers.js";
+import { ReviewRenderer } from "./review-renderers.js";
 
 interface ReviewPanelProps {
   issue: IssueDto;
@@ -15,6 +16,22 @@ interface ReviewPanelProps {
 
 export function ReviewPanel({ issue, onSubmit, onCancel }: ReviewPanelProps) {
   const review = issue.review;
+  if (!review) return null;
+  return <ReviewPanelContent
+    issue={issue}
+    key={review.id}
+    review={review}
+    onCancel={onCancel}
+    onSubmit={onSubmit}
+  />;
+}
+
+function ReviewPanelContent({
+  issue,
+  review,
+  onSubmit,
+  onCancel,
+}: ReviewPanelProps & { review: NonNullable<IssueDto["review"]> }) {
   const [choiceId, setChoiceId] = useState(review?.choices[0]?.id ?? "");
   const [feedback, setFeedback] = useState("");
   const [data, setData] = useState<ReviewSubmissionInput["data"]>();
@@ -22,18 +39,10 @@ export function ReviewPanel({ issue, onSubmit, onCancel }: ReviewPanelProps) {
   const [canceling, setCanceling] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    setChoiceId(review?.choices[0]?.id ?? "");
-    setFeedback("");
-    setData(undefined);
-    setError("");
-  }, [review?.id]);
-
   const selected = useMemo(
     () => review?.choices.find((choice) => choice.id === choiceId),
     [choiceId, review],
   );
-  if (!review) return null;
   const response = data ?? (review.kind === "assessment" && choiceId === "implement"
     ? { title: issue.assessment?.suggestedTitle ?? issue.title }
     : undefined);
@@ -73,15 +82,18 @@ export function ReviewPanel({ issue, onSubmit, onCancel }: ReviewPanelProps) {
 
       <ReviewRenderer issue={issue} choiceId={choiceId} data={data} onDataChange={setData} />
 
-      <fieldset className="review-choice-list" disabled={busy || canceling}>
-        <legend>选择处理方式</legend>
+      <div className="review-choice-list">
+        <span className="review-choice-legend">选择处理方式</span>
+        <RadioGroup
+          aria-label="选择处理方式"
+          disabled={busy || canceling}
+          name={`review-${review.id}`}
+          value={choiceId}
+          onValueChange={setChoiceId}
+        >
         {review.choices.map((choice) => (
           <label className="review-choice" key={choice.id}>
-            <input
-              checked={choiceId === choice.id}
-              name={`review-${review.id}`}
-              onChange={() => setChoiceId(choice.id)}
-              type="radio"
+            <RadioGroupItem
               value={choice.id}
             />
             <span>
@@ -92,7 +104,8 @@ export function ReviewPanel({ issue, onSubmit, onCancel }: ReviewPanelProps) {
             </span>
           </label>
         ))}
-      </fieldset>
+        </RadioGroup>
+      </div>
 
       <label className="feedback-field">
         {selected?.feedbackRequired ? "补充说明（必填）" : "补充说明（可选）"}
@@ -126,6 +139,13 @@ export function ReviewPanel({ issue, onSubmit, onCancel }: ReviewPanelProps) {
       </div>
     </section>
   );
+}
+
+function reviewTitle(kind: string): string {
+  if (kind === "assessment") return "确认 Assessment";
+  if (kind === "delivery") return "验收 Delivery";
+  if (kind === "business-merge-conflict") return "确认业务冲突处理";
+  return "人工审核";
 }
 
 function choiceDescription(payload: unknown, choiceId: string): string | undefined {

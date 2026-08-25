@@ -17,11 +17,11 @@ test("runs the two-gate manual Issue workflow and shows acceptance evidence", as
     await dialog.getByLabel("问题内容").fill("An expired session crashes before a recoverable response is returned.");
     await dialog.getByRole("button", { name: "创建并开始分析" }).click();
 
-    const rootApproval = page.getByRole("region", { name: "评估结果操作" });
+    const rootApproval = page.getByRole("region", { name: "确认 Assessment" });
     await expect(rootApproval).toBeVisible({ timeout: 15_000 });
-    await rootApproval.getByRole("button", { name: "开始修复" }).click();
+    await rootApproval.getByRole("button", { name: "开始实现" }).click();
 
-    const acceptanceApproval = page.getByRole("region", { name: "Delivery 审核" });
+    const acceptanceApproval = page.getByRole("region", { name: "验收 Delivery" });
     await expect(acceptanceApproval).toBeVisible({ timeout: 15_000 });
     const evidence = page.getByRole("img", { name: "Checkout acceptance" });
     await expect(evidence).toBeVisible({ timeout: 15_000 });
@@ -77,7 +77,7 @@ test("runs the two-gate manual Issue workflow and shows acceptance evidence", as
 
     await page.screenshot({ path: resolve(artifactDir, "root-cause-and-acceptance.png"), fullPage: true });
 
-    await acceptanceApproval.getByRole("button", { name: "批准验收并完成 Issue" }).click();
+    await acceptanceApproval.getByRole("button", { name: "接受交付" }).click();
     await expect(page.getByRole("status")).toHaveText("结果：FIXED · 修复已验收，Issue 已完成。", { timeout: 15_000 });
     await page.screenshot({ path: resolve(artifactDir, "completed-workflow.png"), fullPage: true });
   } finally {

@@ -3,8 +3,6 @@ import { type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEv
 
 import { api } from "../api/client.js";
 import type {
-  ApproveAssessmentInput,
-  AssessmentReference,
   BranchInfoDto,
   IssueDto,
   ReviewSubmissionInput,
@@ -26,11 +24,6 @@ interface IssueDetailProps {
   issue: IssueDto;
   branch?: BranchInfoDto;
   onRefresh: () => Promise<void>;
-  onApproveAssessment?: (input: ApproveAssessmentInput) => Promise<void>;
-  onConfirmNotABug?: (reference: AssessmentReference) => Promise<void>;
-  onConfirmDuplicate?: (reference: AssessmentReference, duplicateOf: string) => Promise<void>;
-  onRequestReassessment?: (feedback: string) => Promise<void>;
-  onRejectDelivery?: (feedback: string) => Promise<void>;
   onApproveDelivery?: () => Promise<void>;
   onSubmitReview?: (input: ReviewSubmissionInput) => Promise<void>;
   onCancel?: () => Promise<void>;

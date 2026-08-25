@@ -31,7 +31,7 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await dialog.getByLabel("问题内容").fill("An expired session crashes before a recoverable response is returned.");
     await dialog.getByRole("button", { name: "创建并开始分析" }).click();
 
-    const rootApproval = desktop.page.getByRole("region", { name: "评估结果操作" });
+    const rootApproval = desktop.page.getByRole("region", { name: "确认 Assessment" });
     await expect(rootApproval).toBeVisible();
     const newIssue = desktop.page.locator("button.new-issue");
     await newIssue.focus();
@@ -40,9 +40,9 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await desktop.page.keyboard.press("Escape");
     await expect(newIssue).toBeFocused();
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
-    await rootApproval.getByRole("button", { name: "开始修复" }).click();
+    await rootApproval.getByRole("button", { name: "开始实现" }).click();
 
-    const acceptanceApproval = desktop.page.getByRole("region", { name: "Delivery 审核" });
+    const acceptanceApproval = desktop.page.getByRole("region", { name: "验收 Delivery" });
     await expect(acceptanceApproval).toBeVisible();
     const evidence = desktop.page.getByRole("img", { name: "Checkout acceptance" });
     await expect(evidence).toBeVisible();
@@ -70,7 +70,7 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await expect(preview).toBeHidden();
     await desktop.page.screenshot({ path: resolve(artifactDir, "acceptance-review.png"), fullPage: true });
 
-    await acceptanceApproval.getByRole("button", { name: "批准验收并完成 Issue" }).click();
+    await acceptanceApproval.getByRole("button", { name: "接受交付" }).click();
     await expect(desktop.page.getByRole("status")).toHaveText("结果：FIXED · 修复已验收，Issue 已完成。");
     await desktop.page.screenshot({ path: resolve(artifactDir, "completed-workflow.png"), fullPage: true });
   } finally {

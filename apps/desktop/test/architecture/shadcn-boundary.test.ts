@@ -7,7 +7,7 @@ const featureFiles = [
   "src/web/command/command-menu.tsx",
   "src/web/dialogs/new-issue-dialog.tsx",
   "src/web/issues/agent-activity.tsx",
-  "src/web/issues/approval-panel.tsx",
+  "src/web/issues/review-panel.tsx",
   "src/web/issues/issue-detail.tsx",
   "src/web/projects/integration-fields.tsx",
   "src/web/projects/project-form.tsx",

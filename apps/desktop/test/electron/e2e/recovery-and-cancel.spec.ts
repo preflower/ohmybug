@@ -30,7 +30,7 @@ test("reconciles interrupted Agent work and resumes it after an explicit retry",
     await expect(second.page.getByText("分析失败", { exact: true })).toBeVisible();
     await expect(second.page.getByText("分析意外中断", { exact: true })).toBeVisible();
     await second.page.getByRole("button", { name: "重试分析" }).click();
-    await expect(second.page.getByRole("region", { name: "评估结果操作" })).toBeVisible();
+    await expect(second.page.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
     await expect(second.page.getByText("待确认判断", { exact: true })).toBeVisible();
   } finally {
     await first?.app.close().catch(() => undefined);
@@ -72,7 +72,7 @@ test("discloses a missing native session and rebuilds only after user confirmati
     await expect(desktop.page.getByRole("button", { name: "重试分析" })).toHaveCount(0);
     await desktop.page.getByRole("button", { name: "重建 Agent 会话" }).click();
 
-    await expect(desktop.page.getByRole("region", { name: "评估结果操作" })).toBeVisible();
+    await expect(desktop.page.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
     await expect(desktop.page.getByRole("heading", {
       level: 2,
       name: "Missing Agent session keeps Issue context",

@@ -44,6 +44,11 @@ function installRuntimeProtocolFixture() {
     inputs: unknown[];
     assessment?: unknown;
     repair?: unknown;
+    review?: {
+      id: string;
+      kind: string;
+      choices: Array<{ id: string; label: string } & Record<string, unknown>>;
+    } & Record<string, unknown>;
     resolution?: string;
     duplicateOf?: string;
     lastFailure?: { stage: "ASSESSMENT" | "REPAIR"; code: string };
@@ -162,27 +167,65 @@ function installRuntimeProtocolFixture() {
       const timestamp = now();
       const created: FixtureIssue = {
         id: crypto.randomUUID(), projectId: project.id, identifier: `${project.key}-${sequence}`,
-        title: input.summary ?? input.content, titleSource: "integration", status: "ASSESSMENT_REVIEW",
+        title: input.summary ?? input.content, titleSource: "integration", status: "REVIEW_REQUIRED",
         inputs: [{ id: crypto.randomUUID(), integration: "manual", inputKey: input.commandId, rawData: { content: input.content, summary: input.summary }, data: { content: input.content, ...(input.summary ? { summary: input.summary } : {}) }, receivedAt: timestamp }],
         assessment: { revision: 1, contentHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", verdict: "BUG", suggestedTitle: input.summary ?? "Checkout returns 500", reasoning: "The fixture reproduced the checkout failure.", rootCause: "Expired sessions are not handled.", solution: "Return a recoverable response." },
+        review: {
+          id: `assessment:${input.commandId}`,
+          kind: "assessment",
+          requestedFrom: "ASSESSING",
+          payload: { verdict: "BUG" },
+          choices: [{ id: "implement", label: "开始实现", continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" } }],
+          requestedAt: timestamp,
+        },
         revision: 3, createdAt: timestamp, updatedAt: timestamp,
       };
       state.issues.unshift(created);
       write(state);
       return clone(created);
     },
+    submitReview: async (id: string, input: { expectedRevision: number; requestId: string; choiceId: string; data?: { title?: string } }) => {
+      const current = requireIssue(id);
+      if (current.revision !== input.expectedRevision) throw new Error("REVIEW_SUBMISSION_STALE");
+      if (!current.review || current.review.id !== input.requestId) throw new Error("REVIEW_REQUEST_STALE");
+      if (!current.review.choices.some((choice) => choice.id === input.choiceId)) throw new Error("REVIEW_CHOICE_NOT_FOUND");
+      if (current.review.kind === "assessment" && input.choiceId === "implement") {
+        const timestamp = now();
+        return saveIssue({
+          ...current,
+          title: input.data?.title ?? current.title,
+          titleSource: "user",
+          status: "REVIEW_REQUIRED",
+          repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } },
+          review: {
+            id: `delivery:${current.id}:1`,
+            kind: "delivery",
+            requestedFrom: "EVIDENCE_CHECK",
+            payload: { repairIteration: 1, evidenceCount: 2 },
+            choices: [{ id: "accept", label: "接受交付", continuation: { operation: "FINALIZE", resumeStatus: "FINALIZING", resolution: "FIXED" } }, { id: "request-changes", label: "要求修改", continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" } }],
+            requestedAt: timestamp,
+          },
+          revision: current.revision + 3,
+          updatedAt: timestamp,
+        });
+      }
+      if (current.review.kind === "delivery" && input.choiceId === "accept") {
+        return saveIssue({ ...current, status: "COMPLETED", resolution: "FIXED", review: undefined, revision: current.revision + 1, updatedAt: now() });
+      }
+      throw new Error("REVIEW_CHOICE_UNSUPPORTED");
+    },
     approveAssessment: async (id: string, input: { title: string }) => {
       const current = requireIssue(id);
-      return saveIssue({ ...current, title: input.title, titleSource: "user", status: "ACCEPTANCE_REVIEW", repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } }, revision: current.revision + 3, updatedAt: now() });
+      return saveIssue({ ...current, title: input.title, titleSource: "user", status: "REVIEW_REQUIRED", repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } }, revision: current.revision + 3, updatedAt: now() });
     },
     approveBugAssessment: async (id: string, input: { title: string }) => {
       const current = requireIssue(id);
-      return saveIssue({ ...current, title: input.title, titleSource: "user", status: "ACCEPTANCE_REVIEW", repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } }, revision: current.revision + 3, updatedAt: now() });
+      return saveIssue({ ...current, title: input.title, titleSource: "user", status: "REVIEW_REQUIRED", repair: { iteration: 1, delivery: { summary: "Checkout now returns a recoverable response.", evidence: [{ type: "screenshot", evidenceId: `sha256-${"a".repeat(64)}`, label: "Checkout acceptance" }, { type: "recording", evidenceId: `sha256-${"b".repeat(64)}`, label: "Checkout recording" }] } }, revision: current.revision + 3, updatedAt: now() });
     },
     confirmNotABug: async (id: string) => saveIssue({ ...requireIssue(id), status: "CLOSED", resolution: "NOT_A_BUG", updatedAt: now() }),
     confirmDuplicate: async (id: string, _reference: unknown, duplicateOf: string) => saveIssue({ ...requireIssue(id), status: "CLOSED", resolution: "DUPLICATE", duplicateOf, updatedAt: now() }),
-    requestReassessment: async (id: string) => saveIssue({ ...requireIssue(id), status: "ASSESSMENT_REVIEW", updatedAt: now() }),
-    rejectDelivery: async (id: string) => saveIssue({ ...requireIssue(id), status: "ACCEPTANCE_REVIEW", updatedAt: now() }),
+    requestReassessment: async (id: string) => saveIssue({ ...requireIssue(id), status: "REVIEW_REQUIRED", updatedAt: now() }),
+    rejectDelivery: async (id: string) => saveIssue({ ...requireIssue(id), status: "REVIEW_REQUIRED", updatedAt: now() }),
     approveDelivery: async (id: string) => {
       const current = requireIssue(id);
       return { issue: saveIssue({ ...current, status: "COMPLETED", resolution: "FIXED", revision: current.revision + 1, updatedAt: now() }) };

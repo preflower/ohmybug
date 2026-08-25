@@ -542,7 +542,7 @@ a:focus-visible {
 }
 
 .issue-row[aria-current="true"] {
-  background: var(--surface-hover);
+  background: var(--surface-raised);
   box-shadow: none;
 }
 
@@ -1433,8 +1433,7 @@ a:focus-visible {
   padding: 0;
 }
 
-.review-choice-list legend {
-  margin-bottom: 7px;
+.review-choice-legend {
   color: var(--text-muted);
   font-size: 10px;
 }
@@ -1450,14 +1449,13 @@ a:focus-visible {
   cursor: pointer;
 }
 
-.review-choice:has(input:checked) {
+.review-choice:has([data-checked]) {
   border-color: color-mix(in oklch, var(--accent) 48%, var(--border));
   background: var(--accent-soft);
 }
 
-.review-choice input {
+.review-choice [data-slot="radio-group-item"] {
   margin: 2px 0 0;
-  accent-color: var(--accent);
 }
 
 .review-choice > span {

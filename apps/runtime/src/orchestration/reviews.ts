@@ -41,7 +41,7 @@ function assessmentChoices(issue: Issue): ReviewChoice[] {
 
 export function assessmentReview(issue: Issue, id: string, now: string): ReviewRequest {
   if (issue.status !== "ASSESSING" || !issue.assessment) {
-    throw new Error("ASSESSMENT_REVIEW_CONTEXT_REQUIRED");
+    throw new Error("ASSESSMENT_CONTEXT_REQUIRED");
   }
   return {
     id,

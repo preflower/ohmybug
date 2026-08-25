@@ -45,11 +45,11 @@ test("automatically merges an approved Issue branch into its configured baseline
     await dialog.getByLabel("摘要（可选）").fill(`Git checkout ${suffix}`);
     await dialog.getByLabel("问题内容").fill("Create and deliver an isolated Git branch.");
     await dialog.getByRole("button", { name: "创建并开始分析" }).click();
-    const assessment = desktop.page.getByRole("region", { name: "评估结果操作" });
+    const assessment = desktop.page.getByRole("region", { name: "确认 Assessment" });
     await expect(assessment).toBeVisible();
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
-    await assessment.getByRole("button", { name: "开始修复" }).click();
-    const acceptance = desktop.page.getByRole("region", { name: "Delivery 审核" });
+    await assessment.getByRole("button", { name: "开始实现" }).click();
+    const acceptance = desktop.page.getByRole("region", { name: "验收 Delivery" });
     await expect(acceptance).toBeVisible();
 
     const identifier = (await desktop.page.locator(".issue-title-block .eyebrow").textContent())!.trim();
@@ -62,7 +62,7 @@ test("automatically merges an approved Issue branch into its configured baseline
     await writeFile(join(worktree, "src", "fixed.ts"), "export const fixed = true;\n");
 
     expect(await git(project.path, "rev-parse", `refs/heads/${branch}`)).toBe(baseline);
-    await acceptance.getByRole("button", { name: "批准验收并完成 Issue" }).click();
+    await acceptance.getByRole("button", { name: "接受交付" }).click();
     await expect(desktop.page.getByRole("status"))
       .toHaveText("结果：FIXED · 修复已验收，Issue 已完成。");
     if (evidenceDirectory) {
