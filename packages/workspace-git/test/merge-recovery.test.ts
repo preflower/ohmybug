@@ -188,6 +188,37 @@ describe("Git merge recovery diagnostics", () => {
     }
   });
 
+  it("does not overwrite an older provider-owned session during a new attempt", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      const savedBefore = prepared.state.get<Record<string, unknown>>(
+        "workspace-git",
+        "git:issue-1",
+      );
+
+      await expect(prepared.provider.prepareFinalizationRecovery?.({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        diagnostic: {
+          providerId: "git",
+          step: "merge",
+          code: "GIT_AUTO_MERGE_BASE_MOVED",
+          message: "The base moved after renewed acceptance",
+          relatedPaths: [],
+        },
+        attemptId: "recovery-22",
+      })).resolves.toMatchObject({
+        recoveryKind: "MERGE_ENVIRONMENT",
+        merge: { mergePrepared: false },
+      });
+      expect(prepared.state.get("workspace-git", "git:issue-1")).toEqual(savedBefore);
+      expect(await git(prepared.acquired.projectPath, "rev-parse", "MERGE_HEAD"))
+        .toBe(prepared.context.merge!.baseCommit);
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
   it("gives unknown merge failures an inspection-only Agent context", async () => {
     const fixture = await createGitFixture();
     try {
@@ -440,6 +471,66 @@ describe("Git merge recovery diagnostics", () => {
     }
   });
 
+  it("refreshes the candidate for a later repaired and reaccepted delivery", async () => {
+    const prepared = await createPreparedConflict({ trackedRelatedFile: true });
+    try {
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "first resolution\n");
+      await prepared.provider.validateFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "First resolution",
+          diagnosis: "Both branches changed README.md",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      });
+      const firstDelivery = {
+        ...prepared.approved,
+        repair: {
+          iteration: 2,
+          deliveryDraft: {
+            summary: "First resolution",
+            repairIteration: 2,
+            implementationCompletedAt: "2026-08-25T04:00:00.000Z",
+          },
+        },
+      };
+      await prepared.provider.bindFinalizationRecoveryDelivery!({
+        issue: firstDelivery,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+      });
+
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "repaired resolution\n");
+      await writeFile(join(prepared.acquired.projectPath, "unrelated.txt"), "accepted support edit\n");
+      const reaccepted = {
+        ...firstDelivery,
+        repair: {
+          iteration: 2,
+          deliveryDraft: {
+            summary: "Repaired resolution",
+            repairIteration: 2,
+            implementationCompletedAt: "2026-08-25T04:05:00.000Z",
+          },
+        },
+      };
+
+      const published = await prepared.provider.publish({
+        issue: reaccepted,
+        resourceId: "git:issue-1",
+      });
+
+      expect(await git(prepared.repository, "show", `${published!.commit}:README.md`))
+        .toBe("repaired resolution");
+      expect(await git(prepared.repository, "show", `${published!.commit}:unrelated.txt`))
+        .toBe("accepted support edit");
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
   it("does not apply a resolution after the base branch moves", async () => {
     const prepared = await createPreparedConflict();
     try {
@@ -472,6 +563,71 @@ describe("Git merge recovery diagnostics", () => {
     }
   });
 
+  it("seals an accepted resolution and recomputes recovery when the base moved first", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+      await prepared.provider.validateFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Combined both changes",
+          diagnosis: "Both branches changed README.md",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      });
+      const accepted = {
+        ...prepared.approved,
+        repair: {
+          iteration: 2,
+          deliveryDraft: {
+            summary: "Combined both changes",
+            repairIteration: 2,
+            implementationCompletedAt: "2026-08-25T05:00:00.000Z",
+          },
+        },
+      };
+      await prepared.provider.bindFinalizationRecoveryDelivery!({
+        issue: accepted,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+      });
+      await writeFile(join(prepared.repository, "later.txt"), "later base change\n");
+      await git(prepared.repository, "add", "later.txt");
+      await git(prepared.repository, "commit", "-m", "move base before recovered publish");
+      const movedBase = await git(prepared.repository, "rev-parse", "main");
+
+      await expect(prepared.provider.publish({
+        issue: accepted,
+        resourceId: "git:issue-1",
+      })).rejects.toThrow("GIT_AUTO_MERGE_BASE_MOVED");
+
+      const restarted = await prepared.provider.prepareFinalizationRecovery!({
+        issue: accepted,
+        resourceId: "git:issue-1",
+        diagnostic: {
+          providerId: "git",
+          step: "merge",
+          code: "GIT_AUTO_MERGE_BASE_MOVED",
+          message: "The base moved before recovered publication",
+          relatedPaths: [],
+        },
+        attemptId: "recovery-after-base-move",
+      });
+      expect(restarted).toMatchObject({
+        recoveryKind: "MERGE_CONFLICT",
+        merge: { baseCommit: movedBase, mergePrepared: true },
+      });
+      expect(restarted.merge?.issueCommit).not.toBe(prepared.context.merge!.issueCommit);
+      expect(await git(prepared.acquired.projectPath, "rev-parse", "MERGE_HEAD"))
+        .toBe(movedBase);
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
   it("rejects a base move between recovered merge creation and base publication", async () => {
     const prepared = await createPreparedConflict({
       pushToRemote: true,
@@ -495,6 +651,30 @@ describe("Git merge recovery diagnostics", () => {
         resourceId: "git:issue-1",
       })).rejects.toThrow("GIT_AUTO_MERGE_BASE_MOVED");
       expect(await git(prepared.repository, "rev-parse", "main")).toBe(prepared.movedBase);
+
+      const restarted = await prepared.provider.prepareFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        diagnostic: {
+          providerId: "git",
+          step: "merge",
+          code: "GIT_AUTO_MERGE_BASE_MOVED",
+          message: "The base moved during publication",
+          relatedPaths: [],
+        },
+        attemptId: "recovery-23",
+      });
+      expect(restarted).toMatchObject({
+        recoveryKind: "MERGE_CONFLICT",
+        merge: {
+          baseCommit: prepared.movedBase,
+          issueCommit: expect.any(String),
+          mergePrepared: true,
+        },
+      });
+      expect(restarted.merge?.issueCommit).not.toBe(prepared.context.merge!.issueCommit);
+      expect(await git(prepared.acquired.projectPath, "rev-parse", "MERGE_HEAD"))
+        .toBe(prepared.movedBase);
     } finally {
       await prepared.cleanup();
     }

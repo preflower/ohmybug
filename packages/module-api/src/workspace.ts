@@ -115,6 +115,11 @@ export interface WorkspaceProvider {
     fingerprintRef: string;
     result: FinalizationRecoveryResult;
   }): Promise<WorkspaceFinalizationRecoveryValidation>;
+  bindFinalizationRecoveryDelivery?(input: {
+    issue: Issue;
+    resourceId: string;
+    fingerprintRef: string;
+  }): Promise<void>;
   release(input: { issue: Issue; resourceId: string }): Promise<void>;
 }
 

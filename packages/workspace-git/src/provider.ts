@@ -415,6 +415,7 @@ class GitWorkspaceProvider implements WorkspaceProvider {
           worktreePath: state.worktreePath,
           baseRef: `refs/heads/${state.baseBranch}`,
           session: recovery.session,
+          deliveryToken: recoveryDeliveryToken(input.issue),
         });
         this.options.state.set(MODULE_ID, input.resourceId, {
           ...state,
@@ -549,10 +550,12 @@ class GitWorkspaceProvider implements WorkspaceProvider {
           },
         };
       }
-      this.options.state.set(MODULE_ID, input.resourceId, {
-        ...state,
-        finalizationRecovery: prepared.recovery,
-      });
+      if (prepared.recovery) {
+        this.options.state.set(MODULE_ID, input.resourceId, {
+          ...state,
+          finalizationRecovery: prepared.recovery,
+        });
+      }
       return prepared.context;
     }
     const prepared = await prepareGitFinalizationRecovery({
@@ -620,6 +623,26 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     return validateGitFinalizationRecovery({
       worktreePath: state.worktreePath,
       fingerprint,
+    });
+  }
+
+  async bindFinalizationRecoveryDelivery(input: {
+    issue: Issue;
+    resourceId: string;
+    fingerprintRef: string;
+  }): Promise<void> {
+    const state = this.getSavedState(input.issue, input.resourceId);
+    const recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
+    if (
+      recovery?.kind !== "MERGE_CONFLICT"
+      || recovery.session.fingerprintRef !== input.fingerprintRef
+    ) return;
+    const deliveryToken = recoveryDeliveryToken(input.issue);
+    if (!deliveryToken) throw new Error("GIT_MERGE_RECOVERY_DELIVERY_TOKEN_REQUIRED");
+    recovery.session.deliveryToken = deliveryToken;
+    this.options.state.set(MODULE_ID, input.resourceId, {
+      ...state,
+      finalizationRecovery: recovery,
     });
   }
 
@@ -696,6 +719,17 @@ function shouldPushToRemote(state: GitWorkspaceState): boolean {
 
 function isInvalidMergeRecoveryState(error: unknown): boolean {
   return error instanceof Error && error.message === "GIT_MERGE_RECOVERY_STATE_INVALID";
+}
+
+function recoveryDeliveryToken(issue: Issue): string | undefined {
+  const draft = issue.repair?.deliveryDraft;
+  return draft
+    ? JSON.stringify([
+        draft.repairIteration,
+        draft.implementationCompletedAt,
+        draft.summary,
+      ])
+    : undefined;
 }
 
 async function mergeIntoBaseBranch(

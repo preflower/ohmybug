@@ -9,6 +9,7 @@ import type {
   AgentSessionRef,
   FinalizationRecoveryInput,
   FinalizationRecoveryResult,
+  RepairResult,
 } from "@oh-my-bug/core";
 import { gitWorkspaceFactory } from "@oh-my-bug/workspace-git";
 import { afterEach, describe, expect, it } from "vitest";
@@ -116,6 +117,9 @@ describe("AI merge finalization recovery", () => {
 
     await worker.drain();
     expect(fixture.store.getIssue(created.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    fixture.commands.rejectDelivery(created.issue.id, "取消按钮还需要保留键盘关闭行为");
+    await worker.drain();
+    expect(fixture.store.getIssue(created.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
     fixture.commands.approveDelivery(created.issue.id);
     await worker.drain();
 
@@ -127,6 +131,12 @@ describe("AI merge finalization recovery", () => {
     expect(parents[1]).toBe(preparedBase);
     expect(await git(repository, "show", `main:${componentPath}`)).toContain("ImagePreview");
     expect(await git(repository, "show", `main:${componentPath}`)).toContain("<X");
+    expect(await git(repository, "show", `main:${componentPath}`)).toContain("onKeyDown");
+    expect(await git(
+      repository,
+      "show",
+      "main:apps/desktop/src/web/issues/merge-repair-note.ts",
+    )).toBe('export const mergeRepairNote = "accepted after rejection";');
     expect(fixture.workspacePersistence.getBinding(created.issue.id))
       .toMatchObject({ status: "RELEASED" });
     expectInOrder(
@@ -166,6 +176,26 @@ class MergeRecoveryAgent extends FakeAgent {
       disposition: "REVALIDATION_REQUIRED",
       affectedPaths: [path],
     };
+  }
+
+  async repair(
+    session: AgentSessionRef,
+    input: Parameters<AgentAdapter["repair"]>[1],
+  ): Promise<RepairResult> {
+    if (!input.issue.projectPath) throw new Error("PROJECT_PATH_REQUIRED");
+    const componentPath = "apps/desktop/src/web/issues/issue-detail.tsx";
+    await writeFile(join(input.issue.projectPath, componentPath), [
+      'import { ImagePreview, X } from "lucide-react";',
+      "export const Preview = () => <ImagePreview />;",
+      'export const Cancel = () => <X aria-label="cancel" onKeyDown={() => undefined} />;',
+      "",
+    ].join("\n"));
+    await writeFile(
+      join(input.issue.projectPath, "apps/desktop/src/web/issues/merge-repair-note.ts"),
+      'export const mergeRepairNote = "accepted after rejection";\n',
+    );
+    const result = await super.repair(session, input);
+    return { ...result, summary: "按拒绝反馈补充键盘行为并保留合并修复" };
   }
 }
 

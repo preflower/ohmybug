@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import {
   assertPublicationPreflight,
+  captureGitRepositoryStateHash,
   captureGitFinalizationFingerprint,
   readGitWorkspaceStatus,
   type GitFinalizationFingerprint,
@@ -69,14 +70,16 @@ const mergeSessionSchema = z.object({
   baseCommit: z.string().min(1),
   issueBranch: z.string().min(1),
   issueCommit: z.string().min(1),
-  conflictPaths: z.array(repositoryPathSchema).min(1).max(MAX_CONFLICT_PATHS),
+  conflictPaths: z.array(repositoryPathSchema).max(MAX_CONFLICT_PATHS),
   mergeMessages: z.array(z.string().max(MAX_MERGE_MESSAGE_LENGTH)).max(MAX_MERGE_MESSAGES),
   mergeHead: z.string().min(1),
   conflictStages: z.string().min(1),
   preparedFingerprint: finalizationFingerprintSchema,
+  repositoryStateWithoutBaseHash: z.string().min(1).optional(),
   candidateTree: z.string().min(1).optional(),
-  validatedPaths: z.array(repositoryPathSchema).min(1).max(MAX_CONFLICT_PATHS).optional(),
+  validatedPaths: z.array(repositoryPathSchema).max(200).optional(),
   mergeCommit: z.string().min(1).optional(),
+  deliveryToken: z.string().min(1).optional(),
 }).refine(
   (session) => (session.candidateTree === undefined) === (session.validatedPaths === undefined),
   "GIT_MERGE_RECOVERY_CANDIDATE_INVALID",
@@ -138,9 +141,11 @@ export interface GitMergeRecoverySession {
   mergeHead: string;
   conflictStages: string;
   preparedFingerprint: GitFinalizationFingerprint;
+  repositoryStateWithoutBaseHash?: string;
   candidateTree?: string;
   validatedPaths?: string[];
   mergeCommit?: string;
+  deliveryToken?: string;
 }
 
 export type GitFinalizationRecoveryState =
@@ -190,10 +195,10 @@ export async function prepareGitMergeRecovery(input: {
   lastMergeFailure?: GitMergeFailureRecord;
   existing?: GitFinalizationRecoveryState | GitFinalizationFingerprint;
 }): Promise<{
-  recovery: GitFinalizationRecoveryState;
+  recovery?: GitFinalizationRecoveryState;
   context: WorkspaceFinalizationRecoveryContext;
 }> {
-  const issueCommit = await runGit(input.worktreePath, ["rev-parse", "HEAD"]);
+  let issueCommit = await runGit(input.worktreePath, ["rev-parse", "HEAD"]);
   const existing = normalizeGitFinalizationRecoveryState(input.existing);
   if (
     existing?.kind === "MERGE_CONFLICT"
@@ -220,8 +225,8 @@ export async function prepareGitMergeRecovery(input: {
       "rev-parse",
       `refs/heads/${input.baseBranch}`,
     ], [128]);
-  const environment = async (messages: string[]): Promise<{
-    recovery: GitFinalizationRecoveryState;
+  const environment = async (messages: string[], persist = true): Promise<{
+    recovery?: GitFinalizationRecoveryState;
     context: WorkspaceFinalizationRecoveryContext;
   }> => {
     const merge: FinalizationRecoveryMergeContext = {
@@ -234,23 +239,136 @@ export async function prepareGitMergeRecovery(input: {
       mergeMessages: messages.slice(0, MAX_MERGE_MESSAGES),
       mergePrepared: false,
     };
-    const fingerprint = await captureGitFinalizationFingerprint({
-      worktreePath: input.worktreePath,
-      diagnosticPaths: [],
-      fingerprintRef: input.fingerprintRef,
-      attemptId: input.attemptId,
-    });
+    let fingerprint: GitFinalizationFingerprint | undefined;
+    let workspaceStatus = "Workspace status could not be read safely";
+    try {
+      [fingerprint, workspaceStatus] = await Promise.all([
+        captureGitFinalizationFingerprint({
+          worktreePath: input.worktreePath,
+          diagnosticPaths: [],
+          fingerprintRef: input.fingerprintRef,
+          attemptId: input.attemptId,
+        }),
+        readGitWorkspaceStatus(input.worktreePath),
+      ]);
+    } catch (error) {
+      messages = [
+        ...messages,
+        error instanceof Error ? error.message : "Merge recovery inspection failed",
+      ];
+    }
     return {
-      recovery: { version: 1, kind: "MERGE_ENVIRONMENT", fingerprint, merge },
+      ...(persist && fingerprint
+        ? { recovery: { version: 1 as const, kind: "MERGE_ENVIRONMENT" as const, fingerprint, merge } }
+        : {}),
       context: {
         fingerprintRef: input.fingerprintRef,
-        workspaceStatus: await readGitWorkspaceStatus(input.worktreePath),
+        workspaceStatus,
         fingerprintSummary: `inspection-only merge recovery at ${issueCommit}`,
         recoveryKind: "MERGE_ENVIRONMENT",
         merge,
       },
     };
   };
+
+  if (existing?.kind === "MERGE_CONFLICT" && existing.session.attemptId !== input.attemptId) {
+    const mergeHead = await tryRunGit(
+      input.worktreePath,
+      ["rev-parse", "-q", "MERGE_HEAD"],
+      [128],
+    );
+    if (
+      mergeHead === existing.session.baseCommit
+      && issueCommit === existing.session.issueCommit
+    ) {
+      if (!existing.session.candidateTree) {
+        return environment(["An older provider-owned merge session is still active"], false);
+      }
+      try {
+        issueCommit = await finalizeGitMergeRecovery({
+          worktreePath: input.worktreePath,
+          baseRef: existing.session.baseCommit,
+          session: existing.session,
+          allowBaseRefMove: true,
+        });
+      } catch (error) {
+        return environment([
+          error instanceof Error
+            ? error.message
+            : "The older provider-owned merge could not be sealed safely",
+        ], false);
+      }
+    }
+  }
+
+  if (
+    existing?.kind === "MERGE_CONFLICT"
+    && existing.session.attemptId !== input.attemptId
+    && existing.session.mergeCommit === issueCommit
+  ) {
+    try {
+      const latestBase = await tryRunGit(
+        input.worktreePath,
+        ["rev-parse", `refs/heads/${input.baseBranch}`],
+        [128],
+      );
+      if (latestBase && latestBase !== existing.session.baseCommit) {
+        if (await readGitWorkspaceStatus(input.worktreePath)) {
+          return environment(["The recovered Issue Worktree changed before base recomputation"]);
+        }
+        let mergeMessages = ["Prepared a renewed merge against the advanced base"];
+        try {
+          await runGit(input.worktreePath, ["merge", "--no-commit", "--no-ff", latestBase]);
+        } catch (error) {
+          if (!(error instanceof GitCommandError) || error.exitCode !== 1) {
+            return environment([
+              error instanceof Error ? error.message : "Advanced base preparation failed",
+            ]);
+          }
+          const parsed = parseMergeTreeConflictOutput(error.stdout, error.stderr);
+          mergeMessages = parsed.mergeMessages.length > 0
+            ? parsed.mergeMessages
+            : ["The advanced base introduced new merge conflicts"];
+        }
+        const mergeHead = await runGit(input.worktreePath, ["rev-parse", "MERGE_HEAD"]);
+        const conflictStages = await runGit(input.worktreePath, ["ls-files", "-u", "-z"]);
+        if (mergeHead !== latestBase) {
+          return environment(["The renewed provider-owned merge state was not stable"]);
+        }
+        const session: GitMergeRecoverySession = {
+          version: 1,
+          attemptId: input.attemptId,
+          fingerprintRef: input.fingerprintRef,
+          baseBranch: input.baseBranch,
+          baseCommit: latestBase,
+          issueBranch: input.issueBranch,
+          issueCommit,
+          conflictPaths: parseUnmergedPaths(conflictStages),
+          mergeMessages: mergeMessages.slice(0, MAX_MERGE_MESSAGES),
+          mergeHead,
+          conflictStages,
+          preparedFingerprint: await captureGitFinalizationFingerprint({
+            worktreePath: input.worktreePath,
+            diagnosticPaths: [],
+            fingerprintRef: input.fingerprintRef,
+            attemptId: input.attemptId,
+          }),
+          repositoryStateWithoutBaseHash: await captureGitRepositoryStateHash(
+            input.worktreePath,
+            [`refs/heads/${input.baseBranch}`],
+          ),
+        };
+        return {
+          recovery: { version: 1, kind: "MERGE_CONFLICT", session },
+          context: await conflictContext(input.worktreePath, session),
+        };
+      }
+    } catch (error) {
+      return environment([
+        error instanceof Error ? error.message : "Advanced base inspection failed",
+      ]);
+    }
+  }
 
   const failure = input.lastMergeFailure;
   if (
@@ -260,61 +378,80 @@ export async function prepareGitMergeRecovery(input: {
   ) {
     return environment([input.diagnostic.message]);
   }
-  const currentMergeHead = await tryRunGit(
-    input.worktreePath,
-    ["rev-parse", "-q", "MERGE_HEAD"],
-    [128],
-  );
-  if (currentMergeHead) return environment(["A foreign merge session is already active"]);
-  const status = await readGitWorkspaceStatus(input.worktreePath);
-  if (status) return environment(["The Issue Worktree changed before merge preparation"]);
-
   try {
-    await runGit(input.worktreePath, [
-      "merge",
-      "--no-commit",
-      "--no-ff",
-      failure.baseCommit,
-    ]);
-    return environment(["The recorded conflict could not be reproduced"]);
-  } catch (error) {
-    if (!(error instanceof GitCommandError) || error.exitCode !== 1) {
+    const currentMergeHead = await tryRunGit(
+      input.worktreePath,
+      ["rev-parse", "-q", "MERGE_HEAD"],
+      [128],
+    );
+    if (currentMergeHead) {
+      const olderProviderSession = existing?.kind === "MERGE_CONFLICT"
+        && currentMergeHead === existing.session.baseCommit
+        && issueCommit === existing.session.issueCommit;
       return environment([
-        error instanceof Error ? error.message : "Merge preparation failed",
-      ]);
+        olderProviderSession
+          ? "An older provider-owned merge session is still active"
+          : "A foreign merge session is already active",
+      ], !olderProviderSession);
     }
-  }
+    const status = await readGitWorkspaceStatus(input.worktreePath);
+    if (status) return environment(["The Issue Worktree changed before merge preparation"]);
 
-  const mergeHead = await runGit(input.worktreePath, ["rev-parse", "MERGE_HEAD"]);
-  const conflictStages = await runGit(input.worktreePath, ["ls-files", "-u", "-z"]);
-  const conflictPaths = parseUnmergedPaths(conflictStages);
-  if (mergeHead !== failure.baseCommit || conflictPaths.length === 0) {
-    return environment(["Provider-owned merge state did not match the recorded conflict"]);
-  }
-  const preparedFingerprint = await captureGitFinalizationFingerprint({
-    worktreePath: input.worktreePath,
-    diagnosticPaths: [],
-    fingerprintRef: input.fingerprintRef,
-    attemptId: input.attemptId,
-  });
+    try {
+      await runGit(input.worktreePath, [
+        "merge",
+        "--no-commit",
+        "--no-ff",
+        failure.baseCommit,
+      ]);
+      return environment(["The recorded conflict could not be reproduced"]);
+    } catch (error) {
+      if (!(error instanceof GitCommandError) || error.exitCode !== 1) {
+        return environment([
+          error instanceof Error ? error.message : "Merge preparation failed",
+        ]);
+      }
+    }
+
+    const mergeHead = await runGit(input.worktreePath, ["rev-parse", "MERGE_HEAD"]);
+    const conflictStages = await runGit(input.worktreePath, ["ls-files", "-u", "-z"]);
+    const conflictPaths = parseUnmergedPaths(conflictStages);
+    if (mergeHead !== failure.baseCommit || conflictPaths.length === 0) {
+      return environment(["Provider-owned merge state did not match the recorded conflict"]);
+    }
+    const preparedFingerprint = await captureGitFinalizationFingerprint({
+      worktreePath: input.worktreePath,
+      diagnosticPaths: [],
+      fingerprintRef: input.fingerprintRef,
+      attemptId: input.attemptId,
+    });
   const session: GitMergeRecoverySession = {
-    version: 1,
-    attemptId: input.attemptId,
-    fingerprintRef: input.fingerprintRef,
-    baseBranch: input.baseBranch,
-    baseCommit: failure.baseCommit,
-    issueBranch: input.issueBranch,
-    issueCommit,
-    conflictPaths,
-    mergeMessages: failure.mergeMessages.slice(0, MAX_MERGE_MESSAGES),
-    mergeHead,
-    conflictStages,
+      version: 1,
+      attemptId: input.attemptId,
+      fingerprintRef: input.fingerprintRef,
+      baseBranch: input.baseBranch,
+      baseCommit: failure.baseCommit,
+      issueBranch: input.issueBranch,
+      issueCommit,
+      conflictPaths,
+      mergeMessages: failure.mergeMessages.slice(0, MAX_MERGE_MESSAGES),
+      mergeHead,
+      conflictStages,
     preparedFingerprint,
-  };
-  return {
-    recovery: { version: 1, kind: "MERGE_CONFLICT", session },
-    context: await conflictContext(input.worktreePath, session),
-  };
+    repositoryStateWithoutBaseHash: await captureGitRepositoryStateHash(
+      input.worktreePath,
+      [`refs/heads/${input.baseBranch}`],
+    ),
+    };
+    return {
+      recovery: { version: 1, kind: "MERGE_CONFLICT", session },
+      context: await conflictContext(input.worktreePath, session),
+    };
+  } catch (error) {
+    return environment([
+      error instanceof Error ? error.message : "Merge preparation inspection failed",
+    ]);
+  }
 }
 
 export async function validateGitMergeRecovery(input: {
@@ -388,6 +525,8 @@ export async function finalizeGitMergeRecovery(input: {
   worktreePath: string;
   baseRef: string;
   session: GitMergeRecoverySession;
+  deliveryToken?: string;
+  allowBaseRefMove?: boolean;
 }): Promise<string> {
   const { session } = input;
   if (session.mergeCommit) {
@@ -400,9 +539,25 @@ export async function finalizeGitMergeRecovery(input: {
   }
   const baseCommit = await tryRunGit(input.worktreePath, ["rev-parse", input.baseRef], [128]);
   if (baseCommit !== session.baseCommit) throw new Error("GIT_AUTO_MERGE_BASE_MOVED");
-  const invariants = await inspectMergeSessionInvariants(input.worktreePath, session);
+  const invariants = await inspectMergeSessionInvariants(
+    input.worktreePath,
+    session,
+    input.allowBaseRefMove ?? false,
+  );
   if (invariants.validation) throw new Error(invariants.validation.reason);
   await assertPublicationPreflight(input.worktreePath);
+  if (
+    session.deliveryToken
+    && input.deliveryToken
+    && input.deliveryToken !== session.deliveryToken
+  ) {
+    await refreshAcceptedMergeCandidate(
+      input.worktreePath,
+      session,
+      invariants.fingerprint,
+      input.deliveryToken,
+    );
+  }
   const candidate = await resolvedTreeFromTemporaryIndex(
     input.worktreePath,
     session.validatedPaths,
@@ -434,9 +589,44 @@ export async function finalizeGitMergeRecovery(input: {
   return commit;
 }
 
+async function refreshAcceptedMergeCandidate(
+  worktreePath: string,
+  session: GitMergeRecoverySession,
+  current: GitFinalizationFingerprint,
+  deliveryToken: string,
+): Promise<void> {
+  const changedPaths = [...new Set([
+    ...session.conflictPaths,
+    ...changedContent(session.preparedFingerprint.tracked, current.tracked),
+    ...changedContent(session.preparedFingerprint.untracked, current.untracked),
+  ])].sort();
+  if (changedPaths.length > 200) throw new Error("GIT_MERGE_RECOVERY_PATH_LIMIT_EXCEEDED");
+  const beforeTracked = new Map(
+    session.preparedFingerprint.tracked.map((entry) => [entry.path, entry]),
+  );
+  const currentEntries = new Map(
+    [...current.tracked, ...current.untracked].map((entry) => [entry.path, entry]),
+  );
+  for (const path of changedPaths) {
+    const entry = currentEntries.get(path);
+    if (entry?.kind === "missing" && beforeTracked.has(path)) continue;
+    if (entry?.kind !== "file") {
+      throw new Error("GIT_MERGE_RECOVERY_FILE_TYPE_INVALID");
+    }
+    const content = await readFile(join(worktreePath, path));
+    if (content.includes(0) || hasConflictMarkers(content.toString("utf8"))) {
+      throw new Error("GIT_MERGE_RECOVERY_CONFLICT_MARKERS");
+    }
+  }
+  session.candidateTree = await resolvedTreeFromTemporaryIndex(worktreePath, changedPaths);
+  session.validatedPaths = changedPaths;
+  session.deliveryToken = deliveryToken;
+}
+
 async function inspectMergeSessionInvariants(
   worktreePath: string,
   session: GitMergeRecoverySession,
+  allowBaseRefMove = false,
 ): Promise<{
   fingerprint: GitFinalizationFingerprint;
   validation?: WorkspaceFinalizationRecoveryValidation & { kind: "UNSAFE" };
@@ -469,7 +659,16 @@ async function inspectMergeSessionInvariants(
     return invalid("GIT_MERGE_RECOVERY_INDEX_FLAGS_CHANGED");
   }
   if (fingerprint.repositoryStateHash !== session.preparedFingerprint.repositoryStateHash) {
-    return invalid("GIT_MERGE_RECOVERY_REPOSITORY_STATE_CHANGED");
+    if (
+      !allowBaseRefMove
+      || !session.repositoryStateWithoutBaseHash
+      || await captureGitRepositoryStateHash(
+        worktreePath,
+        [`refs/heads/${session.baseBranch}`],
+      ) !== session.repositoryStateWithoutBaseHash
+    ) {
+      return invalid("GIT_MERGE_RECOVERY_REPOSITORY_STATE_CHANGED");
+    }
   }
   return { fingerprint };
 }

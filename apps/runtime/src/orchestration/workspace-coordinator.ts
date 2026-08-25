@@ -343,12 +343,43 @@ export class WorkspaceCoordinator {
       };
     }
 
-    const next = recordFinalizationRecoveryResult(
+    const recoveryResultAt = this.dependencies.now();
+    let next = recordFinalizationRecoveryResult(
       issue,
       result,
       validation.kind,
-      this.dependencies.now(),
+      recoveryResultAt,
     );
+    if (validation.kind === "CHANGED") {
+      try {
+        if (!binding || binding.status !== "READY") {
+          throw new Error("WORKSPACE_BINDING_NOT_READY");
+        }
+        const provider = this.dependencies.registry.create(binding.providerId, {});
+        const fingerprintRef = issue.finalizationRecovery?.fingerprintRef;
+        if (!fingerprintRef) throw new Error("FINALIZATION_RECOVERY_FINGERPRINT_REQUIRED");
+        await provider.bindFinalizationRecoveryDelivery?.({
+          issue: next,
+          resourceId: binding.resourceId,
+          fingerprintRef,
+        });
+      } catch (error) {
+        validation = {
+          kind: "UNSAFE",
+          changedPaths: [],
+          reason: safeRecoveryText(
+            workspaceFailureMessage(error, "FINALIZATION_RECOVERY_DELIVERY_BIND_FAILED"),
+            400,
+          ),
+        };
+        next = recordFinalizationRecoveryResult(
+          issue,
+          result,
+          validation.kind,
+          recoveryResultAt,
+        );
+      }
+    }
     const operation: PendingOperation | null = validation.kind === "UNCHANGED"
       ? "FINALIZE"
       : validation.kind === "CHANGED"

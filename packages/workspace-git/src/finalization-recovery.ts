@@ -277,7 +277,7 @@ export async function captureGitFinalizationFingerprint(input: {
     ) ?? "DETACHED",
     index: await runGit(input.worktreePath, ["ls-files", "--stage", "-z"]),
     indexFlags: await runGit(input.worktreePath, ["ls-files", "-v", "-z"]),
-    repositoryStateHash: await repositoryStateHash(input.worktreePath),
+    repositoryStateHash: await captureGitRepositoryStateHash(input.worktreePath),
     tracked: await Promise.all(trackedPaths.map((path) => fingerprintPath(
       input.worktreePath,
       path,
@@ -297,7 +297,10 @@ export async function captureGitFinalizationFingerprint(input: {
   };
 }
 
-async function repositoryStateHash(worktreePath: string): Promise<string> {
+export async function captureGitRepositoryStateHash(
+  worktreePath: string,
+  excludedRefs: string[] = [],
+): Promise<string> {
   const [configuration, refs] = await Promise.all([
     runGit(worktreePath, ["config", "--local", "--null", "--list"]),
     runGit(worktreePath, [
@@ -307,7 +310,12 @@ async function repositoryStateHash(worktreePath: string): Promise<string> {
       "refs/remotes",
     ]),
   ]);
-  return digest(`${configuration}\0${refs}`);
+  const excluded = new Set(excludedRefs);
+  const filteredRefs = refs.split("\n").filter((entry) => {
+    const separator = entry.indexOf("\0");
+    return separator === -1 || !excluded.has(entry.slice(0, separator));
+  }).join("\n");
+  return digest(`${configuration}\0${filteredRefs}`);
 }
 
 function assertRecoverableGitDiagnostic(
