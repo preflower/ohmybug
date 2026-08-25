@@ -24,6 +24,7 @@ export function createDesktopTransport(bridge: Readonly<DesktopApi>): ProductTra
     issue: (id) => bridge.getIssue(id),
     issueWorkspace: (id) => bridge.getIssueWorkspace(id),
     submitManual: (input) => bridge.submitManual(input),
+    submitReview: (id, input) => bridge.submitReview(id, input),
     approveAssessment: (id, input) => bridge.approveAssessment(id, input),
     confirmNotABug: (id, reference) => bridge.confirmNotABug(id, reference),
     confirmDuplicate: (id, reference, duplicateOf) =>

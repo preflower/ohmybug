@@ -45,6 +45,10 @@ export interface DesktopApi {
   getIssue(id: string): Promise<RuntimeOperationOutput<"getIssue">>;
   getIssueWorkspace(id: string): Promise<RuntimeOperationOutput<"getIssueWorkspace">>;
   submitManual(input: ManualIssueCommand): Promise<RuntimeOperationOutput<"submitManual">>;
+  submitReview(
+    id: string,
+    input: RuntimeOperationInput<"submitReview">["input"],
+  ): Promise<RuntimeOperationOutput<"submitReview">>;
   approveAssessment(
     id: string,
     input: RuntimeOperationInput<"approveAssessment">["input"],
@@ -117,6 +121,7 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     getIssue: (id) => request("getIssue", { id }),
     getIssueWorkspace: (id) => request("getIssueWorkspace", { id }),
     submitManual: (input) => request("submitManual", input),
+    submitReview: (id, input) => request("submitReview", { id, input }),
     approveAssessment: (id, input) => request("approveAssessment", { id, input }),
     approveBugAssessment: (id, input) => request("approveBugAssessment", { id, input }),
     confirmNotABug: (id, reference) => request("confirmNotABug", { id, reference }),

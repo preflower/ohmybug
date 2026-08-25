@@ -28,7 +28,7 @@ const issue: IssueDto = {
   identifier: "CHK-1",
   title: "Checkout returns 500",
   titleSource: "integration",
-  status: "ASSESSMENT_REVIEW",
+  status: "REVIEW_REQUIRED",
   inputs: [{
     id: "input-1",
     integration: "manual",
@@ -45,6 +45,23 @@ const issue: IssueDto = {
     reasoning: "The failure follows cart hydration.",
     rootCause: "Cart hydration returns null.",
     solution: "Return a recoverable result.",
+  },
+  review: {
+    id: "review-assessment-1",
+    kind: "assessment",
+    requestedFrom: "ASSESSING",
+    payload: { verdict: "BUG" },
+    choices: [{
+      id: "implement",
+      label: "开始实现",
+      continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+    }, {
+      id: "reassess",
+      label: "要求重新分析",
+      feedbackRequired: true,
+      continuation: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+    }],
+    requestedAt: "2026-08-19T09:01:00.000Z",
   },
   revision: 4,
   createdAt: "2026-08-19T09:00:00.000Z",
@@ -622,7 +639,7 @@ describe("control center workbench", () => {
   it("restores a completed branch from the durable Issue event", async () => {
     const acceptanceReview: IssueDto = {
       ...issue,
-      status: "ACCEPTANCE_REVIEW",
+      status: "REVIEW_REQUIRED",
       revision: 10,
       repair: {
         iteration: 1,
@@ -635,6 +652,18 @@ describe("control center workbench", () => {
           summary: "Checkout recovery implemented",
           evidence: [],
         },
+      },
+      review: {
+        id: "review-delivery-1",
+        kind: "delivery",
+        requestedFrom: "EVIDENCE_CHECK",
+        payload: { repairIteration: 1, evidenceCount: 0 },
+        choices: [{
+          id: "accept",
+          label: "接受交付",
+          continuation: { operation: "FINALIZE", resumeStatus: "FINALIZING", resolution: "FIXED" },
+        }],
+        requestedAt: "2026-08-24T10:00:00.000Z",
       },
     };
     const finalizing: IssueDto = {
@@ -653,10 +682,9 @@ describe("control center workbench", () => {
     vi.spyOn(api, "issue").mockImplementation(async () => snapshot);
     vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
     vi.spyOn(api, "integrationHealth").mockResolvedValue({});
-    vi.spyOn(api, "rejectDelivery").mockResolvedValue(acceptanceReview);
-    vi.spyOn(api, "approveDelivery").mockImplementation(async () => {
+    const submitReview = vi.spyOn(api, "submitReview").mockImplementation(async () => {
       snapshot = finalizing;
-      return { issue: finalizing };
+      return finalizing;
     });
     vi.spyOn(api, "subscribeIssueEvents").mockImplementation(
       (_id, _cursor, next) => {
@@ -668,8 +696,13 @@ describe("control center workbench", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", {
-      name: "批准验收并完成 Issue",
+      name: "接受交付",
     }));
+    expect(submitReview).toHaveBeenCalledWith(acceptanceReview.id, {
+      expectedRevision: 10,
+      requestId: "review-delivery-1",
+      choiceId: "accept",
+    });
     expect(await screen.findAllByText("交付处理中")).not.toHaveLength(0);
     expect(screen.queryByRole("region", { name: "交付分支" })).not.toBeInTheDocument();
     expect(listener).toBeDefined();
@@ -721,8 +754,7 @@ describe("control center workbench", () => {
 
     const rail = await screen.findByTestId("issue-metadata-rail");
     expect(await within(rail).findByText("ohmybug/chk-1")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "关闭 Issue" }));
-    fireEvent.click(await screen.findByRole("button", { name: "确认关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
     await waitFor(() => expect(cancel).toHaveBeenCalledWith(issue.id));
     await waitFor(() => expect(workspace).toHaveBeenCalledTimes(2));
 

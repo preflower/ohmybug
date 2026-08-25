@@ -16,6 +16,7 @@ import type {
   IssueWorkspaceInfoDto,
   ProjectDto,
   ProjectInspection,
+  ReviewSubmissionInput,
   WorkspaceBranchDiscoveryDto,
 } from "./types.js";
 
@@ -49,6 +50,7 @@ export interface ProductTransport {
     content: string;
     summary?: string;
   }): Promise<IssueDto>;
+  submitReview(id: string, input: ReviewSubmissionInput): Promise<IssueDto>;
   approveAssessment(id: string, input: ApproveAssessmentInput): Promise<IssueDto>;
   confirmNotABug(id: string, reference: AssessmentReference): Promise<IssueDto>;
   confirmDuplicate(id: string, reference: AssessmentReference, duplicateOf: string): Promise<IssueDto>;

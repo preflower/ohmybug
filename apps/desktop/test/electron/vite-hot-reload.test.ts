@@ -85,8 +85,8 @@ describe("Electron source hot reload", () => {
         { id: "dev-style-storefront", key: "STOREFRONT" },
       ],
       issues: [
-        { projectId: "dev-style-ohmybug", identifier: "OHMYBUG-1", status: "ASSESSMENT_REVIEW" },
-        { projectId: "dev-style-ohmybug", identifier: "OHMYBUG-2", status: "ACCEPTANCE_REVIEW" },
+        { projectId: "dev-style-ohmybug", identifier: "OHMYBUG-1", status: "REVIEW_REQUIRED" },
+        { projectId: "dev-style-ohmybug", identifier: "OHMYBUG-2", status: "REVIEW_REQUIRED" },
       ],
       issueEvents: {
         "dev-style-issue-assessment": expect.arrayContaining([

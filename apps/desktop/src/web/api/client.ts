@@ -28,6 +28,7 @@ const unavailableTransport: ProductTransport = {
   issue: unavailable,
   issueWorkspace: unavailable,
   submitManual: unavailable,
+  submitReview: unavailable,
   approveAssessment: unavailable,
   confirmNotABug: unavailable,
   confirmDuplicate: unavailable,

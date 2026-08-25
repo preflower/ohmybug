@@ -1383,6 +1383,146 @@ a:focus-visible {
   gap: 7px;
 }
 
+.review-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.review-decision-context,
+.business-conflict-review {
+  display: grid;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.review-decision-context p,
+.business-conflict-review p {
+  margin: 0;
+}
+
+.review-decision-context dl,
+.business-conflict-review dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.review-decision-context dl > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.4fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.review-decision-context dt {
+  color: var(--text-muted);
+}
+
+.review-decision-context dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.review-choice-list {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.review-choice-list legend {
+  margin-bottom: 7px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.review-choice {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 11px;
+  cursor: pointer;
+}
+
+.review-choice:has(input:checked) {
+  border-color: color-mix(in oklch, var(--accent) 48%, var(--border));
+  background: var(--accent-soft);
+}
+
+.review-choice input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.review-choice > span {
+  display: grid;
+  gap: 3px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.review-choice small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.business-conflict-summary {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.business-intent-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.business-intent-comparison > div,
+.business-conflict-reason,
+.business-recommendation {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 11px;
+}
+
+.business-intent-comparison span,
+.business-conflict-paths > span,
+.business-recommendation > span {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.business-conflict-paths {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.business-conflict-paths code {
+  border-radius: 4px;
+  background: var(--surface-muted);
+  padding: 3px 5px;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+@media (max-width: 720px) {
+  .business-intent-comparison {
+    grid-template-columns: 1fr;
+  }
+}
+
 .failure-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -36,6 +36,7 @@ describe("renderer product transports", () => {
         issue: { id: "issue-1", status: "COMPLETED" },
         branch: { name: "ohmybug/chk-1", commit: "abc123" },
       })),
+      submitReview: vi.fn(async () => ({ id: "issue-1", status: "REPAIRING" })),
       getIssueWorkspace: vi.fn(async () => ({
         providerId: "git",
         status: "READY" as const,
@@ -82,6 +83,16 @@ describe("renderer product transports", () => {
     await expect(transport.grantIssueCapabilities("issue-1", 7, "request-1"))
       .resolves.toMatchObject({ status: "REPAIRING" });
     expect(bridge.grantIssueCapabilities).toHaveBeenCalledWith("issue-1", 7, "request-1");
+    await expect(transport.submitReview("issue-1", {
+      expectedRevision: 8,
+      requestId: "review-1",
+      choiceId: "keep-base",
+    })).resolves.toMatchObject({ status: "REPAIRING" });
+    expect(bridge.submitReview).toHaveBeenCalledWith("issue-1", {
+      expectedRevision: 8,
+      requestId: "review-1",
+      choiceId: "keep-base",
+    });
     const stop = transport.subscribeIssueEvents("issue-1", 1, listener);
     stop();
     const evidence = await transport.evidenceSource("issue-1", "evidence-1");

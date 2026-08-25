@@ -17,7 +17,7 @@ describe("preload desktop API", () => {
       "confirmNotABug", "createProject", "getIssue", "getIssueWorkspace", "getProject", "listIntegrationPlugins",
       "inspectProject", "inspectProjectBranches", "listIssues", "listProjects", "listWorkspaceProviders", "onRuntimeState", "openProjectDirectory",
       "readEvidence", "rebuildAgentSession", "rejectDelivery", "requestReassessment", "retryIssue",
-      "grantIssueCapabilities", "setIntegrationSecrets", "submitManual", "subscribeIssueEvents", "integrationHealth", "updateProject"
+      "grantIssueCapabilities", "setIntegrationSecrets", "submitManual", "submitReview", "subscribeIssueEvents", "integrationHealth", "updateProject"
     ].sort());
     expect("invoke" in api).toBe(false);
     expect("filesystem" in api).toBe(false);
@@ -38,6 +38,11 @@ describe("preload desktop API", () => {
     await api.openProjectDirectory();
     await api.getIssueWorkspace("issue-1");
     await api.grantIssueCapabilities("issue-1", 7, "request-1");
+    await api.submitReview("issue-1", {
+      expectedRevision: 8,
+      requestId: "review-1",
+      choiceId: "keep-base",
+    });
 
     expect(ipc.invoke).toHaveBeenNthCalledWith(1, "oh-my-bug:request", {
       operation: "listProjects",
@@ -59,6 +64,13 @@ describe("preload desktop API", () => {
     expect(ipc.invoke).toHaveBeenNthCalledWith(6, "oh-my-bug:request", {
       operation: "grantIssueCapabilities",
       payload: { id: "issue-1", expectedRevision: 7, requestId: "request-1" },
+    });
+    expect(ipc.invoke).toHaveBeenNthCalledWith(7, "oh-my-bug:request", {
+      operation: "submitReview",
+      payload: {
+        id: "issue-1",
+        input: { expectedRevision: 8, requestId: "review-1", choiceId: "keep-base" },
+      },
     });
   });
 });

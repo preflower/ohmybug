@@ -89,6 +89,7 @@ export function createBrowserDevelopmentTransport(
     },
     issueWorkspace: async (id) => (await snapshot()).issueWorkspaces?.[id] ?? null,
     submitManual: readOnly,
+    submitReview: readOnly,
     approveAssessment: readOnly,
     confirmNotABug: readOnly,
     confirmDuplicate: readOnly,
