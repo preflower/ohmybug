@@ -1,3 +1,10 @@
+import type {
+  AgentCapabilityRequest,
+  AgentCapabilityRequester,
+  RepairVerification,
+  RepairResult,
+} from "@oh-my-bug/core";
+
 export interface AssessmentOutput {
   verdict: "BUG" | "FEATURE" | "NOT_A_BUG" | "UNCERTAIN";
   suggestedTitle: string;
@@ -13,14 +20,45 @@ export interface RepairEvidenceOutput {
   relativePath: string;
 }
 
-export interface RepairOutput {
-  summary: string;
-  evidence: RepairEvidenceOutput[];
-}
+export type RepairOutput = RepairResult;
 
 export interface EvidenceOutput {
   evidence: RepairEvidenceOutput[];
 }
+
+const boundedTextSchema = { type: "string", minLength: 1, maxLength: 4_000 } as const;
+const repositoryPathSchema = { type: "string", minLength: 1, maxLength: 1_000 } as const;
+const commitSchema = { type: "string", minLength: 1, maxLength: 100 } as const;
+const evidenceItemOutputSchema = {
+  type: "object",
+  properties: {
+    type: { type: "string", enum: ["screenshot", "recording"] },
+    label: { type: "string", minLength: 1, maxLength: 200 },
+    relativePath: repositoryPathSchema,
+  },
+  required: ["type", "label", "relativePath"],
+  additionalProperties: false,
+} as const;
+const verificationOutputSchema = {
+  type: "object",
+  properties: {
+    command: { type: "string", minLength: 1, maxLength: 2_000 },
+    outcome: { type: "string", enum: ["PASSED", "FAILED", "NOT_RUN"] },
+    summary: boundedTextSchema,
+  },
+  required: ["command", "outcome", "summary"],
+  additionalProperties: false,
+} as const;
+const conflictResolutionOutputSchema = {
+  type: "object",
+  properties: {
+    path: repositoryPathSchema,
+    classification: { type: "string", enum: ["TEXTUAL", "COMPATIBLE_BUSINESS"] },
+    resolution: boundedTextSchema,
+  },
+  required: ["path", "classification", "resolution"],
+  additionalProperties: false,
+} as const;
 
 export const assessmentResultOutputSchema = {
   type: "object",
@@ -43,28 +81,105 @@ export const assessmentResultOutputSchema = {
   additionalProperties: false,
 } as const;
 
-export const repairResultOutputSchema = {
+const deliveryReadyOutputSchema = {
   type: "object",
   properties: {
-    summary: { type: "string", minLength: 1 },
+    kind: { type: "string", enum: ["DELIVERY_READY"] },
+    summary: boundedTextSchema,
     evidence: {
       type: "array",
       minItems: 0,
       maxItems: 20,
-      items: {
-        type: "object",
-        properties: {
-          type: { type: "string", enum: ["screenshot", "recording"] },
-          label: { type: "string", minLength: 1 },
-          relativePath: { type: "string", minLength: 1 },
+      items: evidenceItemOutputSchema,
+    },
+    integration: {
+      anyOf: [
+        { type: "null" },
+        {
+          type: "object",
+          properties: {
+            baseCommit: commitSchema,
+            issueCommit: commitSchema,
+            conflicts: {
+              type: "array",
+              minItems: 0,
+              maxItems: 100,
+              items: conflictResolutionOutputSchema,
+            },
+          },
+          required: ["baseCommit", "issueCommit", "conflicts"],
+          additionalProperties: false,
         },
-        required: ["type", "label", "relativePath"],
-        additionalProperties: false,
-      },
+      ],
+    },
+    verification: {
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      items: verificationOutputSchema,
     },
   },
-  required: ["summary", "evidence"],
+  required: ["kind", "summary", "evidence", "integration", "verification"],
   additionalProperties: false,
+} as const;
+
+const businessDecisionOutputSchema = {
+  type: "object",
+  properties: {
+    kind: { type: "string", enum: ["BUSINESS_DECISION_REQUIRED"] },
+    summary: boundedTextSchema,
+    decision: {
+      type: "object",
+      properties: {
+        baseCommit: commitSchema,
+        issueCommit: commitSchema,
+        conflictPaths: {
+          type: "array",
+          minItems: 1,
+          maxItems: 100,
+          items: repositoryPathSchema,
+        },
+        baseIntent: boundedTextSchema,
+        issueIntent: boundedTextSchema,
+        incompatibility: boundedTextSchema,
+        recommendation: boundedTextSchema,
+        rationale: boundedTextSchema,
+        choices: {
+          type: "array",
+          minItems: 1,
+          maxItems: 10,
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", minLength: 1, maxLength: 100 },
+              label: { type: "string", minLength: 1, maxLength: 200 },
+              description: boundedTextSchema,
+            },
+            required: ["id", "label", "description"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: [
+        "baseCommit",
+        "issueCommit",
+        "conflictPaths",
+        "baseIntent",
+        "issueIntent",
+        "incompatibility",
+        "recommendation",
+        "rationale",
+        "choices",
+      ],
+      additionalProperties: false,
+    },
+  },
+  required: ["kind", "summary", "decision"],
+  additionalProperties: false,
+} as const;
+
+export const repairResultOutputSchema = {
+  anyOf: [deliveryReadyOutputSchema, businessDecisionOutputSchema],
 } as const;
 
 export const evidenceResultOutputSchema = {
@@ -74,22 +189,20 @@ export const evidenceResultOutputSchema = {
       type: "array",
       minItems: 1,
       maxItems: 20,
-      items: repairResultOutputSchema.properties.evidence.items,
+      items: evidenceItemOutputSchema,
     },
   },
   required: ["evidence"],
   additionalProperties: false,
 } as const;
 
-export const capabilityRequiredOutputSchema = {
+const capabilityRequestOutputSchema = {
   type: "object",
   properties: {
-    outcome: { type: "string", enum: ["CAPABILITY_REQUIRED"] },
     capabilities: {
       type: "array",
       minItems: 1,
       maxItems: 2,
-      uniqueItems: true,
       items: { type: "string", enum: ["HOST_EXECUTION", "NETWORK_ACCESS"] },
     },
     reason: { type: "string", minLength: 1, maxLength: 4_000 },
@@ -109,21 +222,36 @@ export const capabilityRequiredOutputSchema = {
       ],
     },
   },
-  required: ["outcome", "capabilities", "reason", "blockedCommand", "requestedBy"],
+  required: ["capabilities", "reason", "blockedCommand", "requestedBy"],
   additionalProperties: false,
 } as const;
 
-export const assessmentOutputSchema = {
-  anyOf: [assessmentResultOutputSchema, capabilityRequiredOutputSchema],
+export const capabilityRequiredOutputSchema = {
+  type: "object",
+  properties: {
+    outcome: { type: "string", enum: ["CAPABILITY_REQUIRED"] },
+    ...capabilityRequestOutputSchema.properties,
+  },
+  required: ["outcome", ...capabilityRequestOutputSchema.required],
+  additionalProperties: false,
 } as const;
 
-export const repairOutputSchema = {
-  anyOf: [repairResultOutputSchema, capabilityRequiredOutputSchema],
-} as const;
+function outputEnvelopeSchema<ResultSchema>(resultSchema: ResultSchema) {
+  return {
+    type: "object",
+    properties: {
+      outcome: { type: "string", enum: ["RESULT", "CAPABILITY_REQUIRED"] },
+      result: { anyOf: [resultSchema, { type: "null" }] },
+      capabilityRequest: { anyOf: [capabilityRequestOutputSchema, { type: "null" }] },
+    },
+    required: ["outcome", "result", "capabilityRequest"],
+    additionalProperties: false,
+  } as const;
+}
 
-export const evidenceOutputSchema = {
-  anyOf: [evidenceResultOutputSchema, capabilityRequiredOutputSchema],
-} as const;
+export const assessmentOutputSchema = outputEnvelopeSchema(assessmentResultOutputSchema);
+export const repairOutputSchema = outputEnvelopeSchema(repairResultOutputSchema);
+export const evidenceOutputSchema = outputEnvelopeSchema(evidenceResultOutputSchema);
 
 export function parseCapabilityRequiredOutput(
   value: unknown,
@@ -138,7 +266,16 @@ export function parseCapabilityRequiredOutput(
     }
     return parseCapabilityRequest(envelope.capabilityRequest);
   }
-  return parseCapabilityRequest(value);
+
+  // Stored fixtures and interrupted turns may still use the pre-envelope form.
+  const object = strictObject(value, [
+    "outcome",
+    "capabilities",
+    "reason",
+    "blockedCommand",
+    "requestedBy",
+  ]);
+  return parseCapabilityRequest(object);
 }
 
 function parseCapabilityRequest(value: unknown): AgentCapabilityRequest {
@@ -167,7 +304,7 @@ function parseCapabilityRequest(value: unknown): AgentCapabilityRequest {
 }
 
 export function parseAssessmentOutput(value: unknown): AssessmentOutput {
-  const object = strictObject(value, [
+  const object = strictObject(unwrapResult(value), [
     "verdict", "suggestedTitle", "reasoning", "rootCause", "solution", "suspectedDuplicateOf",
   ]);
   const verdict = requiredString(object.verdict, "ASSESSMENT_VERDICT_REQUIRED");
@@ -192,18 +329,121 @@ export function parseAssessmentOutput(value: unknown): AssessmentOutput {
 }
 
 export function parseRepairOutput(value: unknown): RepairOutput {
-  const object = strictObject(value, ["summary", "evidence"]);
+  const raw = unwrapResult(value);
+  const candidate = strictObject(raw, ["kind", "summary", "evidence", "integration", "verification", "decision"]);
+  if (candidate.kind === "DELIVERY_READY") return parseDeliveryReady(candidate);
+  if (candidate.kind === "BUSINESS_DECISION_REQUIRED") return parseBusinessDecision(candidate);
+  throw new Error("REPAIR_RESULT_KIND_INVALID");
+}
+
+function parseDeliveryReady(value: Record<string, unknown>): Extract<RepairOutput, { kind: "DELIVERY_READY" }> {
+  const object = strictObject(value, ["kind", "summary", "evidence", "integration", "verification"]);
   if (!Array.isArray(object.evidence) || object.evidence.length > 20) {
     throw new Error("VISUAL_EVIDENCE_INVALID");
   }
+  if (!Array.isArray(object.verification) || object.verification.length === 0 || object.verification.length > 100) {
+    throw new Error("REPAIR_VERIFICATION_REQUIRED");
+  }
+  const integration = object.integration === undefined || object.integration === null
+    ? undefined
+    : parseIntegration(object.integration);
   return {
-    summary: requiredString(object.summary, "DELIVERY_SUMMARY_REQUIRED"),
+    kind: "DELIVERY_READY",
+    summary: boundedString(object.summary, 4_000, "DELIVERY_SUMMARY_REQUIRED"),
     evidence: object.evidence.map(parseEvidenceItem),
+    ...(integration ? { integration } : {}),
+    verification: object.verification.map(parseVerification),
+  };
+}
+
+function parseIntegration(
+  value: unknown,
+): NonNullable<Extract<RepairOutput, { kind: "DELIVERY_READY" }>["integration"]> {
+  const object = strictObject(value, ["baseCommit", "issueCommit", "conflicts"]);
+  if (!Array.isArray(object.conflicts) || object.conflicts.length > 100) {
+    throw new Error("REPAIR_CONFLICTS_INVALID");
+  }
+  return {
+    baseCommit: boundedString(object.baseCommit, 100, "REPAIR_BASE_COMMIT_REQUIRED"),
+    issueCommit: boundedString(object.issueCommit, 100, "REPAIR_ISSUE_COMMIT_REQUIRED"),
+    conflicts: object.conflicts.map((entry) => {
+      const conflict = strictObject(entry, ["path", "classification", "resolution"]);
+      if (conflict.classification !== "TEXTUAL" && conflict.classification !== "COMPATIBLE_BUSINESS") {
+        throw new Error("REPAIR_CONFLICT_CLASSIFICATION_INVALID");
+      }
+      return {
+        path: repositoryRelativePath(conflict.path),
+        classification: conflict.classification,
+        resolution: boundedString(conflict.resolution, 4_000, "REPAIR_CONFLICT_RESOLUTION_REQUIRED"),
+      };
+    }),
+  };
+}
+
+function parseVerification(value: unknown): RepairVerification {
+  const object = strictObject(value, ["command", "outcome", "summary"]);
+  const outcome = object.outcome;
+  if (outcome !== "PASSED" && outcome !== "FAILED" && outcome !== "NOT_RUN") {
+    throw new Error("REPAIR_VERIFICATION_OUTCOME_INVALID");
+  }
+  return {
+    command: boundedString(object.command, 2_000, "REPAIR_VERIFICATION_COMMAND_REQUIRED"),
+    outcome,
+    summary: boundedString(object.summary, 4_000, "REPAIR_VERIFICATION_SUMMARY_REQUIRED"),
+  };
+}
+
+function parseBusinessDecision(
+  value: Record<string, unknown>,
+): Extract<RepairOutput, { kind: "BUSINESS_DECISION_REQUIRED" }> {
+  const object = strictObject(value, ["kind", "summary", "decision"]);
+  const decision = strictObject(object.decision, [
+    "baseCommit",
+    "issueCommit",
+    "conflictPaths",
+    "baseIntent",
+    "issueIntent",
+    "incompatibility",
+    "recommendation",
+    "rationale",
+    "choices",
+  ]);
+  if (!Array.isArray(decision.conflictPaths) || decision.conflictPaths.length === 0 || decision.conflictPaths.length > 100) {
+    throw new Error("REPAIR_CONFLICT_PATHS_REQUIRED");
+  }
+  if (!Array.isArray(decision.choices) || decision.choices.length === 0 || decision.choices.length > 10) {
+    throw new Error("REPAIR_DECISION_CHOICES_REQUIRED");
+  }
+  const choices = decision.choices.map((entry) => {
+    const choice = strictObject(entry, ["id", "label", "description"]);
+    return {
+      id: boundedString(choice.id, 100, "REPAIR_DECISION_CHOICE_ID_REQUIRED"),
+      label: boundedString(choice.label, 200, "REPAIR_DECISION_CHOICE_LABEL_REQUIRED"),
+      description: boundedString(choice.description, 4_000, "REPAIR_DECISION_CHOICE_DESCRIPTION_REQUIRED"),
+    };
+  });
+  if (new Set(choices.map((choice) => choice.id)).size !== choices.length) {
+    throw new Error("REPAIR_DECISION_CHOICE_DUPLICATE");
+  }
+  return {
+    kind: "BUSINESS_DECISION_REQUIRED",
+    summary: boundedString(object.summary, 4_000, "DELIVERY_SUMMARY_REQUIRED"),
+    decision: {
+      baseCommit: boundedString(decision.baseCommit, 100, "REPAIR_BASE_COMMIT_REQUIRED"),
+      issueCommit: boundedString(decision.issueCommit, 100, "REPAIR_ISSUE_COMMIT_REQUIRED"),
+      conflictPaths: decision.conflictPaths.map(repositoryRelativePath),
+      baseIntent: boundedString(decision.baseIntent, 4_000, "REPAIR_BASE_INTENT_REQUIRED"),
+      issueIntent: boundedString(decision.issueIntent, 4_000, "REPAIR_ISSUE_INTENT_REQUIRED"),
+      incompatibility: boundedString(decision.incompatibility, 4_000, "REPAIR_INCOMPATIBILITY_REQUIRED"),
+      recommendation: boundedString(decision.recommendation, 4_000, "REPAIR_RECOMMENDATION_REQUIRED"),
+      rationale: boundedString(decision.rationale, 4_000, "REPAIR_RATIONALE_REQUIRED"),
+      choices,
+    },
   };
 }
 
 export function parseEvidenceOutput(value: unknown): EvidenceOutput {
-  const object = strictObject(value, ["evidence"]);
+  const object = strictObject(unwrapResult(value), ["evidence"]);
   if (!Array.isArray(object.evidence) || object.evidence.length === 0 || object.evidence.length > 20) {
     throw new Error("VISUAL_EVIDENCE_REQUIRED");
   }
@@ -216,9 +456,30 @@ function parseEvidenceItem(entry: unknown): RepairEvidenceOutput {
   if (type !== "screenshot" && type !== "recording") throw new Error("EVIDENCE_TYPE_INVALID");
   return {
     type,
-    label: requiredString(item.label, "EVIDENCE_LABEL_REQUIRED"),
-    relativePath: requiredString(item.relativePath, "EVIDENCE_PATH_REQUIRED"),
+    label: boundedString(item.label, 200, "EVIDENCE_LABEL_REQUIRED"),
+    relativePath: boundedString(item.relativePath, 1_000, "EVIDENCE_PATH_REQUIRED"),
   };
+}
+
+function unwrapResult(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const candidate = value as Record<string, unknown>;
+  if (!("result" in candidate) && !("capabilityRequest" in candidate)) return value;
+  const envelope = strictObject(value, ["outcome", "result", "capabilityRequest"]);
+  if (envelope.outcome !== "RESULT" || envelope.result === null || envelope.capabilityRequest !== null) {
+    throw new Error("CODEX_OUTPUT_INVALID");
+  }
+  return envelope.result;
+}
+
+function repositoryRelativePath(value: unknown): string {
+  const path = boundedString(value, 1_000, "REPAIR_PATH_REQUIRED");
+  if (
+    path.startsWith("/")
+    || /^[A-Za-z]:[\\/]/.test(path)
+    || path.split(/[\\/]/).includes("..")
+  ) throw new Error("REPAIR_PATH_ESCAPE");
+  return path;
 }
 
 function strictObject(value: unknown, keys: string[]): Record<string, unknown> {
@@ -266,7 +527,3 @@ function optionalRequester(value: unknown): { requestedBy?: AgentCapabilityReque
     },
   };
 }
-import type {
-  AgentCapabilityRequest,
-  AgentCapabilityRequester,
-} from "@oh-my-bug/core";

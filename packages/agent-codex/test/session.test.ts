@@ -102,8 +102,11 @@ describe("durable Codex session", () => {
         solution: "Handle expiry",
       }),
       JSON.stringify({
+        kind: "DELIVERY_READY",
         summary: "Fixed",
         evidence: [{ type: "screenshot", label: "Proof", relativePath: "proof.png" }],
+        integration: null,
+        verification: [{ command: "pnpm test", outcome: "PASSED", summary: "Passed" }],
       }),
     ]);
     const adapter = new CodexAgentAdapter({ client, sessions });

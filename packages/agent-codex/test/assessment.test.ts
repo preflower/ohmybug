@@ -7,7 +7,9 @@ import type { CodexClient } from "../src/codex-client.js";
 import {
   assessmentOutputSchema,
   assessmentResultOutputSchema,
+  capabilityRequiredOutputSchema,
   evidenceOutputSchema,
+  parseAssessmentOutput,
   parseCapabilityRequiredOutput,
   repairOutputSchema,
 } from "../src/output-schemas.js";
@@ -63,27 +65,70 @@ describe("Codex assessment", () => {
     assessmentOutputSchema,
     repairOutputSchema,
     evidenceOutputSchema,
-  ])("accepts the shared capability request branch", (schema) => {
+  ])("uses an OpenAI-compatible root envelope", (schema) => {
+    const root = schema as Record<string, unknown>;
+
+    expect(root.type).toBe("object");
+    expect(root).not.toHaveProperty("anyOf");
+    expect(JSON.stringify(root)).not.toContain('"uniqueItems"');
+  });
+
+  it("keeps the standalone capability schema API compatible", () => {
+    expect(capabilityRequiredOutputSchema.properties.outcome.enum)
+      .toEqual(["CAPABILITY_REQUIRED"]);
+    expect(JSON.stringify(capabilityRequiredOutputSchema)).not.toContain('"uniqueItems"');
+  });
+
+  it("parses result and capability-request envelopes", () => {
     const request = {
-      outcome: "CAPABILITY_REQUIRED",
       capabilities: ["HOST_EXECUTION", "NETWORK_ACCESS"],
       reason: "Launch Electron acceptance",
       blockedCommand: "pnpm test:e2e:electron",
       requestedBy: { type: "SKILL", id: "implement-ui-design" },
     };
+    const capabilityEnvelope = {
+      outcome: "CAPABILITY_REQUIRED",
+      result: null,
+      capabilityRequest: request,
+    };
+    const assessment = {
+      verdict: "NOT_A_BUG",
+      suggestedTitle: "No change needed",
+      reasoning: "Expected behavior",
+      rootCause: null,
+      solution: null,
+      suspectedDuplicateOf: null,
+    };
 
-    expect(schema.anyOf).toHaveLength(2);
-    expect(parseCapabilityRequiredOutput(request)).toEqual({
+    expect(parseCapabilityRequiredOutput(capabilityEnvelope)).toEqual({
       capabilities: ["HOST_EXECUTION", "NETWORK_ACCESS"],
       reason: "Launch Electron acceptance",
       blockedCommand: "pnpm test:e2e:electron",
       requestedBy: { type: "SKILL", id: "implement-ui-design" },
     });
-    expect(() => parseCapabilityRequiredOutput({ ...request, capabilities: ["ROOT"] }))
+    expect(parseAssessmentOutput({
+      outcome: "RESULT",
+      result: assessment,
+      capabilityRequest: null,
+    })).toEqual({
+      verdict: "NOT_A_BUG",
+      suggestedTitle: "No change needed",
+      reasoning: "Expected behavior",
+    });
+    expect(() => parseCapabilityRequiredOutput({
+      ...capabilityEnvelope,
+      capabilityRequest: { ...request, capabilities: ["ROOT"] },
+    }))
       .toThrow("AGENT_CAPABILITY_INVALID");
-    expect(() => parseCapabilityRequiredOutput({ ...request, capabilities: [] }))
+    expect(() => parseCapabilityRequiredOutput({
+      ...capabilityEnvelope,
+      capabilityRequest: { ...request, capabilities: [] },
+    }))
       .toThrow("AGENT_CAPABILITY_REQUIRED");
-    expect(() => parseCapabilityRequiredOutput({ ...request, reason: "   " }))
+    expect(() => parseCapabilityRequiredOutput({
+      ...capabilityEnvelope,
+      capabilityRequest: { ...request, reason: "   " },
+    }))
       .toThrow("AGENT_CAPABILITY_REASON_REQUIRED");
   });
 

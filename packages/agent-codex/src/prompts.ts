@@ -29,7 +29,20 @@ export function repairPrompt(input: RepairInput): string {
     "Implement the approved BUG or FEATURE change in the supplied project directory. Run your own engineering loop until ready.",
     ...continuationPrompt(input.continuation),
     ...capabilityPrompt(input.issue, "REPAIR"),
-    "Oh My Bug does not manage Git operations.",
+    ...(input.integration ? [
+      `Observed base: ${input.integration.baseBranch}@${input.integration.observedBaseCommit}`,
+      `Issue branch: ${input.integration.issueBranch}`,
+      "Merge the observed base commit into the Issue branch in this Issue Worktree.",
+      "Resolve textual and compatible business conflicts yourself.",
+      "Return BUSINESS_DECISION_REQUIRED only when the observable business behaviors are mutually exclusive.",
+      "Inspect both sides of every conflict and preserve compatible intent from both branches.",
+      "Run relevant verification and commit the completed integration before returning DELIVERY_READY.",
+    ] : [
+      "This Workspace does not require base integration for this Repair.",
+    ]),
+    "You may stage and commit only in this Issue Worktree.",
+    "Do not mutate the base Worktree, another Worktree, non-Issue refs, remotes, hooks, or Git configuration.",
+    "Do not rebase or rewrite accepted history.",
     `Write screenshots or recordings under: ${input.evidenceDirectory}`,
     "Visual evidence must directly capture a real acceptance run that proves the change, such as the running application, an actual API request and response, or an executed benchmark. Never submit generated, reconstructed, mocked, or illustrative visuals.",
     "Return relative paths beneath that directory; do not return absolute paths.",
@@ -77,6 +90,19 @@ function continuationPrompt(
       "The previous turn was interrupted by a Runtime restart. Continue the existing work in the supplied workspace. Inspect current files and prior verification before making changes. Do not redo completed implementation work. Complete only the remaining stage requirements.",
     ];
   }
+  if (continuation?.reason === "REVIEW_SUBMITTED") {
+    return [
+      `Review ${continuation.requestId} (${continuation.kind}) was submitted in this same Repair iteration.`,
+      `Selected review choice: ${JSON.stringify(continuation.choiceId)}`,
+      ...(continuation.feedback
+        ? [`Review feedback: ${continuation.feedback}`]
+        : []),
+      ...(continuation.data !== undefined
+        ? [`Opaque review response data: ${JSON.stringify(continuation.data)}`]
+        : []),
+      "Continue the existing merge in this Issue Worktree and apply the selected business decision. Do not restart or discard completed work.",
+    ];
+  }
   return [];
 }
 
@@ -86,6 +112,7 @@ function capabilityPrompt(
 ): string[] {
   const available = effectiveStageCapabilities(issue, stage);
   return [
+    "Always use the response envelope. On stage completion set outcome=RESULT, populate result, and set capabilityRequest=null. For a capability request set outcome=CAPABILITY_REQUIRED, set result=null, and populate capabilityRequest.",
     `Capabilities already available in this stage: ${JSON.stringify([...available])}`,
     "Use a practical lower-privilege alternative first.",
     "If a project Skill explicitly requires host or network access, or a sandbox, permission, or network denial leaves no practical lower-privilege alternative, stop retrying and return the CAPABILITY_REQUIRED structured outcome.",
