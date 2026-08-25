@@ -10,16 +10,42 @@ export function finalizationRecoveryPrompt(input: FinalizationRecoveryInput): st
     `Capabilities already available in this stage: ${JSON.stringify(available)}`,
     "Use a practical lower-privilege alternative first. If the permission boundary is insufficient, stop and return CAPABILITY_REQUIRED instead of retrying a blocked command.",
     "Do not commit, merge, push, release, rewrite branches, or rewrite history. Do not run delivery finalization commands; the Workspace Provider owns Git publication.",
-    "Do not change product behavior. Prefer removing or relocating generated artifacts only when you can prove they are untracked. If product or approved delivery content must change, return REVALIDATION_REQUIRED.",
-    "Inspect every generated root listed in the fingerprint summary. Remove or relocate each listed root that is entirely untracked; do not return RECOVERED while any listed generated root remains.",
+    "Never run git add, git commit, git merge, git rebase, git reset, git clean, or git push. Never update refs, stage the real index, abort merge state, or release the Worktree.",
+    ...recoveryInstructions(input),
     "Return RECOVERED only when the workspace obstruction was safely removed, REVALIDATION_REQUIRED when delivery content changed, and UNSAFE when no bounded safe repair is possible.",
+    "Return REVALIDATION_REQUIRED whenever source content changed. Your disposition is advisory; the Workspace Provider validates the result independently.",
     "Always use the response envelope. On completion set outcome=RESULT, populate result, and set capabilityRequest=null. For a capability request set outcome=CAPABILITY_REQUIRED, set result=null, and populate capabilityRequest.",
+    `Issue request: ${JSON.stringify(input.issue.inputs.at(-1)?.data.content ?? input.issue.title)}`,
+    `Assessment: ${JSON.stringify(input.issue.assessment ?? "Unavailable")}`,
     `Approved delivery summary: ${JSON.stringify(input.issue.repair?.delivery?.summary ?? input.issue.repair?.deliveryDraft?.summary ?? "Unavailable")}`,
     `Finalization diagnostic: ${JSON.stringify(input.diagnostic)}`,
     `Current workspace status: ${JSON.stringify(input.workspaceStatus)}`,
     `Approved delivery fingerprint summary: ${JSON.stringify(input.fingerprintSummary)}`,
     `Project instructions: ${input.project.instructions ?? "None"}`,
   ].join("\n\n");
+}
+
+function recoveryInstructions(input: FinalizationRecoveryInput): string[] {
+  if (input.recoveryKind === "MERGE_CONFLICT" && input.merge?.mergePrepared) {
+    return [
+      "Resolve the Provider-prepared content conflicts in the retained Issue Worktree.",
+      "Inspect every conflict path and preserve both the Issue intent and compatible base-branch behavior.",
+      "Edit working files only. Do not stage them. Run the smallest relevant project tests when feasible.",
+      `Merge context: ${JSON.stringify(input.merge)}`,
+    ];
+  }
+  if (input.recoveryKind === "MERGE_ENVIRONMENT") {
+    return [
+      "Diagnose this merge environment or policy failure. This is inspection-only unless a safe Issue-Worktree-only repair is proven.",
+      "Do not edit the base checkout, refs, hooks, Git configuration, permissions, or repository policy.",
+      "Return UNSAFE when progress requires repository authority outside the retained Issue Worktree.",
+      `Merge context: ${JSON.stringify(input.merge ?? "Unavailable")}`,
+    ];
+  }
+  return [
+    "Do not change product behavior. Prefer removing or relocating generated artifacts only when you can prove they are untracked. If product or approved delivery content must change, return REVALIDATION_REQUIRED.",
+    "Inspect every generated root listed in the fingerprint summary. Remove or relocate each listed root that is entirely untracked; do not return RECOVERED while any listed generated root remains.",
+  ];
 }
 
 function continuationPrompt(input: FinalizationRecoveryInput): string[] {

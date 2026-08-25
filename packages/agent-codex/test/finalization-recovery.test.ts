@@ -33,6 +33,7 @@ function recoveryInput(): FinalizationRecoveryInput {
     },
     workspaceStatus: " M packages/core/src/index.ts\n?? .oh-my-bug-tmp-123/",
     fingerprintSummary: "HEAD and tracked delivery files unchanged",
+    recoveryKind: "GENERATED_ARTIFACT_CLEANUP",
   };
 }
 
@@ -127,6 +128,60 @@ describe("Codex finalization recovery", () => {
     expect(prompt).toContain("GIT_ADD_FAILED");
     expect(prompt).toContain(".oh-my-bug-tmp-123");
     expect(prompt).toContain("HEAD and tracked delivery files unchanged");
+  });
+
+  it("gives prepared merge conflicts structured context without Git mutation authority", () => {
+    const prompt = finalizationRecoveryPrompt({
+      ...recoveryInput(),
+      diagnostic: {
+        providerId: "git",
+        step: "merge",
+        code: "GIT_AUTO_MERGE_CONFLICT",
+        message: "Automatic merge found a content conflict",
+        relatedPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+      },
+      recoveryKind: "MERGE_CONFLICT",
+      merge: {
+        kind: "MERGE_CONFLICT",
+        baseBranch: "main",
+        baseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/ohmybug-21",
+        issueCommit: "b".repeat(40),
+        conflictPaths: ["apps/desktop/src/web/issues/issue-detail.tsx"],
+        mergeMessages: ["CONFLICT (content): Merge conflict in issue-detail.tsx"],
+        mergePrepared: true,
+      },
+      workspaceStatus: "UU apps/desktop/src/web/issues/issue-detail.tsx",
+      fingerprintSummary: "prepared merge with 1 conflict path",
+    });
+
+    expect(prompt).toContain("Resolve the Provider-prepared content conflicts");
+    expect(prompt).toContain("ohmybug/ohmybug-21");
+    expect(prompt).toContain("apps/desktop/src/web/issues/issue-detail.tsx");
+    expect(prompt).toContain("CONFLICT (content)");
+    expect(prompt).toContain("Never run git add, git commit, git merge, git rebase, git reset, git clean, or git push");
+    expect(prompt).toContain("REVALIDATION_REQUIRED whenever source content changed");
+    expect(prompt).not.toContain("every generated root listed");
+  });
+
+  it("keeps inspection-only merge environment recovery non-mutating", () => {
+    const prompt = finalizationRecoveryPrompt({
+      ...recoveryInput(),
+      recoveryKind: "MERGE_ENVIRONMENT",
+      merge: {
+        kind: "MERGE_ENVIRONMENT",
+        baseBranch: "main",
+        issueBranch: "ohmybug/ohmybug-21",
+        issueCommit: "b".repeat(40),
+        conflictPaths: [],
+        mergeMessages: ["The base checkout is dirty"],
+        mergePrepared: false,
+      },
+    });
+
+    expect(prompt).toContain("Diagnose this merge environment or policy failure");
+    expect(prompt).toContain("inspection-only");
+    expect(prompt).toContain("Do not edit the base checkout, refs, hooks, Git configuration, permissions, or repository policy");
   });
 
   it("reports recovery activity as a distinct finalization stage", async () => {
