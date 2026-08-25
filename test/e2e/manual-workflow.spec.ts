@@ -38,10 +38,11 @@ test("runs the two-gate manual Issue workflow and shows acceptance evidence", as
     const previewImage = preview.getByRole("img", { name: "Checkout acceptance" });
     const closePreview = preview.getByRole("button", { name: "关闭预览" });
     await closePreview.hover();
-    await expect(closePreview).toHaveCSS("background-color", "rgba(255, 255, 255, 0.12)");
-    await expect(closePreview).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(closePreview).toHaveCSS("background-color", "rgba(12, 13, 16, 0.96)");
+    await expect(closePreview).toHaveCSS("color", "rgb(245, 245, 246)");
     await expect(closePreview).toHaveCSS("transform", "none");
     await expect(closePreview).toHaveCSS("transition-property", "background-color, border-color, color");
+    await page.screenshot({ path: resolve(artifactDir, "evidence-preview-close-hover-light.png") });
     await page.mouse.down();
     await expect(closePreview).toHaveCSS("background-color", "rgba(255, 255, 255, 0.18)");
     await expect(closePreview).toHaveCSS("translate", "0px");

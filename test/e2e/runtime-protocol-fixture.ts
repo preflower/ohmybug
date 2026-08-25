@@ -329,12 +329,13 @@ function installRuntimeProtocolFixture() {
       canvas.height = 720;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("CANVAS_CONTEXT_UNAVAILABLE");
-      context.fillStyle = "#111115";
+      const recording = requestedEvidenceId === `sha256-${"b".repeat(64)}`;
+      context.fillStyle = recording ? "#111115" : "#ffffff";
       context.fillRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = "#f2f2f5";
+      context.fillStyle = recording ? "#f2f2f5" : "#1d1d22";
       context.font = "600 40px sans-serif";
       context.fillText("Checkout recovered", 112, 282);
-      if (requestedEvidenceId === `sha256-${"b".repeat(64)}`) {
+      if (recording) {
         const stream = canvas.captureStream(20);
         const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8") ? "video/webm;codecs=vp8" : "video/webm";
         const recorder = new MediaRecorder(stream, { mimeType });

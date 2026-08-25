@@ -95,8 +95,8 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await preview.evaluate(async (element) => { await Promise.all(element.getAnimations().map((animation) => animation.finished)); });
     const closePreview = preview.getByRole("button", { name: "关闭预览" });
     await closePreview.hover();
-    await expect(closePreview).toHaveCSS("background-color", "rgba(255, 255, 255, 0.12)");
-    await expect(closePreview).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(closePreview).toHaveCSS("background-color", "rgba(12, 13, 16, 0.96)");
+    await expect(closePreview).toHaveCSS("color", "rgb(245, 245, 246)");
     await expect(closePreview).toHaveCSS("transform", "none");
     await expect(closePreview).toHaveCSS("transition-property", "background-color, border-color, color");
     await desktop.page.mouse.down();

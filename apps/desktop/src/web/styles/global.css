@@ -1232,10 +1232,14 @@ a:focus-visible {
   transform: translateX(-50%);
 }
 
-.evidence-preview-toolbar button:hover:not(:disabled),
-.evidence-preview-close:hover {
+.evidence-preview-toolbar button:hover:not(:disabled) {
   background: rgb(255 255 255 / 12%);
   color: #fff;
+}
+
+.evidence-preview-close:hover {
+  background: rgb(12 13 16 / 96%);
+  color: #f5f5f6;
 }
 
 .evidence-preview-close:focus-visible {
