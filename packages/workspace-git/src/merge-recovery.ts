@@ -251,6 +251,7 @@ export async function prepareGitMergeRecovery(input: {
           diagnosticPaths: [],
           fingerprintRef: input.fingerprintRef,
           attemptId: input.attemptId,
+          includeRefs: true,
         }),
         readGitWorkspaceStatus(input.worktreePath),
         captureGitRepositoryStateHash(
@@ -367,6 +368,7 @@ export async function prepareGitMergeRecovery(input: {
             diagnosticPaths: [],
             fingerprintRef: input.fingerprintRef,
             attemptId: input.attemptId,
+            includeRefs: true,
           }),
           repositoryStateWithoutBaseHash: await captureGitRepositoryStateHash(
             input.worktreePath,
@@ -439,6 +441,7 @@ export async function prepareGitMergeRecovery(input: {
       diagnosticPaths: [],
       fingerprintRef: input.fingerprintRef,
       attemptId: input.attemptId,
+      includeRefs: true,
     });
   const session: GitMergeRecoverySession = {
       version: 1,
@@ -657,6 +660,7 @@ async function inspectMergeSessionInvariants(
       diagnosticPaths: [],
       fingerprintRef: session.fingerprintRef,
       attemptId: session.attemptId,
+      includeRefs: true,
     }),
   ]);
   const invalid = (reason: string) => ({ fingerprint, validation: unsafe(reason) as

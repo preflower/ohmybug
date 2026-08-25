@@ -124,6 +124,9 @@ describe("Codex finalization recovery", () => {
     expect(prompt).toContain("single automatic recovery attempt");
     expect(prompt).toContain("Do not commit, merge, push, release, rewrite branches, or rewrite history");
     expect(prompt).toContain("Do not change product behavior");
+    expect(prompt).toContain("Remove untracked generated content");
+    expect(prompt).toContain("Restore tracked generated content exactly to HEAD");
+    expect(prompt).toContain("never delete tracked generated content");
     expect(prompt).toContain("every generated root listed in the fingerprint summary");
     expect(prompt).toContain("GIT_ADD_FAILED");
     expect(prompt).toContain(".oh-my-bug-tmp-123");

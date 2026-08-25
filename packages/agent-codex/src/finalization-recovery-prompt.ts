@@ -51,8 +51,8 @@ function recoveryInstructions(input: FinalizationRecoveryInput): string[] {
     ];
   }
   return [
-    "Do not change product behavior. Prefer removing or relocating generated artifacts only when you can prove they are untracked. If product or approved delivery content must change, return REVALIDATION_REQUIRED.",
-    "Inspect every generated root listed in the fingerprint summary. Remove or relocate each listed root that is entirely untracked; do not return RECOVERED while any listed generated root remains.",
+    "Do not change product behavior. Remove untracked generated content only after proving it is untracked. Restore tracked generated content exactly to HEAD; never delete tracked generated content or replace it with invented content. If any other product or approved delivery content must change, return REVALIDATION_REQUIRED.",
+    "Inspect every generated root listed in the fingerprint summary. Remove all untracked generated entries and restore every tracked entry under those roots exactly to HEAD; do not return RECOVERED while generated pollution or a non-HEAD tracked generated entry remains.",
   ];
 }
 

@@ -4,12 +4,48 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { gitWorkspaceFactory } from "../src/index.js";
+import { retryOnBaseAdvance } from "../src/provider.js";
 import { createGitFixture, git } from "./helpers.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())));
 
 describe("GitWorkspace publish", () => {
+  it("recomputes after the base advances concurrently", async () => {
+    let base = "base-1";
+    const attempted: string[] = [];
+
+    const result = await retryOnBaseAdvance(
+      async () => base,
+      async (observed) => {
+        attempted.push(observed);
+        if (observed === "base-1") {
+          base = "base-2";
+          throw new Error("stale compare-and-swap");
+        }
+        return "merged-on-base-2";
+      },
+      3,
+    );
+
+    expect(result).toBe("merged-on-base-2");
+    expect(attempted).toEqual(["base-1", "base-2"]);
+  });
+
+  it("does not retry while the base is unchanged", async () => {
+    let attempts = 0;
+
+    await expect(retryOnBaseAdvance(
+      async () => "base-1",
+      async () => {
+        attempts += 1;
+        throw new Error("merge conflict");
+      },
+      3,
+    )).rejects.toThrow("merge conflict");
+    expect(attempts).toBe(1);
+  });
+
   it("rejects a failed finalization attempt", async () => {
     const fixture = await createGitFixture();
     cleanups.push(fixture.cleanup);

@@ -22,10 +22,12 @@ const recovered: FinalizationRecoveryResult = {
 
 async function setupRecovery(options: {
   diagnosticPaths?: string[];
+  beforeAcquire?: (repositoryPath: string) => Promise<void>;
   beforePublish?: (worktreePath: string) => Promise<void>;
 } = {}) {
   const fixture = await createGitFixture();
   cleanups.push(fixture.cleanup);
+  await options.beforeAcquire?.(fixture.repository);
   const provider = gitWorkspaceFactory({
     state: fixture.state,
     worktreeRoot: fixture.worktreeRoot,
@@ -79,6 +81,14 @@ async function setupRecovery(options: {
   };
 }
 
+async function trackGeneratedIndex(repositoryPath: string): Promise<void> {
+  const indexPath = join(repositoryPath, ".pnpm-store/v11/index.db");
+  await mkdir(join(indexPath, ".."), { recursive: true });
+  await writeFile(indexPath, "baseline cache index\n");
+  await git(repositoryPath, "add", "-f", ".pnpm-store/v11/index.db");
+  await git(repositoryPath, "commit", "-m", "track legacy cache index");
+}
+
 describe("Git finalization recovery", () => {
   it("diagnoses generated pollution without mutating HEAD or the real index", async () => {
     const fixture = await setupRecovery();
@@ -108,6 +118,58 @@ describe("Git finalization recovery", () => {
       fingerprintRef: fixture.context.fingerprintRef,
       result: recovered,
     })).resolves.toEqual({ kind: "UNCHANGED", changedPaths: [] });
+  });
+
+  it("accepts tracked generated state restored exactly to HEAD", async () => {
+    const fixture = await setupRecovery({
+      beforeAcquire: trackGeneratedIndex,
+      beforePublish: (path) => writeFile(
+        join(path, ".pnpm-store/v11/index.db"),
+        "generated mutation\n",
+      ),
+    });
+    await rm(fixture.diagnosticRoot, { recursive: true });
+    await git(
+      fixture.acquired.projectPath,
+      "restore",
+      "--source=HEAD",
+      "--worktree",
+      "--",
+      ".pnpm-store/v11/index.db",
+    );
+
+    await expect(fixture.provider.validateFinalizationRecovery?.({
+      issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },
+      resourceId: "git:issue-1",
+      fingerprintRef: fixture.context.fingerprintRef,
+      result: recovered,
+    })).resolves.toEqual({ kind: "UNCHANGED", changedPaths: [] });
+  });
+
+  it.each([
+    ["deleted", (path: string) => rm(path)],
+    ["modified", (path: string) => writeFile(path, "non-HEAD generated state\n")],
+  ] as const)("rejects tracked generated state that is %s", async (_name, mutate) => {
+    const fixture = await setupRecovery({
+      beforeAcquire: trackGeneratedIndex,
+      beforePublish: (path) => writeFile(
+        join(path, ".pnpm-store/v11/index.db"),
+        "generated mutation\n",
+      ),
+    });
+    await rm(fixture.diagnosticRoot, { recursive: true });
+    await mutate(join(fixture.acquired.projectPath, ".pnpm-store/v11/index.db"));
+
+    await expect(fixture.provider.validateFinalizationRecovery?.({
+      issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },
+      resourceId: "git:issue-1",
+      fingerprintRef: fixture.context.fingerprintRef,
+      result: recovered,
+    })).resolves.toMatchObject({
+      kind: "UNSAFE",
+      reason: "FINALIZATION_RECOVERY_GENERATED_TRACKED_ARTIFACT_REMAINS",
+      changedPaths: [".pnpm-store/v11/index.db"],
+    });
   });
 
   it("routes an approved tracked-content change through revalidation", async () => {
@@ -163,10 +225,23 @@ describe("Git finalization recovery", () => {
     });
   });
 
-  it("rejects an unrelated ref mutation during the Agent turn", async () => {
+  it("ignores an unrelated ref mutation during the Agent turn", async () => {
     const fixture = await setupRecovery();
     await rm(fixture.diagnosticRoot, { recursive: true });
     await git(fixture.acquired.projectPath, "branch", "unrelated-concurrent-issue");
+
+    await expect(fixture.provider.validateFinalizationRecovery?.({
+      issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },
+      resourceId: "git:issue-1",
+      fingerprintRef: fixture.context.fingerprintRef,
+      result: recovered,
+    })).resolves.toEqual({ kind: "UNCHANGED", changedPaths: [] });
+  });
+
+  it("rejects a repository-local Git configuration mutation", async () => {
+    const fixture = await setupRecovery();
+    await rm(fixture.diagnosticRoot, { recursive: true });
+    await git(fixture.acquired.projectPath, "config", "core.autocrlf", "true");
 
     await expect(fixture.provider.validateFinalizationRecovery?.({
       issue: { ...fixture.approved, status: "FINALIZATION_RECOVERY" },

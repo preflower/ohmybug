@@ -149,6 +149,7 @@ export async function prepareGitFinalizationRecovery(input: {
 export async function validateGitFinalizationRecovery(input: {
   worktreePath: string;
   fingerprint: GitFinalizationFingerprint;
+  includeRefs?: boolean;
   allowedRepositoryStateChange?: {
     excludedRefs: string[];
     expectedHash: string;
@@ -160,6 +161,7 @@ export async function validateGitFinalizationRecovery(input: {
     diagnosticPaths: before.diagnosticRoots.map((root) => root.path),
     fingerprintRef: before.fingerprintRef,
     attemptId: before.attemptId,
+    includeRefs: input.includeRefs,
   });
   if (current.head !== before.head) {
     return unsafe("FINALIZATION_RECOVERY_HEAD_CHANGED");
@@ -183,12 +185,27 @@ export async function validateGitFinalizationRecovery(input: {
       return unsafe("FINALIZATION_RECOVERY_REPOSITORY_STATE_CHANGED");
     }
   }
-  if (before.diagnosticRoots.some((root) => !root.entirelyUntracked)) {
-    return unsafe("FINALIZATION_RECOVERY_DIAGNOSTIC_ROOT_TRACKED");
-  }
+  const generatedTrackedPaths = before.tracked
+    .map((entry) => entry.path)
+    .filter((path) => before.diagnosticRoots.some((root) => withinRoot(path, root.path)));
+  const generatedTrackedSet = new Set(generatedTrackedPaths);
   const trackedChanges = changedEntries(before.tracked, current.tracked);
-  if (trackedChanges.length > 0) {
-    return { kind: "CHANGED", changedPaths: trackedChanges };
+  const approvedTrackedChanges = trackedChanges
+    .filter((path) => !generatedTrackedSet.has(path));
+  if (approvedTrackedChanges.length > 0) {
+    return { kind: "CHANGED", changedPaths: approvedTrackedChanges };
+  }
+  const remainingTrackedArtifacts: string[] = [];
+  for (const path of generatedTrackedPaths) {
+    if (!(await pathMatchesHead(input.worktreePath, path))) {
+      remainingTrackedArtifacts.push(path);
+    }
+  }
+  if (remainingTrackedArtifacts.length > 0) {
+    return unsafe(
+      "FINALIZATION_RECOVERY_GENERATED_TRACKED_ARTIFACT_REMAINS",
+      remainingTrackedArtifacts,
+    );
   }
   const untrackedChanges = changedEntries(before.untracked, current.untracked);
   const beforeUntracked = new Set(before.untracked.map((entry) => entry.path));
@@ -260,6 +277,7 @@ export async function captureGitFinalizationFingerprint(input: {
   diagnosticPaths: string[];
   fingerprintRef: string;
   attemptId: string;
+  includeRefs?: boolean;
 }): Promise<GitFinalizationFingerprint> {
   const trackedPaths = splitNull(await runGit(input.worktreePath, ["ls-files", "-z"]));
   const allUntrackedPaths = splitNull(await runGit(input.worktreePath, [
@@ -288,7 +306,9 @@ export async function captureGitFinalizationFingerprint(input: {
     ) ?? "DETACHED",
     index: await runGit(input.worktreePath, ["ls-files", "--stage", "-z"]),
     indexFlags: await runGit(input.worktreePath, ["ls-files", "-v", "-z"]),
-    repositoryStateHash: await captureGitRepositoryStateHash(input.worktreePath),
+    repositoryStateHash: input.includeRefs
+      ? await captureGitRepositoryStateHash(input.worktreePath)
+      : await repositoryStateHash(input.worktreePath),
     tracked: await Promise.all(trackedPaths.map((path) => fingerprintPath(
       input.worktreePath,
       path,
@@ -327,6 +347,18 @@ export async function captureGitRepositoryStateHash(
     return separator === -1 || !excluded.has(entry.slice(0, separator));
   }).join("\n");
   return digest(`${configuration}\0${filteredRefs}`);
+}
+
+async function repositoryStateHash(worktreePath: string): Promise<string> {
+  return digest(await runGit(worktreePath, ["config", "--local", "--null", "--list"]));
+}
+
+async function pathMatchesHead(worktreePath: string, path: string): Promise<boolean> {
+  return await tryRunGit(
+    worktreePath,
+    ["diff", "--quiet", "HEAD", "--", `:(literal)${path}`],
+    [1],
+  ) !== undefined;
 }
 
 function assertRecoverableGitDiagnostic(
