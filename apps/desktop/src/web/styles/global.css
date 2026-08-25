@@ -1154,6 +1154,11 @@ a:focus-visible {
   padding: 0;
 }
 
+.evidence-preview-dialog[data-closed] {
+  animation: none !important;
+  transition: none !important;
+}
+
 .evidence-preview-toolbar {
   position: absolute;
   bottom: 14px;
@@ -1175,6 +1180,19 @@ a:focus-visible {
 .evidence-preview-close:hover {
   background: rgb(255 255 255 / 12%);
   color: #fff;
+}
+
+.evidence-preview-close:focus-visible {
+  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.evidence-preview-close:active {
+  background: rgb(255 255 255 / 18%);
+  color: #fff;
+  transform: none;
+  translate: 0 !important;
 }
 
 .evidence-preview-toolbar output {
@@ -1205,6 +1223,7 @@ a:focus-visible {
   background: rgb(29 30 34 / 96%);
   box-shadow: 0 4px 16px rgb(0 0 0 / 24%);
   color: rgb(245 245 246 / 86%);
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .evidence-preview-stage {

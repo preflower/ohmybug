@@ -36,6 +36,18 @@ test("runs the two-gate manual Issue workflow and shows acceptance evidence", as
     await expect(preview.locator(".evidence-preview-header")).toHaveCount(0);
     await expect(preview.locator(".evidence-preview-stage > .evidence-preview-toolbar")).toBeVisible();
     const previewImage = preview.getByRole("img", { name: "Checkout acceptance" });
+    const closePreview = preview.getByRole("button", { name: "关闭预览" });
+    await closePreview.hover();
+    await expect(closePreview).toHaveCSS("background-color", "rgba(255, 255, 255, 0.12)");
+    await expect(closePreview).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(closePreview).toHaveCSS("transform", "none");
+    await expect(closePreview).toHaveCSS("transition-property", "background-color, border-color, color");
+    await page.mouse.down();
+    await expect(closePreview).toHaveCSS("background-color", "rgba(255, 255, 255, 0.18)");
+    await expect(closePreview).toHaveCSS("translate", "0px");
+    await page.mouse.move(0, 0);
+    await page.mouse.up();
+    await closePreview.hover();
     await expect(previewImage).toHaveJSProperty("naturalWidth", 1280);
     const zoomLevel = preview.getByLabel("当前缩放比例");
     await expect(zoomLevel).toHaveText("100%");
@@ -56,8 +68,8 @@ test("runs the two-gate manual Issue workflow and shows acceptance evidence", as
     await page.screenshot({ path: resolve(artifactDir, "image-preview-zoomed.png") });
     await preview.getByRole("button", { name: "重置视图" }).click();
     await expect(preview.getByLabel("当前缩放比例")).toHaveText("100%");
-    await preview.getByRole("button", { name: "关闭预览" }).click();
-    await expect(preview).toBeHidden();
+    await page.keyboard.press("Escape");
+    await expect(preview).toHaveCount(0, { timeout: 120 });
 
     await page.getByRole("button", { name: "播放 Checkout recording" }).click();
     const recordingPreview = page.getByRole("dialog", { name: "Checkout recording" });
