@@ -28,7 +28,7 @@ import {
 } from "./git-client.js";
 import { GitAutomaticMergeConflictError } from "./merge-recovery.js";
 
-interface ContentFingerprint {
+export interface ContentFingerprint {
   path: string;
   kind: "file" | "symlink" | "directory" | "missing";
   mode: number;
@@ -123,13 +123,13 @@ export async function prepareGitFinalizationRecovery(input: {
   context: WorkspaceFinalizationRecoveryContext;
 }> {
   assertRecoverableGitDiagnostic(input.diagnostic);
-  const fingerprint = await captureFingerprint({
+  const fingerprint = await captureGitFinalizationFingerprint({
     worktreePath: input.worktreePath,
     diagnosticPaths: input.diagnostic.relatedPaths,
     fingerprintRef: input.fingerprintRef,
     attemptId: input.attemptId,
   });
-  const workspaceStatus = boundedText(await readWorkspaceStatus(input.worktreePath), 8_000);
+  const workspaceStatus = boundedText(await readGitWorkspaceStatus(input.worktreePath), 8_000);
   return {
     fingerprint,
     context: {
@@ -151,7 +151,7 @@ export async function validateGitFinalizationRecovery(input: {
   fingerprint: GitFinalizationFingerprint;
 }): Promise<WorkspaceFinalizationRecoveryValidation> {
   const before = input.fingerprint;
-  const current = await captureFingerprint({
+  const current = await captureGitFinalizationFingerprint({
     worktreePath: input.worktreePath,
     diagnosticPaths: before.diagnosticRoots.map((root) => root.path),
     fingerprintRef: before.fingerprintRef,
@@ -244,7 +244,7 @@ export async function assertPublicationPreflight(worktreePath: string): Promise<
   }
 }
 
-async function captureFingerprint(input: {
+export async function captureGitFinalizationFingerprint(input: {
   worktreePath: string;
   diagnosticPaths: string[];
   fingerprintRef: string;
@@ -351,7 +351,7 @@ async function fingerprintPath(
   }
 }
 
-async function readWorkspaceStatus(worktreePath: string): Promise<string> {
+export async function readGitWorkspaceStatus(worktreePath: string): Promise<string> {
   return runGit(worktreePath, [
     "status",
     "--porcelain",

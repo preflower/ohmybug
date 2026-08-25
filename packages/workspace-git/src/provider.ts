@@ -24,7 +24,11 @@ import { z } from "zod";
 import { GitCommandError, gitRefExists, runGit, tryRunGit } from "./git-client.js";
 import {
   GitAutomaticMergeConflictError,
+  normalizeGitFinalizationRecoveryState,
   parseMergeTreeConflictOutput,
+  prepareGitMergeRecovery,
+  type GitFinalizationRecoveryState,
+  type GitMergeFailureRecord,
 } from "./merge-recovery.js";
 import {
   assertPublicationPreflight,
@@ -77,7 +81,8 @@ export interface GitWorkspaceState {
   remote?: string;
   remoteUrl?: string;
   branchInfo?: BranchInfo;
-  finalizationRecovery?: GitFinalizationFingerprint;
+  lastMergeFailure?: GitMergeFailureRecord;
+  finalizationRecovery?: GitFinalizationRecoveryState | GitFinalizationFingerprint;
 }
 
 export interface GitWorkspaceFactoryOptions {
@@ -447,6 +452,17 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       });
       return branchInfo;
     } catch (error) {
+      if (error instanceof GitAutomaticMergeConflictError) {
+        this.options.state.set(MODULE_ID, input.resourceId, {
+          ...state,
+          lastMergeFailure: {
+            baseCommit: error.baseCommit,
+            issueCommit: error.issueCommit,
+            conflictPaths: error.conflictPaths,
+            mergeMessages: error.mergeMessages,
+          },
+        });
+      }
       throw finalizationError({
         error,
         providerId: this.id,
@@ -464,6 +480,23 @@ class GitWorkspaceProvider implements WorkspaceProvider {
   }): Promise<WorkspaceFinalizationRecoveryContext> {
     const state = this.getSavedState(input.issue, input.resourceId);
     const fingerprintRef = `${input.resourceId}:finalization:${input.attemptId}`;
+    if (input.diagnostic.step === "merge") {
+      const prepared = await prepareGitMergeRecovery({
+        worktreePath: state.worktreePath,
+        baseBranch: state.baseBranch,
+        issueBranch: state.branch,
+        diagnostic: input.diagnostic,
+        attemptId: input.attemptId,
+        fingerprintRef,
+        lastMergeFailure: state.lastMergeFailure,
+        existing: state.finalizationRecovery,
+      });
+      this.options.state.set(MODULE_ID, input.resourceId, {
+        ...state,
+        finalizationRecovery: prepared.recovery,
+      });
+      return prepared.context;
+    }
     const prepared = await prepareGitFinalizationRecovery({
       worktreePath: state.worktreePath,
       diagnostic: input.diagnostic,
@@ -472,7 +505,11 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     });
     this.options.state.set(MODULE_ID, input.resourceId, {
       ...state,
-      finalizationRecovery: prepared.fingerprint,
+      finalizationRecovery: {
+        version: 1,
+        kind: "GENERATED_ARTIFACT_CLEANUP",
+        fingerprint: prepared.fingerprint,
+      },
     });
     return prepared.context;
   }
@@ -484,7 +521,12 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     result: FinalizationRecoveryResult;
   }): Promise<WorkspaceFinalizationRecoveryValidation> {
     const state = this.getSavedState(input.issue, input.resourceId);
-    const fingerprint = state.finalizationRecovery;
+    const recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
+    const fingerprint = recovery?.kind === "GENERATED_ARTIFACT_CLEANUP"
+      ? recovery.fingerprint
+      : recovery?.kind === "MERGE_ENVIRONMENT"
+        ? recovery.fingerprint
+        : undefined;
     if (!fingerprint || fingerprint.fingerprintRef !== input.fingerprintRef) {
       return {
         kind: "UNSAFE",
@@ -679,6 +721,8 @@ async function createAutomaticMergeCommit(
       throw new GitAutomaticMergeConflictError(
         parsed.conflictPaths,
         parsed.mergeMessages,
+        baseCommit,
+        issueCommit,
         error,
       );
     }
