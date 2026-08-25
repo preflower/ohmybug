@@ -131,4 +131,178 @@ describe("Git merge recovery diagnostics", () => {
       await fixture.cleanup();
     }
   });
+
+  it("validates a resolved merge through a temporary index without staging the real index", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      const indexBefore = await git(prepared.acquired.projectPath, "ls-files", "--stage", "-z");
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+
+      await expect(prepared.provider.validateFinalizationRecovery?.({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Preserved the base behavior and Issue intent",
+          diagnosis: "Both branches changed README.md",
+          disposition: "RECOVERED",
+          affectedPaths: ["README.md"],
+        },
+      })).resolves.toEqual({ kind: "CHANGED", changedPaths: ["README.md"] });
+      expect(await git(prepared.acquired.projectPath, "ls-files", "--stage", "-z"))
+        .toBe(indexBefore);
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
+  it("rejects unresolved conflict markers", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      await expect(prepared.provider.validateFinalizationRecovery?.({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Could not resolve the conflict",
+          diagnosis: "README.md remains conflicted",
+          disposition: "UNSAFE",
+          affectedPaths: ["README.md"],
+        },
+      })).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_MERGE_RECOVERY_CONFLICT_MARKERS",
+      });
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
+  it("rejects a resolved tree changed after deterministic validation", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+      await prepared.provider.validateFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Combined both changes",
+          diagnosis: "Both branches changed README.md",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      });
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "changed after review\n");
+
+      await expect(prepared.provider.publish({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+      })).rejects.toThrow("GIT_MERGE_RECOVERY_TREE_CHANGED");
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
+  it("publishes a reaccepted resolution as a two-parent merge commit", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      const issueCommit = prepared.context.merge!.issueCommit;
+      const baseCommit = prepared.context.merge!.baseCommit!;
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+      await prepared.provider.validateFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Combined both changes",
+          diagnosis: "Both branches changed README.md",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      });
+
+      const published = await prepared.provider.publish({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+      });
+
+      expect((await git(
+        prepared.repository,
+        "show",
+        "-s",
+        "--format=%P",
+        published!.commit,
+      )).split(" ")).toEqual([issueCommit, baseCommit]);
+      expect(await git(prepared.repository, "rev-parse", "main")).toBe(published!.commit);
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
+  it("does not apply a resolution after the base branch moves", async () => {
+    const prepared = await createPreparedConflict();
+    try {
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "combined behavior\n");
+      await prepared.provider.validateFinalizationRecovery!({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+        fingerprintRef: prepared.context.fingerprintRef,
+        result: {
+          summary: "Combined both changes",
+          diagnosis: "Both branches changed README.md",
+          disposition: "REVALIDATION_REQUIRED",
+          affectedPaths: ["README.md"],
+        },
+      });
+      await writeFile(join(prepared.repository, "later.txt"), "later base change\n");
+      await git(prepared.repository, "add", "later.txt");
+      await git(prepared.repository, "commit", "-m", "move base again");
+      const movedBase = await git(prepared.repository, "rev-parse", "main");
+
+      await expect(prepared.provider.publish({
+        issue: prepared.approved,
+        resourceId: "git:issue-1",
+      })).rejects.toThrow("GIT_AUTO_MERGE_BASE_MOVED");
+      expect(await git(prepared.repository, "rev-parse", "main")).toBe(movedBase);
+      expect(await git(prepared.acquired.projectPath, "rev-parse", "HEAD"))
+        .toBe(prepared.context.merge!.issueCommit);
+    } finally {
+      await prepared.cleanup();
+    }
+  });
 });
+
+async function createPreparedConflict() {
+  const fixture = await createGitFixture();
+  const provider = gitWorkspaceFactory({
+    state: fixture.state,
+    worktreeRoot: fixture.worktreeRoot,
+  }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+  const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+  await writeFile(join(acquired.projectPath, "README.md"), "issue change\n");
+  await writeFile(join(fixture.repository, "README.md"), "base change\n");
+  await git(fixture.repository, "add", "README.md");
+  await git(fixture.repository, "commit", "-m", "advance base");
+  const approved = {
+    ...fixture.issue,
+    projectPath: acquired.projectPath,
+    status: "FINALIZING" as const,
+    resolution: "FIXED" as const,
+  };
+  let failure: WorkspaceFinalizationError;
+  try {
+    await provider.publish({ issue: approved, resourceId: "git:issue-1" });
+    throw new Error("EXPECTED_MERGE_CONFLICT");
+  } catch (error) {
+    if (!(error instanceof WorkspaceFinalizationError)) throw error;
+    failure = error;
+  }
+  const context = await provider.prepareFinalizationRecovery!({
+    issue: approved,
+    resourceId: "git:issue-1",
+    diagnostic: failure.diagnostic,
+    attemptId: "recovery-21",
+  });
+  return { ...fixture, provider, acquired, approved, context };
+}

@@ -24,9 +24,11 @@ import { z } from "zod";
 import { GitCommandError, gitRefExists, runGit, tryRunGit } from "./git-client.js";
 import {
   GitAutomaticMergeConflictError,
+  finalizeGitMergeRecovery,
   normalizeGitFinalizationRecoveryState,
   parseMergeTreeConflictOutput,
   prepareGitMergeRecovery,
+  validateGitMergeRecovery,
   type GitFinalizationRecoveryState,
   type GitMergeFailureRecord,
 } from "./merge-recovery.js";
@@ -404,28 +406,43 @@ class GitWorkspaceProvider implements WorkspaceProvider {
 
     let step: WorkspaceFinalizationStep = "status";
     try {
-      await assertNoHiddenIndexEntries(state.worktreePath);
-      await assertInitializedSubmodulesClean(state.worktreePath);
-      const changes = await runGit(state.worktreePath, [
-        "status",
-        "--porcelain",
-        "--untracked-files=all",
-        "--ignore-submodules=none",
-      ]);
-      if (changes) {
-        step = "add";
-        await assertPublicationPreflight(state.worktreePath);
-        await runGit(state.worktreePath, ["add", "-A"]);
-        await assertNoUndeclaredGitlinks(state.worktreePath);
+      const recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
+      let commit: string;
+      if (recovery?.kind === "MERGE_CONFLICT" && recovery.session.candidateTree) {
+        step = "merge";
+        commit = await finalizeGitMergeRecovery({
+          worktreePath: state.worktreePath,
+          baseRef: `refs/heads/${state.baseBranch}`,
+          session: recovery.session,
+        });
+        this.options.state.set(MODULE_ID, input.resourceId, {
+          ...state,
+          finalizationRecovery: recovery,
+        });
+      } else {
+        await assertNoHiddenIndexEntries(state.worktreePath);
         await assertInitializedSubmodulesClean(state.worktreePath);
-        step = "commit";
-        await runGit(state.worktreePath, [
-          "commit",
-          "-m",
-          `${input.issue.identifier}: ${input.issue.title}`,
+        const changes = await runGit(state.worktreePath, [
+          "status",
+          "--porcelain",
+          "--untracked-files=all",
+          "--ignore-submodules=none",
         ]);
+        if (changes) {
+          step = "add";
+          await assertPublicationPreflight(state.worktreePath);
+          await runGit(state.worktreePath, ["add", "-A"]);
+          await assertNoUndeclaredGitlinks(state.worktreePath);
+          await assertInitializedSubmodulesClean(state.worktreePath);
+          step = "commit";
+          await runGit(state.worktreePath, [
+            "commit",
+            "-m",
+            `${input.issue.identifier}: ${input.issue.title}`,
+          ]);
+        }
+        commit = await runGit(state.worktreePath, ["rev-parse", "HEAD"]);
       }
-      const commit = await runGit(state.worktreePath, ["rev-parse", "HEAD"]);
       const pushToRemote = shouldPushToRemote(state);
       if (pushToRemote) {
         step = "push";
@@ -445,7 +462,11 @@ class GitWorkspaceProvider implements WorkspaceProvider {
         commit,
         ...(pushToRemote ? { remote: state.remote } : {}),
       };
-      const { finalizationRecovery: _recovery, ...completedState } = state;
+      const {
+        finalizationRecovery: _recovery,
+        lastMergeFailure: _lastMergeFailure,
+        ...completedState
+      } = state;
       this.options.state.set(MODULE_ID, input.resourceId, {
         ...completedState,
         branchInfo,
@@ -522,6 +543,21 @@ class GitWorkspaceProvider implements WorkspaceProvider {
   }): Promise<WorkspaceFinalizationRecoveryValidation> {
     const state = this.getSavedState(input.issue, input.resourceId);
     const recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
+    if (
+      recovery?.kind === "MERGE_CONFLICT"
+      && recovery.session.fingerprintRef === input.fingerprintRef
+    ) {
+      const validation = await validateGitMergeRecovery({
+        worktreePath: state.worktreePath,
+        session: recovery.session,
+        result: input.result,
+      });
+      this.options.state.set(MODULE_ID, input.resourceId, {
+        ...state,
+        finalizationRecovery: recovery,
+      });
+      return validation;
+    }
     const fingerprint = recovery?.kind === "GENERATED_ARTIFACT_CLEANUP"
       ? recovery.fingerprint
       : recovery?.kind === "MERGE_ENVIRONMENT"

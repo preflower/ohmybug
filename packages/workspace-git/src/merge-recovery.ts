@@ -1,3 +1,25 @@
+import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
+
+import type {
+  FinalizationRecoveryMergeContext,
+  FinalizationRecoveryResult,
+  WorkspaceFinalizationDiagnostic,
+} from "@oh-my-bug/core";
+import type {
+  WorkspaceFinalizationRecoveryContext,
+  WorkspaceFinalizationRecoveryValidation,
+} from "@oh-my-bug/module-api";
+
+import {
+  assertPublicationPreflight,
+  captureGitFinalizationFingerprint,
+  readGitWorkspaceStatus,
+  type GitFinalizationFingerprint,
+} from "./finalization-recovery.js";
+import { GitCommandError, runGit, tryRunGit } from "./git-client.js";
+
 const MAX_CONFLICT_PATHS = 50;
 const MAX_MERGE_MESSAGES = 20;
 const MAX_MERGE_MESSAGE_LENGTH = 1_000;
@@ -42,6 +64,7 @@ export interface GitMergeRecoverySession {
   preparedFingerprint: GitFinalizationFingerprint;
   candidateTree?: string;
   validatedPaths?: string[];
+  mergeCommit?: string;
 }
 
 export type GitFinalizationRecoveryState =
@@ -207,6 +230,204 @@ export async function prepareGitMergeRecovery(input: {
   };
 }
 
+export async function validateGitMergeRecovery(input: {
+  worktreePath: string;
+  session: GitMergeRecoverySession;
+  result: FinalizationRecoveryResult;
+}): Promise<WorkspaceFinalizationRecoveryValidation> {
+  const { session } = input;
+  const [head, headRef, mergeHead, conflictStages] = await Promise.all([
+    runGit(input.worktreePath, ["rev-parse", "HEAD"]),
+    tryRunGit(input.worktreePath, ["symbolic-ref", "-q", "HEAD"], [1]),
+    tryRunGit(input.worktreePath, ["rev-parse", "-q", "MERGE_HEAD"], [128]),
+    runGit(input.worktreePath, ["ls-files", "-u", "-z"]),
+  ]);
+  if (head !== session.issueCommit) return unsafe("GIT_MERGE_RECOVERY_HEAD_CHANGED");
+  if (headRef !== session.preparedFingerprint.headRef) {
+    return unsafe("GIT_MERGE_RECOVERY_HEAD_REF_CHANGED");
+  }
+  if (mergeHead !== session.baseCommit) return unsafe("GIT_MERGE_RECOVERY_MERGE_HEAD_CHANGED");
+  if (conflictStages !== session.conflictStages) {
+    return unsafe("GIT_MERGE_RECOVERY_INDEX_CHANGED");
+  }
+
+  const current = await captureGitFinalizationFingerprint({
+    worktreePath: input.worktreePath,
+    diagnosticPaths: [],
+    fingerprintRef: session.fingerprintRef,
+    attemptId: session.attemptId,
+  });
+  if (current.index !== session.preparedFingerprint.index) {
+    return unsafe("GIT_MERGE_RECOVERY_INDEX_CHANGED");
+  }
+  if (current.indexFlags !== session.preparedFingerprint.indexFlags) {
+    return unsafe("GIT_MERGE_RECOVERY_INDEX_FLAGS_CHANGED");
+  }
+  if (current.repositoryStateHash !== session.preparedFingerprint.repositoryStateHash) {
+    return unsafe("GIT_MERGE_RECOVERY_REPOSITORY_STATE_CHANGED");
+  }
+  const changedTracked = changedContent(
+    session.preparedFingerprint.tracked,
+    current.tracked,
+  );
+  const changedUntracked = [
+    ...changedContent(session.preparedFingerprint.untracked, current.untracked),
+    ...changedContent(
+      session.preparedFingerprint.diagnosticEntries,
+      current.diagnosticEntries,
+    ),
+  ];
+  if (changedUntracked.length > 0) {
+    return unsafe("GIT_MERGE_RECOVERY_UNTRACKED_CHANGED", changedUntracked);
+  }
+  const allowedPaths = new Set([
+    ...session.conflictPaths,
+    ...input.result.affectedPaths,
+  ]);
+  const outOfScope = changedTracked.filter((path) => !allowedPaths.has(path));
+  if (outOfScope.length > 0) {
+    return unsafe("GIT_MERGE_RECOVERY_OUT_OF_SCOPE", outOfScope);
+  }
+  for (const path of session.conflictPaths) {
+    let content: Buffer;
+    try {
+      content = await readFile(join(input.worktreePath, path));
+    } catch {
+      return unsafe("GIT_MERGE_RECOVERY_CONFLICT_PATH_MISSING", [path]);
+    }
+    if (content.includes(0) || hasConflictMarkers(content.toString("utf8"))) {
+      return unsafe("GIT_MERGE_RECOVERY_CONFLICT_MARKERS", [path]);
+    }
+  }
+
+  try {
+    await assertPublicationPreflight(input.worktreePath);
+  } catch (error) {
+    return unsafe(error instanceof Error ? error.message : "GIT_MERGE_RECOVERY_PREFLIGHT_FAILED");
+  }
+  try {
+    const paths = [...allowedPaths].sort();
+    session.candidateTree = await resolvedTreeFromTemporaryIndex(input.worktreePath, paths);
+    session.validatedPaths = paths;
+  } catch (error) {
+    return unsafe(error instanceof Error ? error.message : "GIT_MERGE_RECOVERY_TREE_INVALID");
+  }
+  return { kind: "CHANGED", changedPaths: [...new Set(changedTracked)].sort() };
+}
+
+export async function finalizeGitMergeRecovery(input: {
+  worktreePath: string;
+  baseRef: string;
+  session: GitMergeRecoverySession;
+}): Promise<string> {
+  const { session } = input;
+  if (session.mergeCommit) {
+    const head = await runGit(input.worktreePath, ["rev-parse", "HEAD"]);
+    if (head === session.mergeCommit) return head;
+    throw new Error("GIT_MERGE_RECOVERY_HEAD_CHANGED");
+  }
+  if (!session.candidateTree || !session.validatedPaths) {
+    throw new Error("GIT_MERGE_RECOVERY_NOT_VALIDATED");
+  }
+  const baseCommit = await tryRunGit(input.worktreePath, ["rev-parse", input.baseRef], [128]);
+  if (baseCommit !== session.baseCommit) throw new Error("GIT_AUTO_MERGE_BASE_MOVED");
+  const [head, mergeHead] = await Promise.all([
+    runGit(input.worktreePath, ["rev-parse", "HEAD"]),
+    tryRunGit(input.worktreePath, ["rev-parse", "-q", "MERGE_HEAD"], [128]),
+  ]);
+  if (head !== session.issueCommit) throw new Error("GIT_MERGE_RECOVERY_HEAD_CHANGED");
+  if (mergeHead !== session.baseCommit) throw new Error("GIT_MERGE_RECOVERY_MERGE_HEAD_CHANGED");
+  const candidate = await resolvedTreeFromTemporaryIndex(
+    input.worktreePath,
+    session.validatedPaths,
+  );
+  if (candidate !== session.candidateTree) throw new Error("GIT_MERGE_RECOVERY_TREE_CHANGED");
+  await runGit(input.worktreePath, [
+    "add",
+    "--",
+    ...session.validatedPaths.map((path) => `:(literal)${path}`),
+  ]);
+  const tree = await runGit(input.worktreePath, ["write-tree"]);
+  if (tree !== session.candidateTree) throw new Error("GIT_MERGE_RECOVERY_TREE_CHANGED");
+  await runGit(input.worktreePath, [
+    "commit",
+    "-m",
+    `Merge ${session.issueBranch} into ${session.baseBranch}`,
+  ]);
+  const commit = await runGit(input.worktreePath, ["rev-parse", "HEAD"]);
+  const parents = (await runGit(input.worktreePath, [
+    "show",
+    "-s",
+    "--format=%P",
+    commit,
+  ])).split(" ");
+  if (parents[0] !== session.issueCommit || parents[1] !== session.baseCommit) {
+    throw new Error("GIT_MERGE_RECOVERY_PARENTS_INVALID");
+  }
+  session.mergeCommit = commit;
+  return commit;
+}
+
+async function resolvedTreeFromTemporaryIndex(
+  worktreePath: string,
+  paths: string[],
+): Promise<string> {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "ohmybug-merge-validation-"));
+  try {
+    const temporaryIndex = join(temporaryRoot, "index");
+    const temporaryObjects = join(temporaryRoot, "objects");
+    await mkdir(temporaryObjects);
+    const realIndexValue = await runGit(worktreePath, ["rev-parse", "--git-path", "index"]);
+    const realIndex = isAbsolute(realIndexValue)
+      ? realIndexValue
+      : resolve(worktreePath, realIndexValue);
+    const commonDirectoryValue = await runGit(worktreePath, ["rev-parse", "--git-common-dir"]);
+    const commonDirectory = isAbsolute(commonDirectoryValue)
+      ? commonDirectoryValue
+      : resolve(worktreePath, commonDirectoryValue);
+    await copyFile(realIndex, temporaryIndex);
+    const options = {
+      env: {
+        GIT_INDEX_FILE: temporaryIndex,
+        GIT_OBJECT_DIRECTORY: temporaryObjects,
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: join(commonDirectory, "objects"),
+      },
+    };
+    await runGit(
+      worktreePath,
+      ["add", "--", ...paths.map((path) => `:(literal)${path}`)],
+      options,
+    );
+    const unresolved = await runGit(worktreePath, ["ls-files", "-u", "-z"], options);
+    if (unresolved) throw new Error("GIT_MERGE_RECOVERY_UNRESOLVED");
+    return await runGit(worktreePath, ["write-tree"], options);
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+function changedContent(
+  beforeEntries: GitFinalizationFingerprint["tracked"],
+  afterEntries: GitFinalizationFingerprint["tracked"],
+): string[] {
+  const before = new Map(beforeEntries.map((entry) => [entry.path, entry]));
+  const after = new Map(afterEntries.map((entry) => [entry.path, entry]));
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .filter((path) => JSON.stringify(before.get(path)) !== JSON.stringify(after.get(path)))
+    .sort();
+}
+
+function hasConflictMarkers(value: string): boolean {
+  return value.split(/\r?\n/).some((line) => /^(?:<{7}|={7}|>{7})(?:\s|$)/.test(line));
+}
+
+function unsafe(
+  reason: string,
+  changedPaths: string[] = [],
+): WorkspaceFinalizationRecoveryValidation {
+  return { kind: "UNSAFE", changedPaths: [...new Set(changedPaths)].sort(), reason };
+}
+
 async function conflictContext(
   worktreePath: string,
   session: GitMergeRecoverySession,
@@ -278,15 +499,3 @@ function stripControlCharacters(value: string): string {
     })
     .join("");
 }
-import type {
-  FinalizationRecoveryMergeContext,
-  WorkspaceFinalizationDiagnostic,
-} from "@oh-my-bug/core";
-import type { WorkspaceFinalizationRecoveryContext } from "@oh-my-bug/module-api";
-
-import {
-  captureGitFinalizationFingerprint,
-  readGitWorkspaceStatus,
-  type GitFinalizationFingerprint,
-} from "./finalization-recovery.js";
-import { GitCommandError, runGit, tryRunGit } from "./git-client.js";
