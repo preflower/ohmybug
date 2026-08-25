@@ -6,6 +6,7 @@ import {
   TrayMenuController,
   type TrayMenuEntry,
 } from "../../src/electron/tray-menu-controller.js";
+import type { TrayIssue } from "../../src/electron/tray-task-model.js";
 
 const review = {
   id: "issue-1",
@@ -28,7 +29,7 @@ const icons = {
 } as const;
 type TestIcon = (typeof icons)[keyof typeof icons];
 
-function setup(loadIssues = vi.fn(async () => [review, repairing])) {
+function setup(loadIssues: () => Promise<TrayIssue[]> = vi.fn(async () => [review, repairing])) {
   let template: TrayMenuEntry<TestIcon>[] = [];
   const menu = { native: true };
   const options = {

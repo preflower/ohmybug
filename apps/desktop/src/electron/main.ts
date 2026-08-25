@@ -8,6 +8,7 @@ import {
   shell,
   Tray,
   utilityProcess,
+  type NativeImage,
   type UtilityProcess
 } from "electron";
 import { homedir } from "node:os";
@@ -22,6 +23,7 @@ import {
 } from "./desktop-api.js";
 import { buildUtilityProcessEnvironment } from "./e2e-agent-handshake.js";
 import { installTrayMenuEvents, TrayMenuController } from "./tray-menu-controller.js";
+import type { TrayTaskIndicator } from "./tray-task-model.js";
 import { TrayNavigationQueue } from "./tray-navigation.js";
 import { UtilitySupervisor, type UtilityRuntimeState } from "./utility-supervisor.js";
 import { installWindowLifecycle } from "./window-lifecycle.js";
@@ -42,6 +44,11 @@ const trayNavigation = new TrayNavigationQueue((target) => {
     window.webContents.send(TRAY_NAVIGATION_CHANNEL, target);
   }
 });
+const trayStatusIconNames: Record<TrayTaskIndicator, string> = {
+  failure: "tray-status-failure.png",
+  review: "tray-status-review.png",
+  processing: "tray-status-processing.png",
+};
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -141,8 +148,10 @@ function createTray(): void {
   const currentTray = new Tray(image);
   tray = currentTray;
   currentTray.setToolTip("Oh My Bug");
+  const taskIcons = loadTrayStatusIcons();
   const menu = new TrayMenuController({
     loadIssues: () => supervisor!.client().request("listIssues", {}),
+    resolveTaskIcon: (indicator) => taskIcons[indicator],
     buildMenu: (template) => Menu.buildFromTemplate(template),
     popUp: (nativeMenu) => currentTray.popUpContextMenu(nativeMenu),
     openIssue: (issueId) => openIssues({ issueId }),
@@ -150,6 +159,17 @@ function createTray(): void {
     quit: () => { void quitApplication(); },
   });
   installTrayMenuEvents(currentTray, menu);
+}
+
+function loadTrayStatusIcons(): Partial<Record<TrayTaskIndicator, NativeImage>> {
+  const icons: Partial<Record<TrayTaskIndicator, NativeImage>> = {};
+  for (const indicator of Object.keys(trayStatusIconNames) as TrayTaskIndicator[]) {
+    const image = nativeImage.createFromPath(fileURLToPath(
+      new URL(`../../assets/icons/${trayStatusIconNames[indicator]}`, import.meta.url),
+    ));
+    if (!image.isEmpty()) icons[indicator] = image;
+  }
+  return icons;
 }
 
 function openIssues(target: TrayNavigationTarget): void {
