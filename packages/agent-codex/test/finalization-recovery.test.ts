@@ -164,6 +164,27 @@ describe("Codex finalization recovery", () => {
     expect(prompt).not.toContain("every generated root listed");
   });
 
+  it("explains a clean advanced-base merge session without inventing conflicts", () => {
+    const prompt = finalizationRecoveryPrompt({
+      ...recoveryInput(),
+      recoveryKind: "MERGE_CONFLICT",
+      merge: {
+        kind: "MERGE_CONFLICT",
+        baseBranch: "main",
+        baseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/ohmybug-21",
+        issueCommit: "b".repeat(40),
+        conflictPaths: [],
+        mergeMessages: ["Prepared a renewed merge against the advanced base"],
+        mergePrepared: true,
+      },
+    });
+
+    expect(prompt).toContain("advanced base");
+    expect(prompt).toContain("no unresolved content conflict");
+    expect(prompt).not.toContain("Inspect every conflict path");
+  });
+
   it("keeps inspection-only merge environment recovery non-mutating", () => {
     const prompt = finalizationRecoveryPrompt({
       ...recoveryInput(),

@@ -376,6 +376,108 @@ describe("Git merge recovery diagnostics", () => {
     }
   });
 
+  it("accepts only the expected base ref creation for a missing-base environment", async () => {
+    const fixture = await createGitFixture();
+    try {
+      const provider = gitWorkspaceFactory({
+        state: fixture.state,
+        worktreeRoot: fixture.worktreeRoot,
+      }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+      const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+      const baseCommit = await git(fixture.repository, "rev-parse", "main");
+      await git(fixture.repository, "switch", "-c", "holding");
+      await git(fixture.repository, "branch", "-D", "main");
+      const diagnostic = {
+        providerId: "git",
+        step: "merge" as const,
+        code: "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH",
+        message: "The local base branch is missing",
+        relatedPaths: [],
+      };
+      const issue = { ...fixture.issue, projectPath: acquired.projectPath, status: "FINALIZING" as const };
+      const context = await provider.prepareFinalizationRecovery!({
+        issue,
+        resourceId: "git:issue-1",
+        diagnostic,
+        attemptId: "recovery-missing-base",
+      });
+      await git(fixture.repository, "branch", "main", baseCommit);
+
+      await expect(provider.validateFinalizationRecovery!({
+        issue: {
+          ...issue,
+          status: "FINALIZATION_RECOVERY",
+          finalizationRecovery: { automaticAttempts: 1, diagnostic },
+        },
+        resourceId: "git:issue-1",
+        fingerprintRef: context.fingerprintRef,
+        result: {
+          summary: "The expected local base ref was restored",
+          diagnosis: "Only refs/heads/main changed",
+          disposition: "RECOVERED",
+          affectedPaths: [],
+        },
+      })).resolves.toEqual({ kind: "UNCHANGED", changedPaths: [] });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("does not auto-retry when a restored base reveals a source conflict", async () => {
+    const fixture = await createGitFixture();
+    try {
+      const provider = gitWorkspaceFactory({
+        state: fixture.state,
+        worktreeRoot: fixture.worktreeRoot,
+      }).create({ baseBranch: "main", pushToRemote: false, mergeToBaseBranch: true });
+      const acquired = await provider.acquire({ issue: fixture.issue, project: fixture.project });
+      await writeFile(join(acquired.projectPath, "README.md"), "issue-side change\n");
+      await git(acquired.projectPath, "add", "README.md");
+      await git(acquired.projectPath, "commit", "-m", "issue-side change");
+      await git(fixture.repository, "switch", "-c", "holding");
+      await writeFile(join(fixture.repository, "README.md"), "restored base change\n");
+      await git(fixture.repository, "commit", "-am", "restored conflicting base");
+      const conflictingBase = await git(fixture.repository, "rev-parse", "HEAD");
+      await git(fixture.repository, "branch", "-D", "main");
+      const diagnostic = {
+        providerId: "git",
+        step: "merge" as const,
+        code: "GIT_AUTO_MERGE_REQUIRES_LOCAL_BASE_BRANCH",
+        message: "The local base branch is missing",
+        relatedPaths: [],
+      };
+      const issue = { ...fixture.issue, projectPath: acquired.projectPath, status: "FINALIZING" as const };
+      const context = await provider.prepareFinalizationRecovery!({
+        issue,
+        resourceId: "git:issue-1",
+        diagnostic,
+        attemptId: "recovery-restored-conflict",
+      });
+      await git(fixture.repository, "branch", "main", conflictingBase);
+
+      await expect(provider.validateFinalizationRecovery!({
+        issue: {
+          ...issue,
+          status: "FINALIZATION_RECOVERY",
+          finalizationRecovery: { automaticAttempts: 1, diagnostic },
+        },
+        resourceId: "git:issue-1",
+        fingerprintRef: context.fingerprintRef,
+        result: {
+          summary: "The missing ref was restored",
+          diagnosis: "The restored base introduces a source conflict",
+          disposition: "RECOVERED",
+          affectedPaths: [],
+        },
+      })).resolves.toMatchObject({
+        kind: "UNSAFE",
+        reason: "GIT_AUTO_MERGE_CONFLICT",
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it("validates a resolved merge through a temporary index without staging the real index", async () => {
     const prepared = await createPreparedConflict();
     try {
@@ -718,18 +820,34 @@ describe("Git merge recovery diagnostics", () => {
         resourceId: "git:issue-1",
         fingerprintRef: prepared.context.fingerprintRef,
       });
+      await writeFile(join(prepared.acquired.projectPath, "README.md"), "repaired after rejection\n");
+      await writeFile(
+        join(prepared.acquired.projectPath, "accepted-new-file.ts"),
+        "export const accepted = true;\n",
+      );
+      const reaccepted = {
+        ...accepted,
+        repair: {
+          iteration: 2,
+          deliveryDraft: {
+            summary: "Repaired after rejection",
+            repairIteration: 2,
+            implementationCompletedAt: "2026-08-25T05:05:00.000Z",
+          },
+        },
+      };
       await writeFile(join(prepared.repository, "later.txt"), "later base change\n");
       await git(prepared.repository, "add", "later.txt");
       await git(prepared.repository, "commit", "-m", "move base before recovered publish");
       const movedBase = await git(prepared.repository, "rev-parse", "main");
 
       await expect(prepared.provider.publish({
-        issue: accepted,
+        issue: reaccepted,
         resourceId: "git:issue-1",
       })).rejects.toThrow("GIT_AUTO_MERGE_BASE_MOVED");
 
       const restarted = await prepared.provider.prepareFinalizationRecovery!({
-        issue: accepted,
+        issue: reaccepted,
         resourceId: "git:issue-1",
         diagnostic: {
           providerId: "git",
@@ -745,6 +863,16 @@ describe("Git merge recovery diagnostics", () => {
         merge: { baseCommit: movedBase, mergePrepared: true },
       });
       expect(restarted.merge?.issueCommit).not.toBe(prepared.context.merge!.issueCommit);
+      expect(await git(
+        prepared.acquired.projectPath,
+        "show",
+        `${restarted.merge!.issueCommit}:README.md`,
+      )).toBe("repaired after rejection");
+      expect(await git(
+        prepared.acquired.projectPath,
+        "show",
+        `${restarted.merge!.issueCommit}:accepted-new-file.ts`,
+      )).toBe("export const accepted = true;");
       expect(await git(prepared.acquired.projectPath, "rev-parse", "MERGE_HEAD"))
         .toBe(movedBase);
     } finally {

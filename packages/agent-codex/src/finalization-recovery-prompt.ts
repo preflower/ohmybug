@@ -27,6 +27,14 @@ export function finalizationRecoveryPrompt(input: FinalizationRecoveryInput): st
 
 function recoveryInstructions(input: FinalizationRecoveryInput): string[] {
   if (input.recoveryKind === "MERGE_CONFLICT" && input.merge?.mergePrepared) {
+    if (input.merge.conflictPaths.length === 0) {
+      return [
+        "The Provider prepared a renewed merge against an advanced base and found no unresolved content conflict.",
+        "Inspect the prepared result without editing it unless a concrete Issue-Worktree defect is present. Do not stage files.",
+        "Return REVALIDATION_REQUIRED so the recomputed merge receives evidence and renewed human acceptance.",
+        `Merge context: ${JSON.stringify(input.merge)}`,
+      ];
+    }
     return [
       "Resolve the Provider-prepared content conflicts in the retained Issue Worktree.",
       "Inspect every conflict path and preserve both the Issue intent and compatible base-branch behavior.",

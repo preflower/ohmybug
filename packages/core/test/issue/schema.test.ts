@@ -137,6 +137,29 @@ describe("Issue persistence schema", () => {
     }).finalizationRecovery?.context).toBeUndefined();
   });
 
+  it("accepts a prepared advanced-base merge with no new conflict paths", () => {
+    expect(issueSchema.parse({
+      ...issue,
+      status: "FINALIZATION_RECOVERY",
+      finalizationRecovery: {
+        automaticAttempts: 1,
+        context: {
+          recoveryKind: "MERGE_CONFLICT",
+          merge: {
+            kind: "MERGE_CONFLICT",
+            baseBranch: "main",
+            baseCommit: "a".repeat(40),
+            issueBranch: "ohmybug/ohmybug-21",
+            issueCommit: "b".repeat(40),
+            conflictPaths: [],
+            mergeMessages: ["advanced base merged cleanly"],
+            mergePrepared: true,
+          },
+        },
+      },
+    }).finalizationRecovery?.context?.merge?.conflictPaths).toEqual([]);
+  });
+
   it.each([
     { conflictPaths: ["/private/source.ts"] },
     { conflictPaths: ["../source.ts"] },

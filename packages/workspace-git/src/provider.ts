@@ -406,9 +406,10 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     }
 
     let step: WorkspaceFinalizationStep = "status";
+    let recovery: GitFinalizationRecoveryState | undefined;
     try {
       if (looksLikePersistedMergeRecovery(state.finalizationRecovery)) step = "merge";
-      const recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
+      recovery = normalizeGitFinalizationRecoveryState(state.finalizationRecovery);
       let commit: string;
       if (recovery?.kind === "MERGE_CONFLICT" && recovery.session.candidateTree) {
         step = "merge";
@@ -482,15 +483,22 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       });
       return branchInfo;
     } catch (error) {
-      if (error instanceof GitAutomaticMergeConflictError) {
+      if (error instanceof GitAutomaticMergeConflictError || recovery?.kind === "MERGE_CONFLICT") {
         this.options.state.set(MODULE_ID, input.resourceId, {
           ...state,
-          lastMergeFailure: {
-            baseCommit: error.baseCommit,
-            issueCommit: error.issueCommit,
-            conflictPaths: error.conflictPaths,
-            mergeMessages: error.mergeMessages,
-          },
+          ...(recovery?.kind === "MERGE_CONFLICT"
+            ? { finalizationRecovery: recovery }
+            : {}),
+          ...(error instanceof GitAutomaticMergeConflictError
+            ? {
+                lastMergeFailure: {
+                  baseCommit: error.baseCommit,
+                  issueCommit: error.issueCommit,
+                  conflictPaths: error.conflictPaths,
+                  mergeMessages: error.mergeMessages,
+                },
+              }
+            : {}),
         });
       }
       throw finalizationError({
@@ -624,6 +632,15 @@ class GitWorkspaceProvider implements WorkspaceProvider {
     const validation = await validateGitFinalizationRecovery({
       worktreePath: state.worktreePath,
       fingerprint,
+      ...(recovery?.kind === "MERGE_ENVIRONMENT"
+        && recovery.repositoryStateWithoutBaseHash
+        ? {
+            allowedRepositoryStateChange: {
+              excludedRefs: [`refs/heads/${state.baseBranch}`],
+              expectedHash: recovery.repositoryStateWithoutBaseHash,
+            },
+          }
+        : {}),
     });
     if (recovery?.kind !== "MERGE_ENVIRONMENT" || validation.kind === "UNSAFE") {
       return validation;
@@ -632,9 +649,16 @@ class GitWorkspaceProvider implements WorkspaceProvider {
       state,
       input.issue.finalizationRecovery?.diagnostic?.code,
     );
-    return unresolvedReason
-      ? { kind: "UNSAFE", changedPaths: validation.changedPaths, reason: unresolvedReason }
-      : validation;
+    if (unresolvedReason) {
+      return { kind: "UNSAFE", changedPaths: validation.changedPaths, reason: unresolvedReason };
+    }
+    if (validation.kind === "UNCHANGED") {
+      const preflightReason = await automaticMergePreflightReason(state);
+      if (preflightReason) {
+        return { kind: "UNSAFE", changedPaths: [], reason: preflightReason };
+      }
+    }
+    return validation;
   }
 
   async bindFinalizationRecoveryDelivery(input: {
@@ -862,6 +886,30 @@ async function unresolvedMergeEnvironmentReason(
     }
   }
   return "GIT_MERGE_ENVIRONMENT_UNRESOLVED";
+}
+
+async function automaticMergePreflightReason(
+  state: GitWorkspaceState,
+): Promise<string | undefined> {
+  const baseRef = `refs/heads/${state.baseBranch}`;
+  try {
+    await assertGitSupportsAutomaticMerge(state.repositoryPath);
+    const [baseCommit, issueCommit] = await Promise.all([
+      runGit(state.repositoryPath, ["rev-parse", baseRef]),
+      runGit(state.worktreePath, ["rev-parse", "HEAD"]),
+    ]);
+    await runGit(state.repositoryPath, [
+      "merge-tree",
+      "--write-tree",
+      baseCommit,
+      issueCommit,
+    ]);
+    return undefined;
+  } catch (error) {
+    return error instanceof GitCommandError && error.exitCode === 1
+      ? "GIT_AUTO_MERGE_CONFLICT"
+      : "GIT_MERGE_ENVIRONMENT_UNRESOLVED";
+  }
 }
 
 export function gitVersionSupportsAutomaticMerge(versionOutput: string): boolean {

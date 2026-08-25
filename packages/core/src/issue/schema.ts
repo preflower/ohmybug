@@ -107,7 +107,7 @@ export const finalizationRecoveryContextSchema = z.discriminatedUnion(
         kind: z.literal("MERGE_CONFLICT"),
         ...mergeContextFields,
         baseCommit: z.string().trim().min(1).max(100),
-        conflictPaths: z.array(repositoryRelativePathSchema).min(1).max(50),
+        conflictPaths: z.array(repositoryRelativePathSchema).max(50),
         mergePrepared: z.literal(true),
       }).strict(),
     }).strict(),

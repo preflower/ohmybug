@@ -120,6 +120,24 @@ describe("AI merge finalization recovery", () => {
     fixture.commands.rejectDelivery(created.issue.id, "取消按钮还需要保留键盘关闭行为");
     await worker.drain();
     expect(fixture.store.getIssue(created.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    await writeFile(
+      join(repository, "apps/desktop/src/web/issues/advanced-base.ts"),
+      "export const advancedBase = true;\n",
+    );
+    await git(repository, "add", "apps/desktop/src/web/issues/advanced-base.ts");
+    await git(repository, "commit", "-m", "advance base after repaired acceptance");
+    const advancedBase = await git(repository, "rev-parse", "main");
+    fixture.commands.approveDelivery(created.issue.id);
+    await worker.drain();
+    expect(fixture.store.getIssue(created.issue.id)?.status).toBe("ACCEPTANCE_REVIEW");
+    expect(agent.recoveryInputs[1]).toMatchObject({
+      recoveryKind: "MERGE_CONFLICT",
+      merge: {
+        baseCommit: advancedBase,
+        conflictPaths: [],
+        mergePrepared: true,
+      },
+    });
     fixture.commands.approveDelivery(created.issue.id);
     await worker.drain();
 
@@ -128,7 +146,7 @@ describe("AI merge finalization recovery", () => {
     const mergeCommit = await git(repository, "rev-parse", "main");
     const parents = (await git(repository, "show", "-s", "--format=%P", mergeCommit)).split(" ");
     expect(parents).toHaveLength(2);
-    expect(parents[1]).toBe(preparedBase);
+    expect(parents[1]).toBe(advancedBase);
     expect(await git(repository, "show", `main:${componentPath}`)).toContain("ImagePreview");
     expect(await git(repository, "show", `main:${componentPath}`)).toContain("<X");
     expect(await git(repository, "show", `main:${componentPath}`)).toContain("onKeyDown");
@@ -163,7 +181,15 @@ class MergeRecoveryAgent extends FakeAgent {
   ): Promise<FinalizationRecoveryResult> {
     this.recoveryInputs.push(input);
     const path = input.merge?.conflictPaths[0];
-    if (!path || !input.issue.projectPath) throw new Error("MERGE_CONTEXT_REQUIRED");
+    if (!input.issue.projectPath) throw new Error("MERGE_CONTEXT_REQUIRED");
+    if (!path) {
+      return {
+        summary: "基线前移后重新计算合并结果",
+        diagnosis: "最新基线未引入新的内容冲突",
+        disposition: "REVALIDATION_REQUIRED",
+        affectedPaths: [],
+      };
+    }
     await writeFile(join(input.issue.projectPath, path), [
       'import { ImagePreview, X } from "lucide-react";',
       "export const Preview = () => <ImagePreview />;",

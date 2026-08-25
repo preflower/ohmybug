@@ -149,6 +149,10 @@ export async function prepareGitFinalizationRecovery(input: {
 export async function validateGitFinalizationRecovery(input: {
   worktreePath: string;
   fingerprint: GitFinalizationFingerprint;
+  allowedRepositoryStateChange?: {
+    excludedRefs: string[];
+    expectedHash: string;
+  };
 }): Promise<WorkspaceFinalizationRecoveryValidation> {
   const before = input.fingerprint;
   const current = await captureGitFinalizationFingerprint({
@@ -170,7 +174,14 @@ export async function validateGitFinalizationRecovery(input: {
     return unsafe("FINALIZATION_RECOVERY_INDEX_FLAGS_CHANGED");
   }
   if (current.repositoryStateHash !== before.repositoryStateHash) {
-    return unsafe("FINALIZATION_RECOVERY_REPOSITORY_STATE_CHANGED");
+    const allowed = input.allowedRepositoryStateChange;
+    if (
+      !allowed
+      || await captureGitRepositoryStateHash(input.worktreePath, allowed.excludedRefs)
+        !== allowed.expectedHash
+    ) {
+      return unsafe("FINALIZATION_RECOVERY_REPOSITORY_STATE_CHANGED");
+    }
   }
   if (before.diagnosticRoots.some((root) => !root.entirelyUntracked)) {
     return unsafe("FINALIZATION_RECOVERY_DIAGNOSTIC_ROOT_TRACKED");

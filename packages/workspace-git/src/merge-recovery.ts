@@ -100,6 +100,7 @@ const finalizationRecoveryStateSchema = z.discriminatedUnion("kind", [
     kind: z.literal("MERGE_ENVIRONMENT"),
     fingerprint: finalizationFingerprintSchema,
     merge: mergeContextSchema,
+    repositoryStateWithoutBaseHash: z.string().min(1).optional(),
   }),
 ]);
 
@@ -164,6 +165,7 @@ export type GitFinalizationRecoveryState =
       kind: "MERGE_ENVIRONMENT";
       fingerprint: GitFinalizationFingerprint;
       merge: FinalizationRecoveryMergeContext;
+      repositoryStateWithoutBaseHash?: string;
     };
 
 export function normalizeGitFinalizationRecoveryState(
@@ -240,9 +242,10 @@ export async function prepareGitMergeRecovery(input: {
       mergePrepared: false,
     };
     let fingerprint: GitFinalizationFingerprint | undefined;
+    let repositoryStateWithoutBaseHash: string | undefined;
     let workspaceStatus = "Workspace status could not be read safely";
     try {
-      [fingerprint, workspaceStatus] = await Promise.all([
+      [fingerprint, workspaceStatus, repositoryStateWithoutBaseHash] = await Promise.all([
         captureGitFinalizationFingerprint({
           worktreePath: input.worktreePath,
           diagnosticPaths: [],
@@ -250,6 +253,10 @@ export async function prepareGitMergeRecovery(input: {
           attemptId: input.attemptId,
         }),
         readGitWorkspaceStatus(input.worktreePath),
+        captureGitRepositoryStateHash(
+          input.worktreePath,
+          [`refs/heads/${input.baseBranch}`],
+        ),
       ]);
     } catch (error) {
       messages = [
@@ -258,8 +265,16 @@ export async function prepareGitMergeRecovery(input: {
       ];
     }
     return {
-      ...(persist && fingerprint
-        ? { recovery: { version: 1 as const, kind: "MERGE_ENVIRONMENT" as const, fingerprint, merge } }
+      ...(persist && fingerprint && repositoryStateWithoutBaseHash
+        ? {
+            recovery: {
+              version: 1 as const,
+              kind: "MERGE_ENVIRONMENT" as const,
+              fingerprint,
+              merge,
+              repositoryStateWithoutBaseHash,
+            },
+          }
         : {}),
       context: {
         fingerprintRef: input.fingerprintRef,
@@ -538,11 +553,11 @@ export async function finalizeGitMergeRecovery(input: {
     throw new Error("GIT_MERGE_RECOVERY_NOT_VALIDATED");
   }
   const baseCommit = await tryRunGit(input.worktreePath, ["rev-parse", input.baseRef], [128]);
-  if (baseCommit !== session.baseCommit) throw new Error("GIT_AUTO_MERGE_BASE_MOVED");
+  const baseRefMoved = baseCommit !== session.baseCommit;
   const invariants = await inspectMergeSessionInvariants(
     input.worktreePath,
     session,
-    input.allowBaseRefMove ?? false,
+    (input.allowBaseRefMove ?? false) || baseRefMoved,
   );
   if (invariants.validation) throw new Error(invariants.validation.reason);
   await assertPublicationPreflight(input.worktreePath);
@@ -558,6 +573,7 @@ export async function finalizeGitMergeRecovery(input: {
       input.deliveryToken,
     );
   }
+  if (baseRefMoved) throw new Error("GIT_AUTO_MERGE_BASE_MOVED");
   const candidate = await resolvedTreeFromTemporaryIndex(
     input.worktreePath,
     session.validatedPaths,
