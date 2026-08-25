@@ -24,13 +24,6 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-export function reviewTitle(kind: string): string {
-  if (kind === "assessment") return "确认 Assessment";
-  if (kind === "delivery") return "验收 Delivery";
-  if (kind === "business-merge-conflict") return "确认业务冲突处理";
-  return "人工审核";
-}
-
 export function ReviewRenderer({ issue, choiceId, data, onDataChange }: ReviewRendererProps) {
   const review = issue.review;
   if (!review) return null;
