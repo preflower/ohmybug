@@ -1,10 +1,11 @@
-import { access, lstat, mkdir, readdir, realpath } from "node:fs/promises";
+import { access, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 
 import type {
   ConfigValue,
   FinalizationRecoveryResult,
   Issue,
+  RepairResult,
   RuntimeProject,
   WorkspaceFinalizationDiagnostic,
   WorkspaceFinalizationStep,
@@ -18,6 +19,7 @@ import type {
   WorkspaceProvider,
   WorkspaceProviderFactory,
   WorkspaceProviderInspection,
+  WorkspaceRepairObservation,
 } from "@oh-my-bug/module-api";
 import { z } from "zod";
 
@@ -40,6 +42,14 @@ import {
   validateGitFinalizationRecovery,
   type GitFinalizationFingerprint,
 } from "./finalization-recovery.js";
+import {
+  assertInitializedSubmodulesClean,
+  assertNoHiddenIndexEntries,
+  assertNoUndeclaredGitlinks,
+  assertWorktreeAndSubmodulesClean,
+  observeGitRepair,
+  validateGitRepair,
+} from "./repair-integration.js";
 
 const MODULE_ID = "workspace-git";
 
@@ -393,6 +403,26 @@ class GitWorkspaceProvider implements WorkspaceProvider {
   }): Promise<{ branch: string }> {
     const state = this.getSavedState(input.issue, input.resourceId);
     return { branch: state.branch };
+  }
+
+  async observeRepair(input: {
+    issue: Issue;
+    resourceId: string;
+  }): Promise<WorkspaceRepairObservation> {
+    return observeGitRepair(this.getSavedState(input.issue, input.resourceId));
+  }
+
+  async validateRepair(input: {
+    issue: Issue;
+    resourceId: string;
+    observation: WorkspaceRepairObservation;
+    result: RepairResult;
+  }) {
+    return validateGitRepair({
+      state: this.getSavedState(input.issue, input.resourceId),
+      observation: input.observation,
+      result: input.result,
+    });
   }
 
   async publish(input: {
@@ -1167,95 +1197,6 @@ function worktreePathForBranch(list: string, branchRef: string): string | undefi
     }
   }
   return undefined;
-}
-
-async function assertNoHiddenIndexEntries(worktreePath: string): Promise<void> {
-  const entries = await runGit(worktreePath, ["ls-files", "-v", "-z"]);
-  if (entries.split("\0").some((entry) => /^[a-zS] /.test(entry))) {
-    throw new Error("GIT_WORKTREE_NOT_CLEAN");
-  }
-}
-
-async function assertInitializedSubmodulesClean(
-  worktreePath: string,
-  visited = new Set<string>(),
-): Promise<void> {
-  visited.add(await realpath(worktreePath));
-  for (const gitlink of await getIndexGitlinks(worktreePath)) {
-    const submodulePath = join(worktreePath, gitlink);
-    if (!(await gitlinkDirectoryExists(submodulePath))) continue;
-    if (await pathExists(join(submodulePath, ".git"))) {
-      await assertWorktreeAndSubmodulesClean(submodulePath, visited);
-    } else if ((await readdir(submodulePath)).length > 0) {
-      throw new Error("GIT_WORKTREE_NOT_CLEAN");
-    }
-  }
-}
-
-async function gitlinkDirectoryExists(path: string): Promise<boolean> {
-  let stats;
-  try {
-    stats = await lstat(path);
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
-  if (!stats.isDirectory()) throw new Error("GIT_WORKTREE_NOT_CLEAN");
-  return true;
-}
-
-async function assertWorktreeAndSubmodulesClean(
-  worktreePath: string,
-  visited = new Set<string>(),
-): Promise<void> {
-  const canonicalPath = await realpath(worktreePath);
-  if (visited.has(canonicalPath)) return;
-  visited.add(canonicalPath);
-  await assertNoHiddenIndexEntries(worktreePath);
-  await assertInitializedSubmodulesClean(worktreePath, visited);
-  const changes = await runGit(worktreePath, [
-    "status",
-    "--porcelain",
-    "--untracked-files=all",
-    "--ignore-submodules=none",
-  ]);
-  if (changes) throw new Error("GIT_WORKTREE_NOT_CLEAN");
-}
-
-async function getIndexGitlinks(worktreePath: string): Promise<string[]> {
-  const entries = await runGit(worktreePath, ["ls-files", "--stage", "-z"]);
-  return entries.split("\0").flatMap((entry) => {
-    const separator = entry.indexOf("\t");
-    if (separator === -1) return [];
-    const [mode, , stage] = entry.slice(0, separator).split(" ");
-    return mode === "160000" && stage === "0" ? [entry.slice(separator + 1)] : [];
-  });
-}
-
-async function assertNoUndeclaredGitlinks(worktreePath: string): Promise<void> {
-  try {
-    const gitlinks = await getIndexGitlinks(worktreePath);
-    if (gitlinks.length === 0) return;
-
-    const mappings = await tryRunGit(
-      worktreePath,
-      ["config", "-z", "--blob", ":.gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
-      [1],
-    );
-    const declaredPaths = new Set(
-      mappings?.split("\0").flatMap((mapping) => {
-        const separator = mapping.indexOf("\n");
-        return separator === -1 ? [] : [mapping.slice(separator + 1)];
-      }) ?? [],
-    );
-    if (gitlinks.some((path) => !declaredPaths.has(path))) {
-      throw new Error("UNDECLARED_GITLINK");
-    }
-  } catch (error) {
-    throw new Error("GIT_EMBEDDED_REPOSITORY_NOT_ALLOWED", { cause: error });
-  }
 }
 
 function assertSavedState(
