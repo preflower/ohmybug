@@ -15,6 +15,20 @@ describe("LocalWorkspace", () => {
       projectPath: project.path,
       resourceId,
     });
+    await expect(provider.observeRepair?.({ issue, resourceId })).resolves.toEqual({
+      required: false,
+    });
+    await expect(provider.validateRepair?.({
+      issue,
+      resourceId,
+      observation: { required: false },
+      result: {
+        kind: "DELIVERY_READY",
+        summary: "Implemented",
+        evidence: [],
+        verification: [{ command: "pnpm test", outcome: "PASSED", summary: "Passed" }],
+      },
+    })).resolves.toMatchObject({ kind: "DELIVERY_READY" });
     await expect(provider.publish({ issue, resourceId })).resolves.toBeUndefined();
     await expect(provider.release({ issue, resourceId })).resolves.toBeUndefined();
   });

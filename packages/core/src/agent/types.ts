@@ -45,10 +45,51 @@ export interface RepairEvidencePath {
   relativePath: string;
 }
 
-export interface RepairResult {
-  summary: string;
-  evidence: RepairEvidencePath[];
+export interface RepairIntegrationInput {
+  baseBranch: string;
+  observedBaseCommit: string;
+  issueBranch: string;
 }
+
+export interface RepairVerification {
+  command: string;
+  outcome: "PASSED" | "FAILED" | "NOT_RUN";
+  summary: string;
+}
+
+export interface RepairConflictResolution {
+  path: string;
+  classification: "TEXTUAL" | "COMPATIBLE_BUSINESS";
+  resolution: string;
+}
+
+export type RepairResult =
+  | {
+      kind: "DELIVERY_READY";
+      summary: string;
+      evidence: RepairEvidencePath[];
+      integration?: {
+        baseCommit: string;
+        issueCommit: string;
+        conflicts: RepairConflictResolution[];
+      };
+      verification: RepairVerification[];
+    }
+  | {
+      kind: "BUSINESS_DECISION_REQUIRED";
+      summary: string;
+      decision: {
+        baseCommit: string;
+        issueCommit: string;
+        conflictPaths: string[];
+        baseIntent: string;
+        issueIntent: string;
+        incompatibility: string;
+        recommendation: string;
+        rationale: string;
+        choices: Array<{ id: string; label: string; description: string }>;
+      };
+    };
 
 export interface FinalizationRecoveryResult {
   summary: string;

@@ -13,6 +13,25 @@ export const localWorkspaceFactory: WorkspaceProviderFactory = {
           resourceId: `local:${issue.id}`,
         };
       },
+      async observeRepair() {
+        return { required: false };
+      },
+      async validateRepair({ issue, resourceId, observation, result }) {
+        if (
+          observation.required
+          || result.kind !== "DELIVERY_READY"
+          || result.integration
+        ) {
+          throw new Error("LOCAL_REPAIR_INTEGRATION_UNSUPPORTED");
+        }
+        return {
+          kind: "DELIVERY_READY",
+          branch: {
+            name: resourceId,
+            commit: `local-revision:${issue.revision}`,
+          },
+        };
+      },
       async publish() { return undefined; },
       async release() {},
     };

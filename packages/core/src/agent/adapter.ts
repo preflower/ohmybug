@@ -3,7 +3,9 @@ import type {
   FinalizationRecoveryMergeContext,
   Issue,
   WorkspaceFinalizationDiagnostic,
+  ReviewJson,
 } from "../issue/types.js";
+import { repairResultSchema } from "./schemas.js";
 import type {
   AgentCapability,
   AgentCapabilityRequest,
@@ -12,6 +14,7 @@ import type {
   Delivery,
   DeliveryDraft,
   RepairEvidencePath,
+  RepairIntegrationInput,
   RepairResult,
   FinalizationRecoveryResult,
 } from "./types.js";
@@ -42,6 +45,14 @@ export type AgentContinuation =
       reason: "CAPABILITY_GRANTED";
       requestId: string;
       capabilities: AgentCapability[];
+    }
+  | {
+      reason: "REVIEW_SUBMITTED";
+      requestId: string;
+      kind: string;
+      choiceId: string;
+      feedback?: string;
+      data?: ReviewJson;
     };
 
 export class AgentCapabilityRequiredError extends Error {
@@ -96,9 +107,24 @@ export interface RepairInput {
   project: ProjectContext;
   assessment: Assessment;
   evidenceDirectory: string;
+  integration?: RepairIntegrationInput;
   previousDelivery?: Delivery;
   feedback?: string;
   continuation?: AgentContinuation;
+}
+
+export function validateRepairResult(
+  input: RepairInput,
+  resultInput: unknown,
+): RepairResult {
+  const result = repairResultSchema.parse(resultInput);
+  if (input.integration && result.kind === "DELIVERY_READY" && !result.integration) {
+    throw new Error("REPAIR_INTEGRATION_RESULT_REQUIRED");
+  }
+  if (!input.integration && result.kind === "BUSINESS_DECISION_REQUIRED") {
+    throw new Error("REPAIR_BUSINESS_DECISION_NOT_AVAILABLE");
+  }
+  return result;
 }
 
 export interface EvidenceCaptureInput {

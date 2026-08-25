@@ -4,6 +4,8 @@ import {
   assessmentSchema,
   canonicalHash,
   deliverySchema,
+  repairIntegrationInputSchema,
+  repairResultSchema,
 } from "../../src/index.js";
 
 describe("Assessment", () => {
@@ -95,6 +97,80 @@ describe("Delivery", () => {
         evidence: [],
       }),
     ).toThrow();
+  });
+});
+
+describe("Repair integration", () => {
+  const deliveryReady = {
+    kind: "DELIVERY_READY",
+    summary: "Integrated main and restored the payment route",
+    evidence: [{
+      type: "screenshot",
+      label: "Payment page",
+      relativePath: "evidence/payment.png",
+    }],
+    integration: {
+      baseCommit: "a".repeat(40),
+      issueCommit: "b".repeat(40),
+      conflicts: [{
+        path: "src/payment/router.ts",
+        classification: "COMPATIBLE_BUSINESS",
+        resolution: "Preserved the new guard and restored the route",
+      }],
+    },
+    verification: [{
+      command: "pnpm test",
+      outcome: "PASSED",
+      summary: "All configured tests passed",
+    }],
+  } as const;
+
+  it("accepts a bounded Git observation and delivery-ready result", () => {
+    expect(repairIntegrationInputSchema.parse({
+      baseBranch: "main",
+      observedBaseCommit: "a".repeat(40),
+      issueBranch: "ohmybug/omb-19",
+    })).toMatchObject({ baseBranch: "main" });
+    expect(repairResultSchema.parse(deliveryReady)).toEqual(deliveryReady);
+  });
+
+  it("accepts a bounded mutually-exclusive business decision", () => {
+    const result = {
+      kind: "BUSINESS_DECISION_REQUIRED",
+      summary: "Two rounding rules cannot both define the invoice total",
+      decision: {
+        baseCommit: "a".repeat(40),
+        issueCommit: "b".repeat(40),
+        conflictPaths: ["src/billing/total.ts"],
+        baseIntent: "Round only the final invoice total",
+        issueIntent: "Round every invoice line",
+        incompatibility: "The same invoice produces different totals",
+        recommendation: "Use per-line rounding",
+        rationale: "It matches the Issue acceptance examples",
+        choices: [{
+          id: "use-issue",
+          label: "Use Issue behavior",
+          description: "Apply per-line rounding",
+        }],
+      },
+    } as const;
+
+    expect(repairResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("requires verification and rejects unbounded paths or text", () => {
+    expect(() => repairResultSchema.parse({
+      ...deliveryReady,
+      verification: [],
+    })).toThrow();
+    expect(() => repairResultSchema.parse({
+      ...deliveryReady,
+      summary: "x".repeat(5_000),
+    })).toThrow();
+    expect(() => repairResultSchema.parse({
+      ...deliveryReady,
+      evidence: [{ ...deliveryReady.evidence[0], relativePath: "../secret.png" }],
+    })).toThrow();
   });
 });
 

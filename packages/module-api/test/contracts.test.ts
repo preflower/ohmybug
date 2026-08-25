@@ -1,6 +1,7 @@
 import type {
   FinalizationRecoveryResult,
   Issue,
+  RepairResult,
   RuntimeProject,
   WorkspaceFinalizationDiagnostic,
 } from "@oh-my-bug/core";
@@ -11,9 +12,60 @@ import type {
   LifecycleEventMap,
   WorkspaceProvider,
   WorkspaceProviderFactory,
+  WorkspacePublishResult,
+  WorkspaceRepairObservation,
+  WorkspaceRepairValidation,
 } from "../src/index.js";
 
 describe("internal module contracts", () => {
+  it("supports observing and validating AI-owned Repair integration", async () => {
+    const issue = { id: "issue-1" } as Issue;
+    const observation: WorkspaceRepairObservation = {
+      required: true,
+      baseBranch: "main",
+      baseCommit: "a".repeat(40),
+      issueBranch: "ohmybug/omb-19",
+    };
+    const result: RepairResult = {
+      kind: "DELIVERY_READY",
+      summary: "Integrated main",
+      evidence: [],
+      integration: {
+        baseCommit: "a".repeat(40),
+        issueCommit: "b".repeat(40),
+        conflicts: [],
+      },
+      verification: [{ command: "pnpm test", outcome: "PASSED", summary: "Passed" }],
+    };
+    const provider: WorkspaceProvider = {
+      id: "fixture",
+      acquire: async () => ({ projectPath: "/repo", resourceId: "fixture:1" }),
+      publish: async () => undefined,
+      release: async () => undefined,
+      observeRepair: async () => observation,
+      validateRepair: async () => ({
+        kind: "DELIVERY_READY",
+        branch: { name: "ohmybug/omb-19", commit: "b".repeat(40) },
+      }),
+    };
+
+    await expect(provider.observeRepair?.({ issue, resourceId: "fixture:1" }))
+      .resolves.toEqual(observation);
+    await expect(provider.validateRepair?.({
+      issue,
+      resourceId: "fixture:1",
+      observation,
+      result,
+    })).resolves.toMatchObject({ kind: "DELIVERY_READY" });
+
+    const validation: WorkspaceRepairValidation = { kind: "BUSINESS_DECISION_REQUIRED" };
+    const stale: WorkspacePublishResult = {
+      kind: "BASE_STALE",
+      currentBaseCommit: "c".repeat(40),
+    };
+    expect({ validation, stale }).toBeTruthy();
+  });
+
   it("allows providers to prepare and validate bounded finalization recovery", async () => {
     const issue = { id: "issue-1" } as Issue;
     const diagnostic: WorkspaceFinalizationDiagnostic = {
