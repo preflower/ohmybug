@@ -2,10 +2,12 @@
 
 Oh My Bug 是本机运行的 Electron 软件改动处理系统，支持 Bug 修复和 Feature 实现。Manual、Sentry、DingTalk 等 Integration 先把外部输入适配成统一的 `IntegrationInput { rawData, data }`；Runtime 负责去重、Issue 状态机、Agent 会话、人工门禁和持久化；Codex Agent 在同一会话中完成判断、实现与验证。
 
-核心流程有两次明确确认：
+Assessment 与 Delivery 仍有两次明确确认，所有人工暂停都统一为 `REVIEW_REQUIRED + ReviewRequest`：
 
 1. Agent 生成 Assessment。无论结论是 `BUG`、`FEATURE`、`NOT_A_BUG` 还是 `UNCERTAIN`，都先等待人工确认；系统不会根据 AI 判断自行关闭 Issue。
 2. `BUG` 或 `FEATURE` 经确认后进入实现循环。只有截图或录屏能成为 Delivery 的验收证据；证据通过结构检查后仍需人工批准，批准后 Bug 完成为 `COMPLETED / FIXED`，Feature 完成为 `COMPLETED / IMPLEMENTED`。`CLOSED` 仅表示人工确认的 `NOT_A_BUG` 或 `DUPLICATE` 关闭结果。
+
+Git 项目启用“完成后合并到基线分支”时，Codex 会在隔离的 Issue worktree 中基于每轮最新基线完成实现、合并、冲突处理、提交和验证。文本冲突以及能同时保留的业务改动由 AI 自行处理；只有基线与 Issue 要求的业务行为互斥时才请求人工选择。验收后的 commit 通过受保护的 fast-forward 发布到基线；如果基线再次前进，Runtime 会重新进入 Repair 验证，不会直接改写用户的 main 工作目录或覆盖其中无关的个人改动。
 
 ## Monorepo
 
