@@ -20,6 +20,20 @@ interface TrayMenuControllerOptions<Menu> {
   quit(): void;
 }
 
+interface TrayEventSource {
+  on(event: "click" | "right-click", listener: () => void): unknown;
+}
+
+interface OpenableTrayMenu {
+  open(): Promise<void>;
+}
+
+export function installTrayMenuEvents(tray: TrayEventSource, menu: OpenableTrayMenu): void {
+  const open = () => { void menu.open(); };
+  tray.on("click", open);
+  tray.on("right-click", open);
+}
+
 export class TrayMenuController<Menu> {
   private opening?: Promise<void>;
 

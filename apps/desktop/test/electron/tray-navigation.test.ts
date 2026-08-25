@@ -13,11 +13,13 @@ describe("tray navigation queue", () => {
 
     queue.setReady(true);
     expect(send).toHaveBeenCalledWith({ issueId: "issue-2" });
+    queue.request({ issueId: "issue-ready" });
+    expect(send).toHaveBeenLastCalledWith({ issueId: "issue-ready" });
     queue.request({});
     expect(send).toHaveBeenLastCalledWith({});
 
     queue.setReady(false);
     queue.request({ issueId: "issue-3" });
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(3);
   });
 });

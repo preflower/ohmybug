@@ -1,6 +1,8 @@
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  installTrayMenuEvents,
   TrayMenuController,
   type TrayMenuEntry,
 } from "../../src/electron/tray-menu-controller.js";
@@ -43,6 +45,17 @@ function setup(loadIssues = vi.fn(async () => [review, repairing])) {
 }
 
 describe("tray menu controller", () => {
+  it("opens the same task menu for primary and context clicks", () => {
+    const tray = new EventEmitter();
+    const controller = { open: vi.fn(async () => undefined) };
+
+    installTrayMenuEvents(tray, controller);
+    tray.emit("click");
+    tray.emit("right-click");
+
+    expect(controller.open).toHaveBeenCalledTimes(2);
+  });
+
   it("builds two bounded task groups and dispatches row actions", async () => {
     const fixture = setup();
     await fixture.controller.open();
