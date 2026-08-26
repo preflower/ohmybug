@@ -81,22 +81,75 @@ function installRuntimeProtocolFixture() {
   const manifests = [
     {
       id: "sentry", name: "Sentry", icon: "sentry",
-      configFields: [
-        { key: "organization", type: "string", label: "Organization", required: true },
-        { key: "project", type: "string", label: "Project", required: true },
-        { key: "environment", type: "string", label: "Environment", required: false },
-        { key: "query", type: "string", label: "Query", required: false },
+      description: "从指定 Sentry 项目接收 Issue 和事件。",
+      sections: [
+        { id: "connection", label: "连接配置", description: "用于定位项目并读取事件。" },
+        {
+          id: "validation",
+          label: "连接验证",
+          description: "仅使用已保存的配置和凭证。",
+          connectionTest: true,
+        },
+        {
+          id: "filters",
+          label: "过滤规则",
+          description: "限制进入 Oh My Bug 的 Sentry Issue。",
+          summary: {
+            fields: [
+              { key: "environment", emptyValue: "全部环境" },
+              { key: "query", emptyValue: "未解决 Issue", valuePrefix: "Query: " },
+            ],
+            separator: " · ",
+          },
+          collapsed: true,
+        },
       ],
-      secretFields: [{ key: "token", label: "Auth token", required: true }],
+      configFields: [
+        {
+          key: "organization", type: "string", label: "Organization",
+          description: "Sentry Organization ID 或 slug。", placeholder: "acme",
+          required: true, section: "connection",
+        },
+        {
+          key: "project", type: "string", label: "Project",
+          description: "Sentry Project ID 或 slug。", placeholder: "checkout",
+          required: true, section: "connection",
+        },
+        {
+          key: "environment", type: "string", label: "Environment",
+          placeholder: "production", required: false, section: "filters",
+        },
+        {
+          key: "query", type: "string", label: "Query",
+          description: "留空时使用 Sentry 默认查询 is:unresolved。",
+          placeholder: "is:unresolved level:error", required: false, section: "filters",
+        },
+      ],
+      secretFields: [
+        {
+          key: "token", label: "Auth token",
+          description: "需要 event:read 权限；请勿填写 DSN。", placeholder: "sntrys_…",
+          required: true, section: "connection",
+        },
+      ],
     },
     {
-      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从指定群聊接收消息并创建 Issue。",
+      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从群聊接收 @ 机器人的消息并创建 Issue。",
       sections: [
         { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
-        { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
+        { id: "rules", label: "接收规则" },
         { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
       ],
       configFields: [
+        {
+          key: "conversationFilterEnabled",
+          type: "boolean",
+          label: "群聊过滤",
+          description: "开启后仅处理指定群聊；关闭时处理任意群聊中 @ 机器人的消息。",
+          required: false,
+          defaultValue: false,
+          section: "rules",
+        },
         {
           key: "conversationIds",
           type: "string[]",
@@ -105,6 +158,7 @@ function installRuntimeProtocolFixture() {
           required: true,
           section: "rules",
           addLabel: "添加群聊",
+          visibleWhen: { key: "conversationFilterEnabled", equals: true },
         },
         { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
         { key: "threadKeyField", type: "string", label: "消息归并字段", required: false, section: "advanced" },
@@ -210,6 +264,20 @@ function installRuntimeProtocolFixture() {
         ? [[`${project.id}:${pluginId}`, { state: "connected" }]]
         : []),
     )),
+    testSavedIntegration: async (projectId: string, integrationId: string) => {
+      const project = read().projects.find((candidate) => candidate.id === projectId);
+      if (!project) throw new Error("PROJECT_NOT_FOUND");
+      const integration = project.integrations[integrationId];
+      if (!integration) throw new Error("PROJECT_INTEGRATION_NOT_FOUND");
+      return {
+        title: "连接成功",
+        details: [
+          { label: "Organization", value: String(integration.config.organization) },
+          { label: "Project", value: String(integration.config.project) },
+        ],
+        testedAt: now(),
+      };
+    },
     listIssues: async (projectId?: string) => clone(read().issues.filter((candidate) => !projectId || candidate.projectId === projectId)),
     getIssue: async (id: string) => clone(requireIssue(id)),
     getIssueWorkspace: async () => null,

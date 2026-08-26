@@ -19,6 +19,7 @@ export type BranchInfoDto = NonNullable<ApprovalResultDto["branch"]>;
 export type WorkspaceBranchDiscoveryDto = RuntimeOperationOutput<"inspectProjectBranches">;
 export type AgentEventDto = RuntimeOperationOutput<"issueEvents">["items"][number];
 export type IntegrationHealth = RuntimeOperationOutput<"integrationHealth">[string];
+export type IntegrationConnectionTestResult = RuntimeOperationOutput<"testSavedIntegration">;
 export type ApproveAssessmentInput = RuntimeOperationInput<"approveAssessment">["input"];
 export type ReviewSubmissionInput = RuntimeOperationInput<"submitReview">["input"];
 export type {

@@ -3,6 +3,42 @@ import { describe, expect, it, vi } from "vitest";
 import { SentryClient } from "../src/sentry-client.js";
 
 describe("Sentry client", () => {
+  it("tests saved access with one read-only issue request", async () => {
+    const fetcher = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      void input;
+      void init;
+      return Response.json([]);
+    });
+    const client = new SentryClient(fetcher);
+
+    await expect(client.testConnection({
+      organization: "acme",
+      project: "checkout",
+      environment: "production",
+      query: "level:error",
+    }, "sentry-secret")).resolves.toBeUndefined();
+
+    const [request, init] = fetcher.mock.calls[0]!;
+    const url = new URL(String(request));
+    expect(url.pathname).toBe("/api/0/organizations/acme/issues/");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      environment: "production",
+      limit: "1",
+      project: "checkout",
+      query: "level:error",
+    });
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sentry-secret");
+    expect(String(request)).not.toContain("sentry-secret");
+  });
+
+  it("rejects malformed successful probe responses", async () => {
+    const client = new SentryClient(async () => Response.json({ id: "not-an-array" }));
+    await expect(client.testConnection(
+      { organization: "acme", project: "checkout" },
+      "secret",
+    )).rejects.toThrow("SENTRY_RESPONSE_INVALID");
+  });
+
   it("preserves the configured issue discovery filters and bearer authentication", async () => {
     const fetcher = vi.fn(async (input: string | URL, init?: RequestInit) => {
       void input;

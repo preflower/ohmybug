@@ -1,5 +1,6 @@
 import type {
   ConfigValue,
+  IntegrationConnectionTestResult,
   IntegrationHealth,
   IntegrationPluginManifest,
   Issue,
@@ -152,6 +153,10 @@ export interface RuntimeApi {
     patch: Record<string, string | null>;
   }): Promise<ProductProject>;
   integrationHealth(input: Record<string, never>): Promise<Record<string, IntegrationHealth>>;
+  testSavedIntegration(input: {
+    projectId: string;
+    integrationId: string;
+  }): Promise<IntegrationConnectionTestResult>;
   listIssues(input: { id?: string }): Promise<Issue[]>;
   getIssue(input: { id: string }): Promise<Issue>;
   getIssueWorkspace(input: { id: string }): Promise<IssueWorkspaceInfo | null>;

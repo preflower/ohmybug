@@ -29,4 +29,24 @@ describe("IntegrationRegistry", () => {
     expect(() => new IntegrationRegistry([]).require("missing"))
       .toThrow("PLUGIN_NOT_INSTALLED:missing");
   });
+
+  it("rejects a mismatch between connection-test presentation and implementation", () => {
+    const presentationOnly = plugin("presentation-only");
+    presentationOnly.manifest.sections = [
+      { id: "validation", label: "Validation", connectionTest: true },
+    ];
+    expect(() => new IntegrationRegistry([presentationOnly]))
+      .toThrow("INTEGRATION_CONNECTION_TEST_IMPLEMENTATION_REQUIRED:presentation-only");
+
+    const implementationOnly = {
+      ...plugin("implementation-only"),
+      testConnection: async () => ({
+        title: "Connected",
+        details: [],
+        testedAt: "2026-08-26T02:00:00.000Z",
+      }),
+    };
+    expect(() => new IntegrationRegistry([implementationOnly]))
+      .toThrow("INTEGRATION_CONNECTION_TEST_SECTION_REQUIRED:implementation-only");
+  });
 });

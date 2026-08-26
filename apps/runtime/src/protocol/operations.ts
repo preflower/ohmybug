@@ -14,6 +14,7 @@ import {
   evidencePayloadSchema,
   feedbackSchema,
   identifierSchema,
+  integrationConnectionTestResultSchema,
   integrationHealthSchema,
   issueEventPageSchema,
   issueWorkspaceInfoSchema,
@@ -24,6 +25,7 @@ import {
   reviewSubmissionSchema,
   runtimeHealthSchema,
   saveProjectSettingsInputSchema,
+  testSavedIntegrationInputSchema,
   updateProjectInputSchema,
   workspaceBranchDiscoverySchema,
 } from "./schema-definitions.js";
@@ -131,6 +133,12 @@ export const runtimeOperations = {
     output: z.record(z.string(), integrationHealthSchema),
     renderer: true,
     invoke: (service, input) => service.integrationHealth(input),
+  }),
+  testSavedIntegration: operation({
+    input: testSavedIntegrationInputSchema,
+    output: integrationConnectionTestResultSchema,
+    renderer: true,
+    invoke: (service, input) => service.testSavedIntegration(input),
   }),
   listIssues: operation({
     input: listIssuesSchema,

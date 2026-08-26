@@ -7,6 +7,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 let styles = "";
 
+function cssRule(selector: string): string {
+  return styles.match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`, "s"))?.[1] ?? "";
+}
+
 beforeAll(async () => {
   styles = await readFile(resolve(process.cwd(), "src/web/styles/global.css"), "utf8");
   document.head.innerHTML = `<style>${styles}</style>`;
@@ -32,12 +36,27 @@ describe("project settings layout", () => {
     expect(settings.backgroundColor).toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("locks sticky metadata and full-width activity detail rules", () => {
+  it("locks sticky metadata rules", () => {
     expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*position:\s*sticky;/s);
     expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*top:\s*0;/s);
+  });
+
+  it("keeps Agent activity turns full width and flattens terminal output", () => {
     expect(styles).toMatch(/\.activity-turn\s*\{[^}]*width:\s*100%;/s);
     expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*box-sizing:\s*border-box;/s);
-    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*width:\s*100%;/s);
+    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*width:\s*auto;/s);
+    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*border-radius:\s*0;/s);
+    expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*background:\s*transparent;/s);
+  });
+
+  it("lets the Issue page own Agent activity scrolling", () => {
+    const groups = cssRule("\\.activity-groups");
+    const output = cssRule("\\.activity-log-output");
+
+    expect(groups).not.toMatch(/overflow(?:-y)?:\s*(?:auto|scroll)/);
+    expect(groups).not.toMatch(/max-height\s*:/);
+    expect(output).not.toMatch(/overflow(?:-y)?:\s*(?:auto|scroll)/);
+    expect(output).not.toMatch(/max-height\s*:/);
   });
 
   it("uses the compact product scale across project and integration settings", () => {
@@ -57,5 +76,26 @@ describe("project settings layout", () => {
 
   it("does not apply a DingTalk-specific scale", () => {
     expect(styles).not.toMatch(/\[data-brand-icon="dingtalk"\]\s*\{/s);
+  });
+
+  it("aligns the advanced disclosure indicator with the title line", () => {
+    expect(styles).toMatch(/\.integration-section-collapsed > summary\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*7px minmax\(0,\s*1fr\);/s);
+    expect(styles).toMatch(/\.integration-section-collapsed > summary::before\s*\{[^}]*margin-top:\s*8px;/s);
+  });
+
+  it("keeps the narrow settings workspace full-height until the phone breakpoint", () => {
+    const narrowStart = styles.lastIndexOf("@media (max-width: 800px)");
+    const narrowEnd = styles.indexOf("@media (max-width: 520px)", narrowStart);
+    const narrow = styles.slice(narrowStart, narrowEnd);
+    const phoneStart = styles.lastIndexOf("@media (max-width: 520px)");
+    const phone = styles.slice(phoneStart);
+
+    expect(narrow).toMatch(/\.project-settings-tabs\s*\{[^}]*height:\s*100%;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
+    expect(narrow).toMatch(/\.project-settings-main\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\) auto;/s);
+    expect(narrow).toMatch(/\.project-settings-content\s*\{[^}]*overflow:\s*auto;/s);
+    expect(narrow).toMatch(/\.project-settings-actions\s*\{[^}]*position:\s*static;/s);
+    expect(narrow).not.toContain(".integration-section-fields > fieldset,");
+    expect(phoneStart).toBeGreaterThan(narrowStart);
+    expect(phone).toContain(".integration-section-fields > fieldset,");
   });
 });

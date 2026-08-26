@@ -52,9 +52,17 @@ describe("browser development Runtime client", () => {
       key: "OMB",
       name: "Oh My Bug",
       path: "/work/oh-my-bug",
+      integrations: {
+        sentry: {
+          enabled: false,
+          config: { organization: "acme", project: "checkout" },
+          secretConfigured: { token: true },
+        },
+      },
+      workspace: { provider: "local", config: {} },
       revision: 1,
       createdAt: "2026-08-21T08:00:00.000Z",
-      updatedAt: "2026-08-21T08:00:00.000Z",
+      updatedAt: "2026-08-26T02:00:00.000Z",
     };
     const issue = {
       id: "issue-1",
@@ -139,6 +147,7 @@ describe("browser development Runtime client", () => {
           issue(id: string): Promise<unknown>;
           issueWorkspace(id: string): Promise<unknown>;
           integrationHealth(): Promise<unknown>;
+          testSavedIntegration(projectId: string, integrationId: string): Promise<unknown>;
           subscribeIssueEvents(
             id: string,
             cursor: number,
@@ -178,6 +187,14 @@ describe("browser development Runtime client", () => {
       snapshot.issueWorkspaces["issue-1"],
     );
     expect(await transport?.issueWorkspace("missing-issue")).toBeNull();
+    await expect(transport?.testSavedIntegration("project-1", "sentry")).resolves.toEqual({
+      title: "连接成功",
+      details: [
+        { label: "Organization", value: "acme" },
+        { label: "Project", value: "checkout" },
+      ],
+      testedAt: "2026-08-26T02:00:00.000Z",
+    });
     let delivered: { events: unknown[]; cursor: number } | undefined;
     transport?.subscribeIssueEvents("issue-1", 0, (events, cursor) => {
       delivered = { events, cursor };

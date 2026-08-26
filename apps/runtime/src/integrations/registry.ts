@@ -9,6 +9,14 @@ export class IntegrationRegistry {
     for (const plugin of installed) {
       const id = plugin.manifest.id;
       if (ids.has(id)) throw new Error(`DUPLICATE_INTEGRATION_PLUGIN:${id}`);
+      const connectionTestSections = plugin.manifest.sections
+        ?.filter((section) => section.connectionTest).length ?? 0;
+      if (connectionTestSections > 0 && !plugin.testConnection) {
+        throw new Error(`INTEGRATION_CONNECTION_TEST_IMPLEMENTATION_REQUIRED:${id}`);
+      }
+      if (connectionTestSections === 0 && plugin.testConnection) {
+        throw new Error(`INTEGRATION_CONNECTION_TEST_SECTION_REQUIRED:${id}`);
+      }
       ids.add(id);
       entries.push([id, plugin]);
     }

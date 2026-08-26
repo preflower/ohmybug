@@ -16,24 +16,131 @@ test("renders the project directory action as a primary button", async ({ page }
 });
 
 test("registers a local project and renders built-in plugins from manifests", async ({ page }) => {
-    const fixture = await registerProject(page, String(Date.now()));
+  await page.setViewportSize({ width: 1536, height: 1024 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  const fixture = await registerProject(page, String(Date.now()));
   try {
     await page.reload();
+    const sentryManifest = await page.evaluate(async () => (
+      window as unknown as Window & {
+        ohMyBug: { listIntegrationPlugins(): Promise<Array<Record<string, unknown>>> };
+      }
+    ).ohMyBug.listIntegrationPlugins().then((plugins) =>
+      plugins.find((plugin) => plugin.id === "sentry")
+    ));
+    expect(sentryManifest).toMatchObject({
+      sections: expect.arrayContaining([expect.objectContaining({
+        id: "filters",
+        summary: expect.objectContaining({ separator: " · " }),
+      })]),
+    });
     await page.getByRole("link", { name: "Projects" }).click();
     await page.locator(".project-table-row").filter({ hasText: fixture.name }).click();
     await expect(page.getByLabel("本机项目路径")).toHaveValue(fixture.repository);
     await expect(page.getByLabel("项目标识")).toHaveValue(fixture.key);
     await expect(page.getByRole("tablist", { name: "项目配置" })).toHaveAttribute("aria-orientation", "vertical");
     await page.getByRole("tab", { name: "Sentry" }).click();
+    await expect(page.getByRole("heading", { name: "连接配置" })).toBeVisible();
+    await expect(page.locator("details").filter({ hasText: "过滤规则" })).toContainText(
+      "全部环境 · 未解决 Issue",
+    );
     await expect(page.getByLabel("Auth token")).toBeVisible();
+    await expect(page.getByText("需要 event:read 权限；请勿填写 DSN。")).toBeVisible();
+    await page.getByRole("textbox", { name: /^Organization\b/ }).fill("acme");
+    await page.getByRole("textbox", { name: /^Project\b/ }).fill("checkout");
     await page.getByLabel("Auth token").fill("must-not-leak");
     await page.getByRole("button", { name: "保存更改" }).click();
     await expect(page.getByText("所有更改已保存")).toBeVisible();
+    await page.getByRole("button", { name: "测试已保存配置" }).click();
+    const connectionStatus = page.locator(".integration-connection-test-result");
+    await expect(connectionStatus).toHaveAttribute("data-state", "success");
+    await expect(connectionStatus).toContainText("连接成功");
+    await expect(connectionStatus).toContainText("acme");
+    await expect(connectionStatus).toContainText("checkout");
+    await expect(page.locator("body")).not.toContainText("must-not-leak");
     const response = await page.evaluate(async () => JSON.stringify(await (
       window as unknown as Window & { ohMyBug: { listProjects(): Promise<unknown> } }
     ).ohMyBug.listProjects()));
     expect(response).not.toContain("must-not-leak");
     expect(response).toContain('"token":true');
+
+    const focusOrder = [
+      page.getByRole("checkbox", { name: "启用" }),
+      page.getByRole("textbox", { name: /^Organization\b/ }),
+      page.getByRole("textbox", { name: /^Project\b/ }),
+      page.getByRole("button", { name: "替换 Auth token" }),
+      page.getByRole("button", { name: "测试已保存配置" }),
+      page.locator("details").filter({ hasText: "过滤规则" }).locator("summary"),
+      page.getByRole("button", { name: "取消" }),
+      page.getByRole("button", { name: "保存更改" }),
+    ];
+    await focusOrder[0]!.focus();
+    for (const next of focusOrder.slice(1)) {
+      await page.keyboard.press("Tab");
+      await expect(next).toBeFocused();
+    }
+
+    const outputDir = resolve(".artifacts", "visual-diff", "sentry-settings");
+    await mkdir(outputDir, { recursive: true });
+    const settings = page.locator(".project-settings-tabs");
+    await settings.screenshot({ path: resolve(outputDir, "dark-1536x1024.png") });
+
+    await page.emulateMedia({ colorScheme: "light" });
+    const contrastRatios = await connectionStatus.locator("h4, dt, dd, footer").evaluateAll((nodes) => {
+      const parse = (value: string) => {
+        const channels = value.match(/[\d.]+/g)?.map(Number) ?? [];
+        return [channels[0] ?? 0, channels[1] ?? 0, channels[2] ?? 0, channels[3] ?? 1];
+      };
+      const blend = (foreground: number[], background: number[]) => {
+        const alpha = foreground[3] ?? 1;
+        return foreground.slice(0, 3).map((channel, index) =>
+          channel * alpha + (background[index] ?? 0) * (1 - alpha)
+        );
+      };
+      const luminance = (color: number[]) => {
+        const values = color.slice(0, 3).map((channel) => {
+          const value = channel / 255;
+          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * values[0]! + 0.7152 * values[1]! + 0.0722 * values[2]!;
+      };
+      const panel = nodes[0]!.closest(".integration-connection-test-result")!;
+      const background = blend(
+        parse(getComputedStyle(panel).backgroundColor),
+        parse(getComputedStyle(document.body).backgroundColor),
+      );
+      return nodes.map((node) => {
+        const foreground = parse(getComputedStyle(node).color);
+        const lighter = Math.max(luminance(foreground), luminance(background));
+        const darker = Math.min(luminance(foreground), luminance(background));
+        return (lighter + 0.05) / (darker + 0.05);
+      });
+    });
+    expect(Math.min(...contrastRatios)).toBeGreaterThanOrEqual(4.5);
+    await settings.screenshot({ path: resolve(outputDir, "light-1536x1024.png") });
+
+    await page.setViewportSize({ width: 720, height: 1024 });
+    const narrowMetrics = await settings.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(narrowMetrics.scrollWidth).toBeLessThanOrEqual(narrowMetrics.clientWidth);
+    await settings.screenshot({ path: resolve(outputDir, "narrow-720x1024.png") });
+
+    await page.setViewportSize({ width: 768, height: 512 });
+    await expect(page.locator(".project-settings-nav")).toHaveCSS("border-bottom-width", "1px");
+    await page.locator(".project-settings-content").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const zoomMetrics = await page.locator(".project-settings-content").evaluate((content) => {
+      const result = content.querySelector(".integration-connection-test-result")!.getBoundingClientRect();
+      const filters = content.querySelector(".integration-section-collapsed")!.getBoundingClientRect();
+      const footer = document.querySelector(".project-settings-actions")!.getBoundingClientRect();
+      return { resultBottom: result.bottom, filtersBottom: filters.bottom, footerTop: footer.top };
+    });
+    expect(zoomMetrics.resultBottom).toBeLessThanOrEqual(zoomMetrics.footerTop);
+    expect(zoomMetrics.filtersBottom).toBeLessThanOrEqual(zoomMetrics.footerTop);
+    await page.screenshot({ path: resolve(outputDir, "zoom-200-percent.png") });
   } finally {
     await fixture.cleanup();
   }
@@ -126,6 +233,7 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     await page.getByRole("checkbox", { name: "启用" }).click();
     await page.getByLabel("Client ID").fill("ding-client-id");
     await page.getByLabel("Client Secret").fill("ding-client-secret");
+    await page.getByRole("switch", { name: "群聊过滤" }).click();
     await page.getByRole("button", { name: "添加群聊" }).click();
     await page.getByRole("textbox", { name: "群聊 ID 1", exact: true }).fill("cid-acceptance-group");
 
@@ -139,8 +247,7 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     await page.getByRole("textbox", { name: "群聊 ID 1", exact: true })
       .fill("dingtalk1234567890abcdef1234567890abcdef");
     await expect(page.getByText("有未保存的更改")).toBeVisible();
-    await expect(page.getByText("接收范围")).toBeVisible();
-    await expect(page.getByText("指定群聊", { exact: true })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "群聊过滤" })).toBeChecked();
     await page.locator(".integration-heading h2").click();
 
     const visualContract = await page.locator(".project-settings-tabs").evaluate((root) => {
@@ -166,6 +273,49 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     const outputDir = resolve(".artifacts", "visual-diff", "dingtalk-settings");
     await mkdir(outputDir, { recursive: true });
     await page.locator(".project-settings-tabs").screenshot({ path: resolve(outputDir, "actual.png") });
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("keeps the reviewed narrow project settings aligned and bottom-anchored", async ({ page }) => {
+  const fixture = await registerProject(page, String(Date.now()));
+  try {
+    await page.setViewportSize({ width: 693, height: 755 });
+    await page.getByRole("tab", { name: "DingTalk" }).click();
+    await expect(page.getByRole("switch", { name: "群聊过滤" })).not.toBeChecked();
+    await expect(page.getByRole("button", { name: "添加群聊" })).not.toBeVisible();
+    await page.getByRole("switch", { name: "群聊过滤" }).click();
+    await expect(page.getByRole("button", { name: "添加群聊" })).toBeVisible();
+    await expect.poll(() => page.getByRole("switch", { name: "群聊过滤" }).evaluate((filter) => {
+      const thumb = filter.querySelector<HTMLElement>('[data-slot="switch-thumb"]')!.getBoundingClientRect();
+      return Math.round(thumb.left - filter.getBoundingClientRect().left);
+    })).toBeGreaterThan(10);
+
+    const metrics = await page.getByTestId("project-settings-form").evaluate((form) => {
+      const fieldset = form.querySelector<HTMLElement>('[data-config-key="conversationIds"]')!;
+      const footer = form.querySelector<HTMLElement>(".project-settings-actions")!;
+      const filter = form.querySelector<HTMLElement>('[role="switch"][aria-checked="true"]')!;
+      const thumb = filter.querySelector<HTMLElement>('[data-slot="switch-thumb"]')!.getBoundingClientRect();
+      const filterRect = filter.getBoundingClientRect();
+      const formRect = form.getBoundingClientRect();
+      const footerRect = footer.getBoundingClientRect();
+      return {
+        fieldsetColumns: getComputedStyle(fieldset).gridTemplateColumns,
+        filterDataChecked: filter.hasAttribute("data-checked"),
+        thumbDataChecked: filter.querySelector<HTMLElement>('[data-slot="switch-thumb"]')!.hasAttribute("data-checked"),
+        filterThumbOffset: Math.round(thumb.left - filterRect.left),
+        bottomGap: Math.round(formRect.bottom - footerRect.bottom),
+      };
+    });
+    expect(metrics.fieldsetColumns).toContain("160px");
+    expect(metrics.filterDataChecked || metrics.thumbDataChecked).toBe(true);
+    expect(metrics.filterThumbOffset).toBeGreaterThan(10);
+    expect(metrics.bottomGap).toBe(0);
+
+    const outputDir = resolve(".artifacts", "project-settings-browser-feedback");
+    await mkdir(outputDir, { recursive: true });
+    await page.screenshot({ path: resolve(outputDir, "filter-on.png"), fullPage: false });
   } finally {
     await fixture.cleanup();
   }

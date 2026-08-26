@@ -104,6 +104,25 @@ export function createBrowserDevelopmentTransport(
     rebuildSession: readOnly,
     grantIssueCapabilities: readOnly,
     integrationHealth: async () => (await snapshot()).integrationHealth,
+    testSavedIntegration: async (projectId, integrationId) => {
+      const value = await snapshot();
+      const project = value.projects.find((candidate) => candidate.id === projectId);
+      if (!project) throw new Error("PROJECT_NOT_FOUND");
+      const integration = project.integrations?.[integrationId];
+      if (!integration) throw new Error("PROJECT_INTEGRATION_NOT_FOUND");
+      const organization = String(integration.config.organization ?? "").trim();
+      const sentryProject = String(integration.config.project ?? "").trim();
+      if (!organization) throw new Error("SENTRY_CONFIG_ORGANIZATION_REQUIRED");
+      if (!sentryProject) throw new Error("SENTRY_CONFIG_PROJECT_REQUIRED");
+      return {
+        title: "连接成功",
+        details: [
+          { label: "Organization", value: organization },
+          { label: "Project", value: sentryProject },
+        ],
+        testedAt: project.updatedAt,
+      };
+    },
     openProjectDirectory: async () => ({ canceled: true }),
     subscribeIssueEvents: (id, cursor, listener) => {
       let active = true;

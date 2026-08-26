@@ -36,6 +36,7 @@ function fixturePlugin(): IntegrationPlugin {
     manifest: {
       id: "fixture",
       name: "Fixture",
+      sections: [{ id: "validation", label: "Validation", connectionTest: true }],
       configFields: [{ key: "workspace", type: "string", label: "Workspace", required: true }],
       secretFields: [
         { key: "token", label: "Token", required: true },
@@ -48,6 +49,44 @@ function fixturePlugin(): IntegrationPlugin {
       }
     },
     create: async () => ({ start: async () => undefined, health: () => ({ state: "connected" }) }),
+    async testConnection(context) {
+      return {
+        title: "Connected",
+        details: [
+          { label: "Workspace", value: String(context.configuration.config.workspace) },
+          { label: "Token", value: context.secrets.token ? "configured" : "missing" },
+        ],
+        testedAt: context.now().toISOString(),
+      };
+    },
+    publicError: () => "FIXTURE_ERROR",
+  };
+}
+
+function connectionTestPlugin(
+  id: string,
+  result: IntegrationPlugin["testConnection"],
+): IntegrationPlugin {
+  return {
+    manifest: {
+      id,
+      name: id,
+      sections: [{ id: "validation", label: "Validation", connectionTest: true }],
+      configFields: [],
+      secretFields: [{ key: "token", label: "Token", required: true }],
+    },
+    validate: () => undefined,
+    create: async () => ({ start: async () => undefined, health: () => ({ state: "stopped" }) }),
+    testConnection: result,
+    publicError: () => "FIXTURE_ERROR",
+  };
+}
+
+function fixtureWithoutTest(): IntegrationPlugin {
+  return {
+    manifest: { id: "fixture-without-test", name: "No test", configFields: [], secretFields: [] },
+    validate: () => undefined,
+    create: async () => ({ start: async () => undefined, health: () => ({ state: "stopped" }) }),
     publicError: () => "FIXTURE_ERROR",
   };
 }
@@ -55,6 +94,7 @@ function fixturePlugin(): IntegrationPlugin {
 async function harness(
   secrets = new MemorySecretStore(),
   approveDelivery?: (id: string) => Promise<ApprovalResult>,
+  plugins: IntegrationPlugin[] = [fixturePlugin()],
 ) {
   const root = await mkdtemp(join(tmpdir(), "omb-runtime-service-"));
   cleanup.push(root);
@@ -77,7 +117,7 @@ async function harness(
     now: () => now,
     wake: () => undefined,
   });
-  const registry = new IntegrationRegistry([fixturePlugin()]);
+  const registry = new IntegrationRegistry(plugins);
   const integrations = {
     refreshProject: async () => undefined,
     health: () => ({}),
@@ -129,6 +169,90 @@ async function harness(
 }
 
 describe("RuntimeService", () => {
+  it("tests only persisted Integration config and Keychain secrets without mutation", async () => {
+    const secretExposure = connectionTestPlugin("secret-exposure", async (testContext) => ({
+      title: "Connected",
+      details: [{ label: "Leaked", value: testContext.secrets.token ?? "missing" }],
+      testedAt: testContext.now().toISOString(),
+    }));
+    const invalidResult = connectionTestPlugin("invalid-result", async (testContext) => ({
+      title: "Connected",
+      details: [],
+      testedAt: testContext.now().toISOString(),
+      token: testContext.secrets.token,
+    }));
+    const { root, service, store, secrets } = await harness(
+      new MemorySecretStore(),
+      undefined,
+      [fixturePlugin(), fixtureWithoutTest(), secretExposure, invalidResult],
+    );
+    const projectDirectory = join(root, "checkout");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(projectDirectory));
+    const saved = await service.saveProjectSettings({
+      mode: "create",
+      project: {
+        path: projectDirectory,
+        key: "CHK",
+        integrations: {
+          fixture: { enabled: false, config: { workspace: "saved-workspace" } },
+          "fixture-without-test": { enabled: false, config: {} },
+          "secret-exposure": { enabled: false, config: {} },
+          "invalid-result": { enabled: false, config: {} },
+        },
+      },
+      secretPatches: {
+        fixture: { token: "saved-token", secret: "saved-secret" },
+        "secret-exposure": { token: "saved-token" },
+        "invalid-result": { token: "saved-token" },
+      },
+    });
+    const before = store.getProject(saved.id);
+
+    await expect(service.testSavedIntegration({
+      projectId: saved.id,
+      integrationId: "fixture",
+    })).resolves.toEqual({
+      title: "Connected",
+      details: [
+        { label: "Workspace", value: "saved-workspace" },
+        { label: "Token", value: "configured" },
+      ],
+      testedAt: now,
+    });
+    expect(store.getProject(saved.id)).toEqual(before);
+    expect(await secrets.get(`integration-secret:${saved.id}:fixture:token`))
+      .toBe("saved-token");
+
+    await expect(service.testSavedIntegration({
+      projectId: "missing",
+      integrationId: "fixture",
+    })).rejects.toThrow("PROJECT_NOT_FOUND");
+    await expect(service.testSavedIntegration({
+      projectId: saved.id,
+      integrationId: "missing",
+    })).rejects.toThrow("PROJECT_INTEGRATION_NOT_FOUND");
+    await expect(service.testSavedIntegration({
+      projectId: saved.id,
+      integrationId: "fixture-without-test",
+    })).rejects.toThrow("INTEGRATION_CONNECTION_TEST_UNSUPPORTED");
+
+    const exposureError = await service.testSavedIntegration({
+      projectId: saved.id,
+      integrationId: "secret-exposure",
+    }).catch((error: unknown) => error);
+    expect(exposureError).toBeInstanceOf(Error);
+    expect((exposureError as Error).message).toBe("INTEGRATION_CONNECTION_TEST_SECRET_EXPOSURE");
+    expect((exposureError as Error).message).not.toContain("saved-token");
+
+    const invalidError = await service.testSavedIntegration({
+      projectId: saved.id,
+      integrationId: "invalid-result",
+    }).catch((error: unknown) => error);
+    expect(invalidError).toBeInstanceOf(Error);
+    expect((invalidError as Error).message).toBe("INTEGRATION_CONNECTION_TEST_RESULT_INVALID");
+    expect((invalidError as Error).message).not.toContain("saved-token");
+  });
+
   it("delegates capability grants with revision and request identity", async () => {
     const { service, store } = await harness();
     store.registerProject(project);

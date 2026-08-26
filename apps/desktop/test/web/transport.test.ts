@@ -49,6 +49,11 @@ describe("renderer product transports", () => {
         id: "issue-1",
         status: "REPAIRING",
       })),
+      testSavedIntegration: vi.fn(async () => ({
+        title: "连接成功",
+        details: [{ label: "Project", value: "checkout" }],
+        testedAt: "2026-08-26T02:00:00.000Z",
+      })),
       subscribeIssueEvents: vi.fn((_id: string, _cursor: number, listener: (event: unknown) => void) => {
         listener({ issueId: "issue-1", cursor: 2, events: [{ id: "event-2", sequence: 2 }] });
         return unsubscribe;
@@ -86,6 +91,9 @@ describe("renderer product transports", () => {
     await expect(transport.grantIssueCapabilities("issue-1", 7, "request-1"))
       .resolves.toMatchObject({ status: "REPAIRING" });
     expect(bridge.grantIssueCapabilities).toHaveBeenCalledWith("issue-1", 7, "request-1");
+    await expect(transport.testSavedIntegration("project-1", "sentry"))
+      .resolves.toMatchObject({ title: "连接成功" });
+    expect(bridge.testSavedIntegration).toHaveBeenCalledWith("project-1", "sentry");
     await expect(transport.submitReview("issue-1", {
       expectedRevision: 8,
       requestId: "review-1",

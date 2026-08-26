@@ -1,13 +1,15 @@
 import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 
-import type {
-  EvidenceStore,
-  IntegrationHealth,
-  Issue,
-  RuntimeProject,
-  RuntimeStore,
-  ReviewSubmission,
+import {
+  integrationConnectionTestResultSchema,
+  type EvidenceStore,
+  type IntegrationHealth,
+  type IntegrationConnectionTestResult,
+  type Issue,
+  type RuntimeProject,
+  type RuntimeStore,
+  type ReviewSubmission,
 } from "@oh-my-bug/core";
 import type {
   WorkspacePersistence,
@@ -374,6 +376,51 @@ export class RuntimeService implements RuntimeApi {
     return this.dependencies.integrations.health();
   }
 
+  async testSavedIntegration(input: {
+    projectId: string;
+    integrationId: string;
+  }): Promise<IntegrationConnectionTestResult> {
+    this.assertAccepting();
+    const project = this.requireProject(input.projectId);
+    const configuration = project.integrations?.[input.integrationId];
+    if (!configuration) throw new Error("PROJECT_INTEGRATION_NOT_FOUND");
+    const plugin = this.dependencies.integrationRegistry.require(input.integrationId);
+    if (!plugin.testConnection) throw new Error("INTEGRATION_CONNECTION_TEST_UNSUPPORTED");
+
+    const entries: Array<readonly [string, string]> = [];
+    for (const field of plugin.manifest.secretFields) {
+      const ref = configuration.secretRefs[field.key];
+      if (!ref) continue;
+      const value = await this.dependencies.secrets.get(ref);
+      if (value !== null) entries.push([field.key, value]);
+    }
+
+    try {
+      const candidate = await plugin.testConnection({
+        projectId: project.id,
+        configuration: structuredClone(configuration),
+        secrets: Object.freeze(Object.fromEntries(entries)),
+        now: () => new Date(this.dependencies.now()),
+      });
+      let result: IntegrationConnectionTestResult;
+      try {
+        result = integrationConnectionTestResultSchema.parse(candidate);
+      } catch {
+        throw new Error("INTEGRATION_CONNECTION_TEST_RESULT_INVALID");
+      }
+      const serialized = JSON.stringify(result);
+      if (entries.some(([, secret]) => secret.length > 0 && serialized.includes(secret))) {
+        throw new Error("INTEGRATION_CONNECTION_TEST_SECRET_EXPOSURE");
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("INTEGRATION_CONNECTION_TEST_")) {
+        throw error;
+      }
+      throw publicConnectionError(plugin.publicError(error));
+    }
+  }
+
   async listIssues(input: { id?: string }): Promise<Issue[]> {
     this.assertAccepting();
     return this.dependencies.runtime.listIssues(input.id);
@@ -656,6 +703,11 @@ function cloneWorkspaceConfiguration(
 
 function secretReference(projectId: string, pluginId: string, key: string): string {
   return `integration-secret:${projectId}:${pluginId}:${key}`;
+}
+
+function publicConnectionError(code: string): Error {
+  // Never attach the plugin cause: Integration errors may contain loaded secret bytes.
+  return new Error(code);
 }
 
 async function canonicalDirectory(input: string): Promise<string> {

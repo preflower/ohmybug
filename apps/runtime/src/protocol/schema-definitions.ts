@@ -1,4 +1,5 @@
 import {
+  integrationConnectionTestResultSchema,
   integrationPluginManifestSchema,
   configFieldSchema,
   issueSchema,
@@ -166,6 +167,11 @@ export const integrationHealthSchema = z.object({
   lastError: z.string().optional(),
   nextRetryAt: z.string().optional(),
 }).strict();
+export const testSavedIntegrationInputSchema = z.object({
+  projectId: identifierSchema,
+  integrationId: identifierSchema,
+}).strict();
+export { integrationConnectionTestResultSchema };
 export const runtimeHealthSchema = z.object({
   state: z.enum(["starting", "ready", "stopping", "stopped"]),
 }).strict();

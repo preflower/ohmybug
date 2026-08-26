@@ -21,13 +21,7 @@ export class SentryClient {
   constructor(private readonly fetcher: Fetcher = fetch) {}
 
   async listIssues(config: SentryConfig, token: string, cursor?: string): Promise<SentryPage> {
-    const url = new URL(
-      `/api/0/organizations/${encodeURIComponent(config.organization)}/issues/`,
-      "https://sentry.io"
-    );
-    url.searchParams.set("project", config.project);
-    if (config.environment) url.searchParams.set("environment", config.environment);
-    if (config.query) url.searchParams.set("query", config.query);
+    const url = issueListUrl(config);
     if (cursor) url.searchParams.set("cursor", cursor);
 
     const response = await this.fetcher(url, {
@@ -36,6 +30,16 @@ export class SentryClient {
     if (!response.ok) throw new Error(`SENTRY_HTTP_${response.status}`);
     const issues = await records(response);
     return { issues, nextCursor: nextCursor(response.headers.get("link")) };
+  }
+
+  async testConnection(config: SentryConfig, token: string): Promise<void> {
+    const url = issueListUrl(config);
+    url.searchParams.set("limit", "1");
+    const response = await this.fetcher(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error(`SENTRY_HTTP_${response.status}`);
+    await records(response);
   }
 
   async listIssueEvents(
@@ -58,6 +62,17 @@ export class SentryClient {
     const events = await records(response);
     return { events, nextCursor: nextCursor(response.headers.get("link")) };
   }
+}
+
+function issueListUrl(config: SentryConfig): URL {
+  const url = new URL(
+    `/api/0/organizations/${encodeURIComponent(config.organization)}/issues/`,
+    "https://sentry.io",
+  );
+  url.searchParams.set("project", config.project);
+  if (config.environment) url.searchParams.set("environment", config.environment);
+  if (config.query) url.searchParams.set("query", config.query);
+  return url;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

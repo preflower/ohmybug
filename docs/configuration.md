@@ -18,7 +18,7 @@
 
 Desktop 从 Runtime 读取插件清单，再根据有限字段类型 `string | string[] | number | boolean` 和可选展示分组动态生成表单。新增内置 Integration 只需要新增包、Runtime 依赖和 registry 条目，不需要修改 Desktop 表单。
 
-- Sentry：`organization`、`project` 必填，`environment`、`query` 可选；Secret key 为 `token`。
+- Sentry：启用时 `organization`、`project` 和 Auth token 必填；`environment`、`query` 可选。Query 留空时 Sentry 默认使用 `is:unresolved`。Auth token 不是 DSN，最小权限建议为 `event:read`。保存项目后可使用“测试已保存配置”验证访问权限；未保存的字段和 Token 草稿不会参与测试。
 - DingTalk：必填项只有 Client ID、Client Secret 和至少一个群聊 ID。`messageRule`（消息关键词）与 `threadKeyField`（消息归并字段）位于默认折叠的高级设置中，均为可选。机器人称呼不需要配置；只有 DingTalk 标记为已 @ 机器人的消息才会进入系统。
 - Manual：无需 Project 配置，通过 Runtime protocol 提交 `content` 和可选 `summary/context`。
 

@@ -28,7 +28,6 @@ test("reconciles interrupted Agent work automatically after Runtime restart", as
     second = await launchPackagedDesktop({ dataRoot: data.path });
     await second.page.getByText("Restart recovery returns 500", { exact: true }).first().click();
     await expect(second.page.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
-    await second.page.getByRole("button", { name: "Agent 活动" }).click();
     await expect(second.page.getByText("Runtime 已重启，正在恢复分析")).toBeVisible();
   } finally {
     await first?.app.close().catch(() => undefined);
@@ -104,7 +103,6 @@ test("discloses a missing native session and rebuilds only after user confirmati
       level: 2,
       name: "Missing Agent session keeps Issue context",
     })).toBeVisible();
-    await desktop.page.getByRole("button", { name: "Agent 活动" }).click();
     await expect(desktop.page.getByText("Codex 会话已重建")).toBeVisible();
   } finally {
     await desktop?.app.close().catch(() => undefined);

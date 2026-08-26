@@ -20,6 +20,7 @@ import type { DirectorySelection, ProductTransport } from "./api/transport.js";
 import type { BranchInfoDto, IntegrationHealth, IntegrationPluginManifest, IssueDto, IssueWorkspaceInfoDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
+import { Toaster } from "./components/ui/sonner.js";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip.js";
 import { NewIssueDialog } from "./dialogs/new-issue-dialog.js";
 import { IssueDetail } from "./issues/issue-detail.js";
@@ -85,6 +86,7 @@ export function App() {
     <ThemeProvider>
       <TooltipProvider>
         <AppContent />
+        <Toaster />
       </TooltipProvider>
     </ThemeProvider>
   );
@@ -197,21 +199,16 @@ function AppContent() {
     const currentRevision = issueRevisions.current.get(issue.id);
     if (currentRevision !== undefined && issue.revision < currentRevision) return;
     issueRevisions.current.set(issue.id, issue.revision);
-    if (issue.id === selectedId && !visibleIssueStatuses.has(issue.status)) {
-      setSelectedId((current) => current === issue.id ? undefined : current);
-      setSelectedIssue((current) => current?.id === issue.id ? undefined : current);
-    } else {
-      setSelectedIssue((current) =>
-        issue.id === selectedId
-          && (current?.id !== issue.id || issue.revision >= current.revision)
-          ? issue
-          : current
-      );
-    }
+    setSelectedIssue((current) =>
+      issue.id === selectedId
+        && (current?.id !== issue.id || issue.revision >= current.revision)
+        ? issue
+        : current
+    );
     setIssues((current) => newestIssuesFirst(current.map((entry) =>
       entry.id === issue.id && issue.revision >= entry.revision ? issue : entry
     )));
-  }, [selectedId, visibleIssueStatuses]);
+  }, [selectedId]);
 
   const refreshIssue = useCallback(async () => {
     if (!selectedId) return;
@@ -399,6 +396,8 @@ function AppContent() {
             onManualProject={() => { setProjectInspection(undefined); setProjectEditor("new"); }}
             onRefreshWorkspaceBranches={(path, providerId) => api.projectBranches(path, providerId, true)}
             onSave={saveProject}
+            onTestSavedIntegration={(projectId, integrationId) =>
+              api.testSavedIntegration(projectId, integrationId)}
           />
         ) : <SettingsWorkspace health={health} />}
       </main>
@@ -568,7 +567,7 @@ function Welcome() {
   return <div className="welcome"><div className="welcome-kicker"><Sparkles aria-hidden="true" size={14} />本地 AI 改动实现</div><h2>从 Integration Input 到可验证交付</h2><p>Agent 负责分析与实现；Runtime 负责编排、会话、证据与两次明确确认。</p><div className="flow-preview">{flow.map(([title, description, gate], index) => <div className="flow-step" key={title}><span className="flow-step-number">0{index + 1}</span><div><strong>{title}</strong><span>{description}</span></div><span className="gate-chip">{gate}</span></div>)}</div></div>;
 }
 
-function ProjectsWorkspace({ projects, manifests, workspaceProviders, health, editor, inspection, onEdit, onOpenProjectDirectory, onSelectProjectDirectory, onManualProject, onRefreshWorkspaceBranches, onSave }: {
+function ProjectsWorkspace({ projects, manifests, workspaceProviders, health, editor, inspection, onEdit, onOpenProjectDirectory, onSelectProjectDirectory, onManualProject, onRefreshWorkspaceBranches, onSave, onTestSavedIntegration }: {
   projects: ProjectDto[];
   manifests: IntegrationPluginManifest[];
   workspaceProviders: WorkspaceProviderManifest[];
@@ -587,6 +586,7 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, health, ed
     project: ProjectFormValue,
     secretPatches: Record<string, Record<string, string | null>>,
   ) => Promise<ProjectDto | void>;
+  onTestSavedIntegration: ProductTransport["testSavedIntegration"];
 }) {
   const previousEditor = useRef(editor);
   const [formSession, setFormSession] = useState(0);
@@ -603,7 +603,7 @@ function ProjectsWorkspace({ projects, manifests, workspaceProviders, health, ed
 
   if (editor) {
     const initial = editor === "new" ? undefined : editor;
-    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={`${formSession}:${inspection?.path ?? "pending"}`} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} health={health} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onRefreshWorkspaceBranches={onRefreshWorkspaceBranches} onSave={onSave} /></div></section>;
+    return <section className="page-scroll project-editor-page" data-testid="project-config-screen"><div className="settings-column"><ProjectForm key={`${formSession}:${inspection?.path ?? "pending"}`} initial={initial} inspection={inspection} manifests={manifests} workspaceProviders={workspaceProviders} health={health} onCancel={() => onEdit(undefined)} onSelectDirectory={onSelectProjectDirectory} onRefreshWorkspaceBranches={onRefreshWorkspaceBranches} onSave={onSave} onTestSavedIntegration={onTestSavedIntegration} /></div></section>;
   }
   return <section className="projects-page">{projects.length ? <ProjectList manifests={manifests} projects={projects} onEdit={onEdit} /> : <div className="page-empty"><FolderKanban size={24} /><h2>打开第一个本机项目</h2><p>选择一个本机目录，然后确认 Agent 与可插拔集成配置。</p><div className="onboarding-actions"><Button type="button" onClick={() => void onOpenProjectDirectory()}>打开项目目录</Button><Button type="button" variant="secondary" onClick={onManualProject}>高级：手动输入路径</Button></div></div>}</section>;
 }

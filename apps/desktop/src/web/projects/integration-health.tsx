@@ -7,16 +7,15 @@ export function IntegrationHealthStatus({
   enabled: boolean;
   health?: IntegrationHealth;
 }) {
-  const state = enabled ? health?.state ?? "stopped" : "disabled";
+  if (!enabled) return null;
+  const state = health?.state ?? "stopped";
   const label = state === "connected"
     ? "已连接"
     : state === "connecting"
       ? "正在连接"
       : state === "backoff"
         ? `连接失败，正在重试${health?.lastError ? `：${health.lastError}` : ""}`
-        : state === "disabled"
-          ? "已停用"
-          : "已停用";
+        : "已停用";
 
   return <div className={`integration-health integration-health-${state}`} role="status">
     <i aria-hidden="true" className="integration-health-dot" />
