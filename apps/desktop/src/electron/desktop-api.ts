@@ -87,6 +87,8 @@ export interface DesktopApi {
     expectedRevision: number,
     requestId: string,
   ): Promise<RuntimeOperationOutput<"grantIssueCapabilities">>;
+  pauseIssue(id: string): Promise<RuntimeOperationOutput<"pauseIssue">>;
+  resumeIssue(id: string): Promise<RuntimeOperationOutput<"resumeIssue">>;
   cancelIssue(id: string): Promise<RuntimeOperationOutput<"cancelIssue">>;
   readEvidence(
     issueId: string,
@@ -151,6 +153,8 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
       "grantIssueCapabilities",
       { id, expectedRevision, requestId },
     ),
+    pauseIssue: (id) => request("pauseIssue", { id }),
+    resumeIssue: (id) => request("resumeIssue", { id }),
     cancelIssue: (id) => request("cancelIssue", { id }),
     readEvidence: (issueId, evidenceId) => request("readEvidence", { issueId, evidenceId }),
     openProjectDirectory: () => ipc.invoke(OPEN_PROJECT_DIRECTORY_CHANNEL),

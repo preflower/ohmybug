@@ -215,6 +215,40 @@ describe("finalization recovery worker", () => {
       capabilities: ["HOST_EXECUTION"],
     });
   });
+
+  it("does not persist a stale finalization recovery result after a user pause", async () => {
+    let releaseRecovery!: (result: FinalizationRecoveryResult) => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const deferred = new Promise<FinalizationRecoveryResult>((resolve) => {
+      releaseRecovery = resolve;
+    });
+    const setup = await recoveryHarness(
+      { kind: "UNCHANGED", changedPaths: [] },
+      async () => {
+        markStarted();
+        return deferred;
+      },
+    );
+
+    const draining = setup.worker.drainOne();
+    await started;
+    await setup.fixture.commands.pauseIssue(setup.issueId);
+    const paused = setup.fixture.store.getIssue(setup.issueId)!;
+    releaseRecovery(recoveredResult);
+    await draining;
+
+    expect(setup.fixture.store.getIssue(setup.issueId)).toEqual(paused);
+    expect(paused).toMatchObject({
+      status: "PAUSED",
+      pauseContext: {
+        operation: "RECOVER_FINALIZATION",
+        resumeStatus: "FINALIZATION_RECOVERY",
+      },
+    });
+    expect(setup.fixture.store.readEvents(setup.issueId).map((event) => event.type))
+      .not.toContain("DELIVERY_FINALIZATION_RECOVERY_COMPLETED");
+  });
 });
 
 async function recoveryHarness(

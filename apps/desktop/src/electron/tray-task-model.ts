@@ -34,11 +34,13 @@ const attentionStatuses = new Set<DesktopIssueStatus>([
   "EVIDENCE_FAILED",
   "REPAIR_FAILED",
   "FINALIZATION_FAILED",
+  "PAUSED",
 ]);
 
 const reviewStatuses = new Set<DesktopIssueStatus>([
   "REVIEW_REQUIRED",
   "PERMISSION_REQUIRED",
+  "PAUSED",
 ]);
 
 const failureStatuses = new Set<DesktopIssueStatus>([

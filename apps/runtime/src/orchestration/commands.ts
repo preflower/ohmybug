@@ -1,5 +1,6 @@
 import {
   acceptIntegrationInput as acceptCoreInput,
+  completeIssuePause,
   grantCapabilityRequest,
   replaceAgentSession,
   retryEvidence,
@@ -26,6 +27,7 @@ import {
   applyReviewSideEffects,
   reviewResponseDuplicate,
 } from "./reviews.js";
+import type { IssueOperationCoordinator } from "./issue-operation-coordinator.js";
 
 export interface ManualSubmission {
   commandId: string;
@@ -51,12 +53,26 @@ export interface RuntimeCommandDependencies {
   id: () => string;
   now: () => string;
   wake: () => void;
+  operations?: Pick<IssueOperationCoordinator, "interrupt" | "isActive">;
+  pauseCancellationTimeoutMs?: number;
 }
+
+const DEFAULT_PAUSE_CANCELLATION_TIMEOUT_MS = 5_000;
 
 export class RuntimeCommands {
   private accepting = true;
+  private readonly pausing = new Set<string>();
+  private operations?: Pick<IssueOperationCoordinator, "interrupt" | "isActive">;
 
-  constructor(private readonly dependencies: RuntimeCommandDependencies) {}
+  constructor(private readonly dependencies: RuntimeCommandDependencies) {
+    this.operations = dependencies.operations;
+  }
+
+  coordinateIssueOperations(
+    operations: Pick<IssueOperationCoordinator, "interrupt" | "isActive">,
+  ): void {
+    this.operations = operations;
+  }
 
   stopAccepting(): void { this.accepting = false; }
 
@@ -112,6 +128,9 @@ export class RuntimeCommands {
     const before = this.getIssue(issueId);
     let duplicateOf: string | undefined;
     if (before.review?.kind === "assessment" && submission.choiceId === "duplicate") {
+      if (!before.assessment?.suspectedDuplicateOf?.trim()) {
+        throw new Error("DUPLICATE_NOT_SUGGESTED");
+      }
       duplicateOf = this.resolveDuplicateTarget(before, reviewResponseDuplicate(submission));
     }
     const now = this.dependencies.now();
@@ -291,6 +310,114 @@ export class RuntimeCommands {
     return result.issue;
   }
 
+  async pauseIssue(issueId: string): Promise<Issue> {
+    this.assertAccepting();
+    const paused = this.dependencies.store.transaction((transaction) => {
+      const current = this.getIssue(issueId);
+      const next = transitionIssue(current, "PAUSE", this.dependencies.now());
+      transaction.updateIssue(next, current.revision, null);
+      transaction.appendEvent(this.event(issueId, "ISSUE_PAUSED", {
+        operation: next.pauseContext!.operation,
+        resumeStatus: next.pauseContext!.resumeStatus,
+        revision: next.revision,
+      }));
+      return next;
+    });
+    this.pausing.add(issueId);
+    try {
+      const interruption = settle(Promise.resolve().then(() =>
+        this.operations?.interrupt(issueId)));
+      const session = paused.agentSession;
+      const cancellation = settle(withDeadline(session
+        ? Promise.resolve().then(() =>
+            this.dependencies.agents.forSession(session).cancel(session, "USER_PAUSED"))
+        : Promise.resolve(),
+      this.dependencies.pauseCancellationTimeoutMs
+        ?? DEFAULT_PAUSE_CANCELLATION_TIMEOUT_MS));
+      const cancellationResult = await cancellation;
+      if (!cancellationResult.ok) this.recordPauseFailure(issueId, cancellationResult.error);
+
+      if (!cancellationResult.ok) {
+        if (this.operations?.isActive(issueId)) {
+          void interruption.then((result) => {
+            if (result.ok) this.markPauseReady(issueId, paused.pauseContext!.pausedAt);
+            else this.recordPauseFailure(issueId, result.error);
+          }).catch(() => undefined);
+          return this.getIssue(issueId);
+        }
+        if (isPauseTimeout(cancellationResult.error)) return this.getIssue(issueId);
+        const idleResult = await interruption;
+        if (!idleResult.ok) {
+          this.recordPauseFailure(issueId, idleResult.error);
+          return this.getIssue(issueId);
+        }
+        return this.markPauseReady(issueId, paused.pauseContext!.pausedAt);
+      }
+
+      const interruptionResult = await interruption;
+      if (!interruptionResult.ok) {
+        this.recordPauseFailure(issueId, interruptionResult.error);
+        return this.getIssue(issueId);
+      }
+      return this.markPauseReady(issueId, paused.pauseContext!.pausedAt);
+    } finally {
+      this.pausing.delete(issueId);
+    }
+  }
+
+  resumeIssue(issueId: string): Issue {
+    this.assertAccepting();
+    if (this.pausing.has(issueId)) throw new Error("ISSUE_PAUSE_IN_PROGRESS");
+    const resumed = this.dependencies.store.transaction((transaction) => {
+      const current = this.getIssue(issueId);
+      const operation = current.pauseContext?.operation;
+      if (!operation) throw new Error("PAUSE_CONTEXT_REQUIRED");
+      const next = transitionIssue(current, "RESUME", this.dependencies.now());
+      transaction.updateIssue(next, current.revision, operation);
+      transaction.appendEvent(this.event(issueId, "ISSUE_RESUMED", {
+        operation,
+        resumeStatus: next.status,
+        revision: next.revision,
+      }));
+      return next;
+    });
+    this.dependencies.wake();
+    return resumed;
+  }
+
+  private markPauseReady(issueId: string, pausedAt: string): Issue {
+    return this.dependencies.store.transaction((transaction) => {
+      const current = this.getIssue(issueId);
+      if (
+        current.status !== "PAUSED"
+        || current.pauseContext?.pausedAt !== pausedAt
+        || current.pauseContext.ready
+      ) return current;
+      const ready = completeIssuePause(current, this.dependencies.now());
+      transaction.updateIssue(ready, current.revision, null);
+      transaction.appendEvent({
+        id: this.dependencies.id(),
+        issueId,
+        type: "ISSUE_PAUSE_READY",
+        actor: "SYSTEM",
+        data: { revision: ready.revision },
+        occurredAt: this.dependencies.now(),
+      });
+      return ready;
+    });
+  }
+
+  private recordPauseFailure(issueId: string, error: unknown): void {
+    this.dependencies.store.transaction((transaction) => transaction.appendEvent({
+      id: this.dependencies.id(),
+      issueId,
+      type: "AGENT_PAUSE_FAILED",
+      actor: "SYSTEM",
+      data: { message: publicModuleError(error) },
+      occurredAt: this.dependencies.now(),
+    }));
+  }
+
   async cancelIssue(issueId: string): Promise<Issue> {
     this.assertAccepting();
     const canceled = this.change(issueId, "ISSUE_CANCELED", null, (current, now) =>
@@ -430,4 +557,35 @@ export class RuntimeCommands {
 
 function publicModuleError(error: unknown): string {
   return error instanceof Error ? error.message : "MODULE_HOOK_FAILED";
+}
+
+function settle<T>(promise: Promise<T>): Promise<
+  | { ok: true; value: T }
+  | { ok: false; error: unknown }
+> {
+  return promise.then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+}
+
+async function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("AGENT_PAUSE_TIMEOUT")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function isPauseTimeout(error: unknown): boolean {
+  return error instanceof Error && error.message === "AGENT_PAUSE_TIMEOUT";
 }

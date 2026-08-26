@@ -7,6 +7,18 @@ import type {
 } from "../runtime/types.js";
 import type { IntegrationInput } from "./input.js";
 
+const configValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.array(z.string()),
+]);
+
+const fieldVisibilitySchema = z.object({
+  key: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+  equals: configValueSchema,
+}).strict();
+
 const fieldBase = {
   key: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
   label: z.string().trim().min(1),
@@ -14,6 +26,7 @@ const fieldBase = {
   required: z.boolean(),
   section: z.string().regex(/^[a-z][a-zA-Z0-9]*$/).optional(),
   placeholder: z.string().trim().min(1).optional(),
+  visibleWhen: fieldVisibilitySchema.optional(),
 };
 
 export const configFieldSchema = z.discriminatedUnion("type", [
@@ -58,6 +71,16 @@ export const integrationPluginManifestSchema = z.object({
   secretFields: z.array(secretFieldSchema),
 }).strict().superRefine((manifest, context) => {
   const sections = new Set<string>();
+  const configFieldKeys = new Set(manifest.configFields.map((field) => field.key));
+  for (const [index, field] of manifest.configFields.entries()) {
+    if (field.visibleWhen && !configFieldKeys.has(field.visibleWhen.key)) {
+      context.addIssue({
+        code: "custom",
+        path: ["configFields", index, "visibleWhen", "key"],
+        message: "INTEGRATION_VISIBILITY_FIELD_NOT_FOUND",
+      });
+    }
+  }
   for (const [index, section] of (manifest.sections ?? []).entries()) {
     if (sections.has(section.id)) {
       context.addIssue({

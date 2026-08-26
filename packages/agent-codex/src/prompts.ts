@@ -79,6 +79,12 @@ function continuationPrompt(
     | RepairInput["continuation"]
     | EvidenceCaptureInput["continuation"],
 ): string[] {
+  if (continuation?.reason === "USER_RESUMED") {
+    return [
+      "The previous Agent turn was paused by the user and is now being continued.",
+      "Inspect the preserved workspace and prior verification. Do not redo completed work; finish only the remaining requirements for this stage.",
+    ];
+  }
   if (continuation?.reason === "CAPABILITY_GRANTED") {
     return [
       `Capability request ${continuation.requestId} was granted: ${JSON.stringify(continuation.capabilities)}.`,

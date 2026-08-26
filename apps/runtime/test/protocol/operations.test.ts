@@ -33,6 +33,8 @@ describe("Runtime protocol operation registry", () => {
       "retryIssue",
       "rebuildAgentSession",
       "grantIssueCapabilities",
+      "pauseIssue",
+      "resumeIssue",
       "cancelIssue",
       "issueEvents",
       "readEvidence",
@@ -75,6 +77,12 @@ describe("Runtime protocol operation registry", () => {
       id: "issue-1",
       requestId: "request-1",
     })).toThrow();
+  });
+
+  it("validates explicit Issue pause and resume inputs", () => {
+    const input = { id: "issue-1" };
+    expect(runtimeOperations.pauseIssue.input.parse(input)).toEqual(input);
+    expect(runtimeOperations.resumeIssue.input.parse(input)).toEqual(input);
   });
 
   it("validates grouped project branch discovery", () => {

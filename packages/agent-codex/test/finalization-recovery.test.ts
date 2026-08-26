@@ -133,6 +133,16 @@ describe("Codex finalization recovery", () => {
     expect(prompt).toContain("HEAD and tracked delivery files unchanged");
   });
 
+  it("continues a preserved finalization recovery after a user pause", () => {
+    const prompt = finalizationRecoveryPrompt({
+      ...recoveryInput(),
+      continuation: { reason: "USER_RESUMED" },
+    });
+
+    expect(prompt).toContain("paused by the user");
+    expect(prompt).toContain("preserved recovery workspace");
+  });
+
   it("gives prepared merge conflicts structured context without Git mutation authority", () => {
     const prompt = finalizationRecoveryPrompt({
       ...recoveryInput(),

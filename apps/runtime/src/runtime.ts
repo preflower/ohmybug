@@ -4,6 +4,7 @@ import type { AgentRegistry } from "./agents/registry.js";
 import type { IntegrationManager } from "./integrations/manager.js";
 import type { ModuleHost } from "./modules/module-host.js";
 import { RuntimeCommands } from "./orchestration/commands.js";
+import { IssueOperationCoordinator } from "./orchestration/issue-operation-coordinator.js";
 import {
   reconcileInterruptedIssues,
   reconcileWorkspaceIssues,
@@ -26,7 +27,9 @@ export class OhMyBugRuntime {
   private state: "starting" | "ready" | "stopping" | "stopped" = "starting";
 
   constructor(private readonly dependencies: OhMyBugRuntimeDependencies) {
-    this.worker = new RuntimeWorker(dependencies);
+    const operations = dependencies.operations ?? new IssueOperationCoordinator();
+    dependencies.commands.coordinateIssueOperations(operations);
+    this.worker = new RuntimeWorker({ ...dependencies, operations });
   }
 
   async start(): Promise<void> {
@@ -125,6 +128,12 @@ export class OhMyBugRuntime {
   }
   grantIssueCapabilities(...args: Parameters<RuntimeCommands["grantIssueCapabilities"]>) {
     return this.dependencies.commands.grantIssueCapabilities(...args);
+  }
+  pauseIssue(...args: Parameters<RuntimeCommands["pauseIssue"]>) {
+    return this.dependencies.commands.pauseIssue(...args);
+  }
+  resumeIssue(...args: Parameters<RuntimeCommands["resumeIssue"]>) {
+    return this.dependencies.commands.resumeIssue(...args);
   }
   cancelIssue(...args: Parameters<RuntimeCommands["cancelIssue"]>) {
     return this.dependencies.commands.cancelIssue(...args);

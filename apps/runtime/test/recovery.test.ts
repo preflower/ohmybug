@@ -13,6 +13,29 @@ import {
 } from "./helpers/runtime.js";
 
 describe("Runtime recovery", () => {
+  it("keeps a user-paused Issue idle across interrupted-issue recovery", () => {
+    const { store } = createHarness();
+    const paused = reviewedIssue({
+      status: "PAUSED",
+      revision: 8,
+      repair: { iteration: 2 },
+      pauseContext: {
+        operation: "REPAIR",
+        resumeStatus: "REPAIRING",
+        pausedAt: now,
+        ready: true,
+      },
+    });
+    store.transaction((transaction) => transaction.insertIssue(paused, "REPAIR"));
+    store.transaction((transaction) => transaction.updateIssue(paused, paused.revision, null));
+
+    reconcileInterruptedIssues({ store, id: eventIds("paused"), now: () => now });
+
+    expect(store.getIssue(paused.id)).toEqual(paused);
+    expect(store.listPendingOperations()).toEqual([]);
+    expect(store.readEvents(paused.id)).toEqual([]);
+  });
+
   it("keeps a capability request paused across interrupted-issue recovery", () => {
     const { store } = createHarness();
     const paused = reviewedIssue({

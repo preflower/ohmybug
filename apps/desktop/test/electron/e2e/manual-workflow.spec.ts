@@ -40,6 +40,35 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await desktop.page.keyboard.press("Escape");
     await expect(newIssue).toBeFocused();
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
+
+    const processingChoices = rootApproval.getByRole("radiogroup", { name: "选择处理方式" });
+    await processingChoices.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    const choicesTopBeforeSwitch = await processingChoices.evaluate(
+      (element) => element.getBoundingClientRect().top,
+    );
+    await rootApproval.getByRole("radio", { name: "要求重新分析" }).click();
+    const choicesTopAfterFieldRemoval = await processingChoices.evaluate(
+      (element) => element.getBoundingClientRect().top,
+    );
+    expect(Math.abs(choicesTopAfterFieldRemoval - choicesTopBeforeSwitch)).toBeLessThan(1);
+
+    await rootApproval.getByRole("radio", { name: "确认为重复 Issue" }).click();
+    const duplicateField = rootApproval.getByRole("textbox", { name: "重复 Issue" });
+    const duplicateFieldFollowsChoices = await duplicateField.evaluate(
+      (field, choices) => Boolean(
+        choices
+        && (choices.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING),
+      ),
+      await processingChoices.elementHandle(),
+    );
+    expect(duplicateFieldFollowsChoices).toBe(true);
+
+    const artifactDir = process.env.OH_MY_BUG_EVIDENCE_DIR
+      ? resolve(process.env.OH_MY_BUG_EVIDENCE_DIR)
+      : resolve("test-results", "electron-acceptance");
+    await mkdir(artifactDir, { recursive: true });
+    await desktop.page.screenshot({ path: resolve(artifactDir, "review-choice-scroll-stability.png") });
+    await rootApproval.getByRole("radio", { name: "开始实现" }).click();
     await rootApproval.getByRole("button", { name: "开始实现" }).click();
 
     const acceptanceApproval = desktop.page.getByRole("region", { name: "验收 Delivery" });
@@ -58,10 +87,6 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await expect(activityPanel).toContainText("验证证据已通过");
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
 
-    const artifactDir = process.env.OH_MY_BUG_EVIDENCE_DIR
-      ? resolve(process.env.OH_MY_BUG_EVIDENCE_DIR)
-      : resolve("test-results", "electron-acceptance");
-    await mkdir(artifactDir, { recursive: true });
     await desktop.page.getByRole("button", { name: "预览 Checkout acceptance" }).click();
     const preview = desktop.page.getByRole("dialog", { name: "Checkout acceptance" });
     await expect(preview).toBeVisible();

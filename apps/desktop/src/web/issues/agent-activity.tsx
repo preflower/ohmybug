@@ -52,6 +52,10 @@ const eventLabels: Record<string, string> = {
   AGENT_FILES_CHANGE_FAILED: "文件更新失败",
   AGENT_TEMP_CLEANUP_FAILED: "临时目录清理失败",
   AGENT_ERROR: "Codex 运行失败",
+  ISSUE_PAUSED: "Issue 已暂停",
+  ISSUE_PAUSE_READY: "暂停已安全完成",
+  ISSUE_RESUMED: "Issue 已继续执行",
+  AGENT_PAUSE_FAILED: "Agent 暂停请求未正常结束",
   ISSUE_CANCELED: "任务已取消",
   RUNTIME_INTERRUPTED: "Runtime 已重启，正在恢复任务",
 };
@@ -217,12 +221,15 @@ function groupEvents(events: AgentEventDto[], active: boolean): ActivityGroup[] 
 
     if (activeTurn) {
       appendLine(activeTurn, event, activePending);
-      const closesTurn = event.type === "AGENT_ERROR" || event.type === "ISSUE_CANCELED" || event.type === "RUNTIME_INTERRUPTED";
+      const closesTurn = event.type === "AGENT_ERROR"
+        || event.type === "ISSUE_CANCELED"
+        || event.type === "ISSUE_PAUSED"
+        || event.type === "RUNTIME_INTERRUPTED";
       if (event.data.level === "error" || event.type === "AGENT_COMMAND_FAILED" || event.type === "AGENT_ERROR") {
         activeTurn.status = "error";
       } else if (event.type === "ISSUE_CANCELED") {
         activeTurn.status = "canceled";
-      } else if (event.type === "RUNTIME_INTERRUPTED") {
+      } else if (event.type === "RUNTIME_INTERRUPTED" || event.type === "ISSUE_PAUSED") {
         activeTurn.status = "interrupted";
       }
       if (closesTurn) {
@@ -254,6 +261,7 @@ function groupEvents(events: AgentEventDto[], active: boolean): ActivityGroup[] 
     if (event.data.level === "error" || event.type === "AGENT_COMMAND_FAILED") looseGroup.status = "error";
     const closesLooseGroup = event.type === "AGENT_ERROR"
       || event.type === "ISSUE_CANCELED"
+      || event.type === "ISSUE_PAUSED"
       || event.type === "RUNTIME_INTERRUPTED"
       || event.type === "AGENT_TURN_COMPLETED";
     if (closesLooseGroup) {
@@ -264,7 +272,7 @@ function groupEvents(events: AgentEventDto[], active: boolean): ActivityGroup[] 
         looseGroup.status = "error";
         finishPendingCommands(loosePending, "failed");
       } else {
-        if (event.type === "RUNTIME_INTERRUPTED") looseGroup.status = "interrupted";
+        if (event.type === "RUNTIME_INTERRUPTED" || event.type === "ISSUE_PAUSED") looseGroup.status = "interrupted";
         else if (looseGroup.status !== "error") looseGroup.status = "completed";
         finishPendingCommands(loosePending, "interrupted");
       }

@@ -11,6 +11,7 @@ import {
 const review = [
   "REVIEW_REQUIRED",
   "PERMISSION_REQUIRED",
+  "PAUSED",
 ] as const;
 const failure = [
   "ASSESSMENT_FAILED",

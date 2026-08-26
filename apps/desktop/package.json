@@ -20,6 +20,7 @@
     "mediainfo.js": "0.3.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {

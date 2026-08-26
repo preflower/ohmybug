@@ -36,6 +36,8 @@ const unavailableTransport: ProductTransport = {
   requestReassessment: unavailable,
   rejectDelivery: unavailable,
   approveDelivery: unavailable,
+  pause: unavailable,
+  resume: unavailable,
   cancel: unavailable,
   retry: unavailable,
   rebuildSession: unavailable,

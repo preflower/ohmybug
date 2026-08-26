@@ -6,7 +6,8 @@ import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group.js";
 import { Textarea } from "../components/ui/textarea.js";
-import { ReviewRenderer } from "./review-renderers.js";
+import { CancelIssueButton } from "./cancel-issue-button.js";
+import { ReviewRenderer, ReviewResponseFields } from "./review-renderers.js";
 
 interface ReviewPanelProps {
   issue: IssueDto;
@@ -32,23 +33,31 @@ function ReviewPanelContent({
   onSubmit,
   onCancel,
 }: ReviewPanelProps & { review: NonNullable<IssueDto["review"]> }) {
-  const [choiceId, setChoiceId] = useState(review?.choices[0]?.id ?? "");
+  const duplicateCandidate = issue.assessment?.suspectedDuplicateOf?.trim();
+  const choices = useMemo(
+    () => review.choices.filter((choice) => choice.id !== "duplicate" || Boolean(duplicateCandidate)),
+    [duplicateCandidate, review.choices],
+  );
+  const [choiceId, setChoiceId] = useState(choices[0]?.id ?? "");
   const [feedback, setFeedback] = useState("");
-  const [data, setData] = useState<ReviewSubmissionInput["data"]>();
+  const [choiceData, setChoiceData] = useState<Record<string, ReviewSubmissionInput["data"]>>({});
   const [busy, setBusy] = useState(false);
-  const [canceling, setCanceling] = useState(false);
   const [error, setError] = useState("");
 
   const selected = useMemo(
-    () => review?.choices.find((choice) => choice.id === choiceId),
-    [choiceId, review],
+    () => choices.find((choice) => choice.id === choiceId),
+    [choiceId, choices],
   );
-  const response = data ?? (review.kind === "assessment" && choiceId === "implement"
-    ? { title: issue.assessment?.suggestedTitle ?? issue.title }
+  const response = choiceData[choiceId] ?? (review.kind === "assessment"
+    ? choiceId === "implement"
+      ? { title: issue.assessment?.suggestedTitle ?? issue.title }
+      : choiceId === "duplicate" && duplicateCandidate
+        ? { duplicateOf: duplicateCandidate }
+        : undefined
     : undefined);
   const missingRequiredData = review.kind === "assessment" && choiceId === "duplicate"
-    && (!data || typeof data !== "object" || Array.isArray(data)
-      || typeof data.duplicateOf !== "string" || !data.duplicateOf.trim());
+    && (!response || typeof response !== "object" || Array.isArray(response)
+      || typeof response.duplicateOf !== "string" || !response.duplicateOf.trim());
 
   const submit = async () => {
     if (!selected || (selected.feedbackRequired && !feedback.trim())) return;
@@ -63,7 +72,7 @@ function ReviewPanelContent({
         ...(response === undefined ? {} : { data: response }),
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "审核提交失败");
+      setError(reviewErrorMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -80,18 +89,18 @@ function ReviewPanelContent({
         </div>
       </div>
 
-      <ReviewRenderer issue={issue} choiceId={choiceId} data={data} onDataChange={setData} />
+      <ReviewRenderer issue={issue} />
 
       <div className="review-choice-list">
         <span className="review-choice-legend">选择处理方式</span>
         <RadioGroup
           aria-label="选择处理方式"
-          disabled={busy || canceling}
+          disabled={busy}
           name={`review-${review.id}`}
           value={choiceId}
           onValueChange={setChoiceId}
         >
-        {review.choices.map((choice) => (
+        {choices.map((choice) => (
           <label className="review-choice" key={choice.id}>
             <RadioGroupItem
               value={choice.id}
@@ -107,38 +116,49 @@ function ReviewPanelContent({
         </RadioGroup>
       </div>
 
+      <ReviewResponseFields
+        issue={issue}
+        choiceId={choiceId}
+        data={response}
+        onDataChange={(next) => setChoiceData((current) => ({
+          ...current,
+          [choiceId]: next,
+        }))}
+      />
+
       <label className="feedback-field">
         {selected?.feedbackRequired ? "补充说明（必填）" : "补充说明（可选）"}
         <Textarea
-          disabled={busy || canceling}
+          disabled={busy}
           value={feedback}
           onChange={(event) => setFeedback(event.target.value)}
         />
       </label>
       {error ? <Alert className="form-error" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
       <div className="approval-actions">
-        {onCancel ? (
-          <Button
-            disabled={busy || canceling}
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setCanceling(true);
-              setError("");
-              void onCancel()
-                .catch((caught) => setError(caught instanceof Error ? caught.message : "取消失败"))
-                .finally(() => setCanceling(false));
-            }}
-          >{canceling ? "取消中…" : "取消 Issue"}</Button>
-        ) : null}
+        {onCancel ? <CancelIssueButton disabled={busy} onCancel={onCancel} /> : null}
         <Button
-          disabled={busy || canceling || !selected || missingRequiredData || Boolean(selected.feedbackRequired && !feedback.trim())}
+          disabled={busy || !selected || missingRequiredData || Boolean(selected.feedbackRequired && !feedback.trim())}
           type="button"
           onClick={() => void submit()}
         >{busy ? "提交中…" : selected?.label ?? "提交审核"}</Button>
       </div>
     </section>
   );
+}
+
+function reviewErrorMessage(caught: unknown): string {
+  const message = caught instanceof Error ? caught.message : "审核提交失败";
+  if (message.includes("DUPLICATE_NOT_SUGGESTED")) {
+    return "Agent 尚未提供疑似重复目标，请选择其他处理方式或要求重新分析。";
+  }
+  if (message.includes("DUPLICATE_TARGET_NOT_FOUND")) {
+    return "找不到该重复 Issue，请检查编号后重试。";
+  }
+  if (message.includes("DUPLICATE_TARGET_SELF")) {
+    return "不能把 Issue 标记为自身的重复项。";
+  }
+  return message;
 }
 
 function reviewTitle(kind: string): string {

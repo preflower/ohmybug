@@ -281,6 +281,50 @@ describe("Runtime assessment worker", () => {
     expect(store.getAgentSession("session-race")).toBeUndefined();
   });
 
+  it("does not persist a stale Assessment after a user pause", async () => {
+    const agent = new FakeAgent();
+    let releaseAssessment!: (result: typeof agent.nextAssessment) => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const deferred = new Promise<typeof agent.nextAssessment>((resolve) => {
+      releaseAssessment = resolve;
+    });
+    agent.assess = async (session, input) => {
+      agent.assessSessions.push(session.sessionId);
+      agent.assessInputs.push(input);
+      markStarted();
+      return deferred;
+    };
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
+    const created = await commands.submitManual(project.id, {
+      commandId: "pause-assessment",
+      content: "Pause this analysis",
+    });
+    if (created.kind !== "CREATED") throw new Error("CREATED_REQUIRED");
+    const worker = new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("pause-assessment"),
+      now: () => "2026-08-20T15:01:00.000Z",
+    });
+    await worker.drainOne();
+    const draining = worker.drainOne();
+    await started;
+    await commands.pauseIssue(created.issue.id);
+    releaseAssessment(agent.nextAssessment);
+    await draining;
+
+    expect(store.getIssue(created.issue.id)).toMatchObject({
+      status: "PAUSED",
+      pauseContext: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+    });
+    expect(store.getIssue(created.issue.id)).not.toHaveProperty("assessment");
+    expect(store.readEvents(created.issue.id).map((event) => event.type))
+      .not.toContain("ASSESSMENT_READY");
+  });
+
   it("requeues Runtime-interrupted Assessment without recording a failure", async () => {
     const agent = new FakeAgent();
     agent.assessError = new AgentTurnInterruptedError("RUNTIME_STOPPING");
