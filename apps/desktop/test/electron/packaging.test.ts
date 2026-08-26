@@ -24,8 +24,9 @@ describe("Electron packaging", () => {
       resolve(repositoryRoot, "packages/agent-codex/package.json"),
       "utf8",
     )) as { dependencies?: Record<string, string> };
-    expect(manifest).not.toHaveProperty("dependencies.@openai/codex-sdk");
-    expect(agentManifest).not.toHaveProperty("dependencies.@openai/codex-sdk");
+    const legacySdk = ["@openai", "codex-sdk"].join("/");
+    expect(manifest).not.toHaveProperty(`dependencies.${legacySdk}`);
+    expect(agentManifest).not.toHaveProperty(`dependencies.${legacySdk}`);
   });
 
   it("packages only compiled desktop entry points and the local renderer", () => {

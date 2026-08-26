@@ -44,6 +44,14 @@ pnpm dev:web
 pnpm test:e2e
 ```
 
+## 在 Terminal 中继续 Agent 会话
+
+macOS 桌面版会由 Runtime 独占启动一个 Codex App Server。选中 Issue 后，可在右侧详情栏的“Agent 会话”旁点击“在 Terminal 中打开”，让 Terminal.app 连接到同一个 Codex thread。该入口只在 Codex Agent 已创建 provider session、Issue 工作区就绪且 App Server 可用时启用；浏览器样式预览不提供虚拟 socket，也不能启动 Terminal。
+
+如果 Runtime-owned turn 仍在运行，从 Terminal 输入的内容会 steer 同一个 active turn，Oh My Bug 仍只接收与自身 thread ID、turn ID 同时匹配的结果。之后由 Terminal 单独新建的 turn 不会替代 Runtime 正在等待的 turn，也不能越过 Assessment 或 Delivery 人工门禁。
+
+打开或关闭 Terminal 只影响这个额外客户端，不会暂停、取消 Issue，也不会修改 Issue 状态或 revision。退出 Oh My Bug 时，Runtime 会停止它拥有的 App Server，并清理私有 Unix socket 与会话临时目录。这个入口当前仅支持 macOS Terminal.app。
+
 生成并验证 macOS 应用：
 
 ```bash
