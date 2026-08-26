@@ -88,6 +88,11 @@ export function createBrowserDevelopmentTransport(
       if (!issue) throw new Error("ISSUE_NOT_FOUND");
       return issue;
     },
+    agentTerminalAvailability: async () => ({
+      available: false,
+      reason: "APP_SERVER_UNAVAILABLE",
+    }),
+    openAgentTerminal: readOnly,
     issueWorkspace: async (id) => (await snapshot()).issueWorkspaces?.[id] ?? null,
     submitManual: readOnly,
     submitReview: readOnly,

@@ -4,6 +4,7 @@ import { basename } from "node:path";
 import {
   integrationConnectionTestResultSchema,
   type EvidenceStore,
+  type AgentSessionStore,
   type IntegrationHealth,
   type IntegrationConnectionTestResult,
   type Issue,
@@ -24,6 +25,8 @@ import type { WorkspaceRegistry } from "./modules/workspace-registry.js";
 import type { ManualSubmission } from "./orchestration/commands.js";
 import type {
   ApproveAssessmentInput,
+  AgentTerminalAvailability,
+  AgentTerminalLaunchTarget,
   AssessmentReference,
   ApprovalResult,
   CreateProjectInput,
@@ -87,8 +90,22 @@ export interface RuntimeServiceDependencies {
   integrationRegistry: IntegrationRegistry;
   workspacePersistence: WorkspacePersistence;
   workspaceRegistry: WorkspaceRegistry;
+  agentSessions?: Pick<AgentSessionStore, "get">;
+  agentTerminal?: AgentTerminalProvider;
   id(): string;
   now(): string;
+}
+
+interface AgentTerminalContext {
+  agent?: string;
+  providerThreadId?: string;
+  workingDirectory?: string;
+  workspaceReady: boolean;
+}
+
+interface AgentTerminalProvider {
+  availability(context: AgentTerminalContext): AgentTerminalAvailability;
+  resolveLaunchTarget(context: AgentTerminalContext): AgentTerminalLaunchTarget;
 }
 
 export class RuntimeService implements RuntimeApi {
@@ -431,6 +448,36 @@ export class RuntimeService implements RuntimeApi {
     return this.dependencies.runtime.getIssue(input.id);
   }
 
+  async agentTerminalAvailability(
+    input: { id: string },
+  ): Promise<AgentTerminalAvailability> {
+    this.assertAccepting();
+    const context = await this.agentTerminalContext(input.id);
+    if (this.dependencies.agentTerminal) {
+      return this.dependencies.agentTerminal.availability(context);
+    }
+    if (context.agent !== "codex") {
+      return { available: false, reason: "UNSUPPORTED_AGENT" };
+    }
+    if (!context.providerThreadId) {
+      return { available: false, reason: "SESSION_NOT_READY" };
+    }
+    if (!context.workspaceReady || !context.workingDirectory) {
+      return { available: false, reason: "WORKSPACE_NOT_READY" };
+    }
+    return { available: false, reason: "APP_SERVER_UNAVAILABLE" };
+  }
+
+  async resolveAgentTerminalLaunchTarget(
+    input: { id: string },
+  ): Promise<AgentTerminalLaunchTarget> {
+    this.assertAccepting();
+    if (!this.dependencies.agentTerminal) throw new Error("AGENT_TERMINAL_UNAVAILABLE");
+    return this.dependencies.agentTerminal.resolveLaunchTarget(
+      await this.agentTerminalContext(input.id),
+    );
+  }
+
   async getIssueWorkspace(input: { id: string }): Promise<IssueWorkspaceInfo | null> {
     this.assertAccepting();
     const issue = this.dependencies.runtime.getIssue(input.id);
@@ -439,6 +486,27 @@ export class RuntimeService implements RuntimeApi {
       persistence: this.dependencies.workspacePersistence,
       registry: this.dependencies.workspaceRegistry,
     });
+  }
+
+  private async agentTerminalContext(issueId: string): Promise<AgentTerminalContext> {
+    const issue = this.dependencies.runtime.getIssue(issueId);
+    const project = this.requireProject(issue.projectId);
+    const logical = issue.agentSession;
+    const record = logical && this.dependencies.agentSessions
+      ? await this.dependencies.agentSessions.get(logical.sessionId)
+      : undefined;
+    const validRecord = record?.lifecycle === "ACTIVE" &&
+      record.agent === logical?.agent &&
+      record.issueId === issue.id &&
+      record.projectId === issue.projectId;
+    return {
+      agent: project.agent?.plugin ?? logical?.agent,
+      ...(validRecord && record.providerSessionId
+        ? { providerThreadId: record.providerSessionId }
+        : {}),
+      ...(issue.projectPath ? { workingDirectory: issue.projectPath } : {}),
+      workspaceReady: Boolean(issue.projectPath),
+    };
   }
 
   async submitManual(input: {

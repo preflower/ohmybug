@@ -14,14 +14,18 @@ import {
   SqliteRuntimeStore,
   SqliteWorkspaceStore,
 } from "@oh-my-bug/storage";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry } from "../../src/agents/registry.js";
 import { IntegrationRegistry } from "../../src/integrations/registry.js";
 import { WorkspaceRegistry } from "../../src/modules/workspace-registry.js";
 import { RuntimeCommands } from "../../src/orchestration/commands.js";
 import { RuntimeService } from "../../src/service.js";
-import type { ApprovalResult } from "../../src/protocol/types.js";
+import type {
+  AgentTerminalAvailability,
+  AgentTerminalLaunchTarget,
+  ApprovalResult,
+} from "../../src/protocol/types.js";
 import { FakeAgent } from "../helpers/fakes.js";
 import { eventIds, now, project, reviewedIssue } from "../helpers/runtime.js";
 
@@ -95,6 +99,10 @@ async function harness(
   secrets = new MemorySecretStore(),
   approveDelivery?: (id: string) => Promise<ApprovalResult>,
   plugins: IntegrationPlugin[] = [fixturePlugin()],
+  agentTerminal?: {
+    availability(context: unknown): AgentTerminalAvailability;
+    resolveLaunchTarget(context: unknown): AgentTerminalLaunchTarget;
+  },
 ) {
   const root = await mkdtemp(join(tmpdir(), "omb-runtime-service-"));
   cleanup.push(root);
@@ -151,6 +159,7 @@ async function harness(
     root,
     store,
     secrets,
+    sessions,
     workspacePersistence,
     workspaceRegistry,
     service: new RuntimeService({
@@ -162,6 +171,8 @@ async function harness(
       integrationRegistry: registry,
       workspacePersistence,
       workspaceRegistry,
+      agentSessions: sessions,
+      agentTerminal,
       id: eventIds("project"),
       now: () => now,
     }),
@@ -169,6 +180,64 @@ async function harness(
 }
 
 describe("RuntimeService", () => {
+  it("resolves terminal state only from persisted Issue, project, workspace, and Agent session", async () => {
+    const target: AgentTerminalLaunchTarget = {
+      agent: "codex",
+      providerThreadId: "0198e8dc-6de0-7c10-81ce-6c6544bc1bf7",
+      executablePath: "/bin/codex",
+      remoteUrl: "unix:///private/run/codex-app-server.sock",
+      workingDirectory: "/trusted/worktree",
+    };
+    const agentTerminal = {
+      availability: vi.fn(() => ({ available: true } as const)),
+      resolveLaunchTarget: vi.fn(() => target),
+    };
+    const { root, service, sessions, store } = await harness(
+      new MemorySecretStore(),
+      undefined,
+      [fixturePlugin()],
+      agentTerminal,
+    );
+    store.registerProject({
+      ...project,
+      path: root,
+      agent: { plugin: "codex" },
+    });
+    const issue = reviewedIssue({
+      projectPath: "/trusted/worktree",
+      agentSession: { agent: "codex", sessionId: "logical-1" },
+    });
+    store.transaction((transaction) => transaction.insertIssue(issue, "ASSESS"));
+    await sessions.save({
+      agent: "codex",
+      logicalSessionId: "logical-1",
+      issueId: issue.id,
+      projectId: issue.projectId,
+      providerSessionId: target.providerThreadId,
+      lifecycle: "ACTIVE",
+      updatedAt: now,
+    });
+
+    await expect(service.agentTerminalAvailability({ id: issue.id })).resolves
+      .toEqual({ available: true });
+    await expect(service.resolveAgentTerminalLaunchTarget({ id: issue.id })).resolves
+      .toEqual(target);
+    expect(agentTerminal.availability).toHaveBeenCalledWith({
+      agent: "codex",
+      providerThreadId: target.providerThreadId,
+      workingDirectory: "/trusted/worktree",
+      workspaceReady: true,
+    });
+    expect(agentTerminal.resolveLaunchTarget).toHaveBeenCalledWith({
+      agent: "codex",
+      providerThreadId: target.providerThreadId,
+      workingDirectory: "/trusted/worktree",
+      workspaceReady: true,
+    });
+    expect(JSON.stringify(await service.agentTerminalAvailability({ id: issue.id })))
+      .not.toContain("providerThreadId");
+  });
+
   it("tests only persisted Integration config and Keychain secrets without mutation", async () => {
     const secretExposure = connectionTestPlugin("secret-exposure", async (testContext) => ({
       title: "Connected",

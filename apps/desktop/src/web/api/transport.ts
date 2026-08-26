@@ -1,4 +1,5 @@
 import type {
+  AgentTerminalAvailability,
   CreateProjectInput,
   IntegrationPluginManifest,
   RuntimeOperationInput,
@@ -49,6 +50,8 @@ export interface ProductTransport {
   ): Promise<ProjectDto>;
   issues(): Promise<IssueDto[]>;
   issue(id: string): Promise<IssueDto>;
+  agentTerminalAvailability(issueId: string): Promise<AgentTerminalAvailability>;
+  openAgentTerminal(issueId: string): Promise<{ opened: true }>;
   issueWorkspace(id: string): Promise<IssueWorkspaceInfoDto>;
   submitManual(input: {
     projectId: string;

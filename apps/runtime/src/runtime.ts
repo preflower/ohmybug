@@ -17,6 +17,7 @@ export interface OhMyBugRuntimeDependencies extends RuntimeWorkerDependencies {
   store: RuntimeStore;
   integrations?: Pick<IntegrationManager, "start" | "stop">;
   modules?: Pick<ModuleHost, "start" | "stop">;
+  agentRuntime?: { start(): Promise<void>; stop(): Promise<void> };
 }
 
 export class OhMyBugRuntime {
@@ -37,6 +38,7 @@ export class OhMyBugRuntime {
     if (this.started) return;
     this.started = true;
     await this.dependencies.modules?.start();
+    await this.dependencies.agentRuntime?.start();
     await reconcileWorkspaceIssues(this.dependencies);
     reconcileInterruptedIssues(this.dependencies);
     await this.dependencies.integrations?.start(this.dependencies.store.listProjects());
@@ -68,6 +70,7 @@ export class OhMyBugRuntime {
           : []),
       );
       await this.worker.drain();
+      await this.dependencies.agentRuntime?.stop();
       await this.dependencies.modules?.stop();
       this.dependencies.store.close();
       this.state = "stopped";

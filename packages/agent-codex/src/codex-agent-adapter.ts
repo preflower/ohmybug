@@ -34,7 +34,7 @@ import type {
   CodexThread,
   CodexThreadOptions,
 } from "./codex-client.js";
-import { isNativeThreadUnavailableError, SdkCodexClient } from "./codex-client.js";
+import { isNativeThreadUnavailableError } from "./codex-client.js";
 import {
   assessmentOutputSchema,
   parseAssessmentOutput,
@@ -63,7 +63,7 @@ export interface CodexActivity {
 
 export interface CodexAgentAdapterOptions {
   sessions: AgentSessionStore;
-  client?: CodexClient;
+  client: CodexClient;
   id?: () => string;
   now?: () => Date;
   onActivity?: (activity: CodexActivity) => void;
@@ -76,13 +76,15 @@ interface ActiveTurn {
   finish(): void;
 }
 
+type CodexStageThreadOptions = Omit<CodexThreadOptions, "sessionId">;
+
 export class CodexAgentAdapter implements AgentAdapter {
   private readonly client: CodexClient;
   private readonly now: () => Date;
   private readonly active = new Map<string, ActiveTurn>();
 
   constructor(private readonly options: CodexAgentAdapterOptions) {
-    this.client = options.client ?? new SdkCodexClient();
+    this.client = options.client;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -241,7 +243,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     session: AgentSessionRef,
     input: AssessInput | RepairInput | EvidenceCaptureInput | FinalizationRecoveryInput,
     stage: CodexActivity["stage"],
-    threadOptions: CodexThreadOptions,
+    threadOptions: CodexStageThreadOptions,
     prompt: string,
     outputSchema: unknown,
   ): Promise<unknown> {
@@ -291,7 +293,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     session: AgentSessionRef,
     input: AssessInput | RepairInput | EvidenceCaptureInput | FinalizationRecoveryInput,
     stage: CodexActivity["stage"],
-    threadOptions: CodexThreadOptions,
+    threadOptions: CodexStageThreadOptions,
     prompt: string,
     outputSchema: unknown,
   ): Promise<unknown> {
@@ -309,12 +311,26 @@ export class CodexAgentAdapter implements AgentAdapter {
       assertActive(abort.signal);
       this.assertState(state, session, input);
       thread = state.providerSessionId
-        ? this.client.resumeThread(state.providerSessionId, threadOptions)
-        : this.client.startThread(threadOptions);
+        ? this.client.resumeThread(state.providerSessionId, {
+            ...threadOptions,
+            sessionId: session.sessionId,
+          })
+        : this.client.startThread({ ...threadOptions, sessionId: session.sessionId });
       const events = await thread.runStreamed(prompt, { outputSchema, signal: abort.signal });
       let lastMessage: string | undefined;
+      let ownedTurn: { threadId: string; turnId: string } | undefined;
       for await (const event of events) {
         assertActive(abort.signal);
+        if (event.type === "turn.started") {
+          if (state.providerSessionId && event.threadId !== state.providerSessionId) {
+            throw new Error("AGENT_SESSION_MISMATCH");
+          }
+          ownedTurn = { threadId: event.threadId, turnId: event.turnId };
+        } else if ("turnId" in event && (
+          !ownedTurn || event.threadId !== ownedTurn.threadId || event.turnId !== ownedTurn.turnId
+        )) {
+          continue;
+        }
         this.options.onActivity?.({ sessionId: session.sessionId, stage, event });
         await this.reportActivity(session.sessionId, stage, event);
         if (event.type === "turn.failed" || event.type === "error") failureReported = true;
@@ -326,6 +342,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       }
       assertActive(abort.signal);
       if (!state.providerSessionId) throw new Error("AGENT_SESSION_MISMATCH");
+      if (!ownedTurn) throw new Error("AGENT_SESSION_MISMATCH");
       if (!lastMessage) throw new Error("CODEX_OUTPUT_MISSING");
       try {
         return JSON.parse(lastMessage) as unknown;
@@ -457,7 +474,7 @@ function looksPermissionBlocked(error: unknown): boolean {
 }
 
 export function codexAgent(
-  options: Omit<CodexAgentAdapterOptions, "sessions"> = {},
+  options: Omit<CodexAgentAdapterOptions, "sessions">,
 ): AgentPlugin {
   return {
     id: "codex",

@@ -242,7 +242,16 @@ describe("Codex repair", () => {
     const sessions = new MemorySessions();
     await bindSession(sessions, "logical-correction", "thread-correction");
     const client = new FixtureClient([
-      { events: [{ type: "turn.failed", message: "permission denied by sandbox" }] },
+      { events: [
+        { type: "thread.started", threadId: "thread-correction" },
+        { type: "turn.started", threadId: "thread-correction", turnId: "turn-1" },
+        {
+          type: "turn.failed",
+          threadId: "thread-correction",
+          turnId: "turn-1",
+          message: "permission denied by sandbox",
+        },
+      ] },
       JSON.stringify({
         outcome: "CAPABILITY_REQUIRED",
         capabilities: ["HOST_EXECUTION"],

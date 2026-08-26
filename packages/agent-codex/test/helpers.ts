@@ -78,8 +78,14 @@ export class FixtureClient implements CodexClient {
         }
         return stream([
           { type: "thread.started", threadId: id },
-          { type: "item.completed", item: { type: "agent_message", text: output } },
-          { type: "turn.completed" },
+          { type: "turn.started", threadId: id, turnId: "turn-fixture" },
+          {
+            type: "item.completed",
+            threadId: id,
+            turnId: "turn-fixture",
+            item: { type: "agent_message", text: output },
+          },
+          { type: "turn.completed", threadId: id, turnId: "turn-fixture" },
         ]);
       },
     };

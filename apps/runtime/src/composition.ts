@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { codexAgent } from "@oh-my-bug/agent-codex";
+import {
+  CodexAppServerRuntimeHost,
+  type AgentTerminalAvailability,
+  type AgentTerminalLaunchTarget,
+  type TerminalSessionContext,
+} from "@oh-my-bug/agent-codex";
 import type {
   AgentAdapter,
   AgentPlugin,
@@ -107,6 +112,11 @@ export interface RuntimeComposition {
   secrets: SecretStore;
   workspacePersistence: SqliteWorkspaceStore;
   workspaceRegistry: WorkspaceRegistry;
+  agentSessions: SqliteAgentSessionStore;
+  agentTerminal?: {
+    availability(context: TerminalSessionContext): AgentTerminalAvailability;
+    resolveLaunchTarget(context: TerminalSessionContext): AgentTerminalLaunchTarget;
+  };
 }
 
 export interface RuntimeApplication {
@@ -118,10 +128,15 @@ export function createRuntime(options: CreateRuntimeOptions): OhMyBugRuntime {
   const plugin: AgentPlugin | undefined = options.agent
     ? { id: "fake", create: () => options.agent! }
     : undefined;
+  const agentHost = plugin ? undefined : new CodexAppServerRuntimeHost({
+    dataRoot: dirname(options.databasePath),
+  });
   return createRuntimeComposition({
     databasePath: options.databasePath,
     evidenceRoot: options.evidenceRoot ?? join(dirname(options.databasePath), "evidence"),
-    agentPlugins: plugin ? [plugin] : [codexAgent()],
+    agentPlugins: [plugin ?? agentHost!.plugin],
+    agentRuntime: agentHost,
+    agentTerminal: agentHost,
     integrationRegistry: new IntegrationRegistry([]),
     secrets: new MemorySecretStore(),
     id: options.id,
@@ -247,6 +262,9 @@ export function createDesktopRuntimeComposition(
     sentryPlugin(overrides.sentry),
     dingTalkPlugin(overrides.dingTalk),
   ]);
+  const agentHost = !overrides.agentPlugin && !useDemoAgent
+    ? new CodexAppServerRuntimeHost({ dataRoot: options.dataRoot })
+    : undefined;
   return createRuntimeComposition({
     databasePath: join(options.dataRoot, "runtime.sqlite"),
     evidenceRoot: join(options.dataRoot, "evidence"),
@@ -257,7 +275,9 @@ export function createDesktopRuntimeComposition(
           unavailableOnce: demoUnavailableOnce,
           now: () => new Date(overrides.now?.() ?? Date.now()),
         })
-      : codexAgent())],
+      : agentHost!.plugin)],
+    agentRuntime: agentHost,
+    agentTerminal: agentHost,
     integrationRegistry,
     secrets: overrides.secrets ?? new LocalSecretStore(),
     id: overrides.id,
@@ -289,6 +309,8 @@ export function createRuntimeApplication(
       integrationRegistry: composition.integrationRegistry,
       workspacePersistence: composition.workspacePersistence,
       workspaceRegistry: composition.workspaceRegistry,
+      agentSessions: composition.agentSessions,
+      agentTerminal: composition.agentTerminal,
       id: options.overrides?.id ?? randomUUID,
       now: options.overrides?.now ?? (() => new Date().toISOString()),
     }),
@@ -299,6 +321,8 @@ interface InternalCompositionOptions {
   databasePath: string;
   evidenceRoot: string;
   agentPlugins: AgentPlugin[];
+  agentRuntime?: { start(): Promise<void>; stop(): Promise<void> };
+  agentTerminal?: RuntimeComposition["agentTerminal"];
   integrationRegistry: IntegrationRegistry;
   secrets: SecretStore;
   id?: () => string;
@@ -394,6 +418,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     id,
     now,
     operations,
+    agentRuntime: options.agentRuntime,
   });
   wake = () => runtime.kick();
   return {
@@ -406,6 +431,8 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
     secrets: options.secrets,
     workspacePersistence,
     workspaceRegistry,
+    agentSessions: sessions,
+    agentTerminal: options.agentTerminal,
   };
 }
 

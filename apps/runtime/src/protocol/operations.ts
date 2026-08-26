@@ -7,6 +7,8 @@ import type {
   RuntimeOperationOutput,
 } from "./types.js";
 import {
+  agentTerminalAvailabilitySchema,
+  agentTerminalLaunchTargetSchema,
   approveAssessmentInputSchema,
   assessmentReferenceSchema,
   createProjectInputSchema,
@@ -151,6 +153,18 @@ export const runtimeOperations = {
     output: outputSchemas.issue,
     renderer: true,
     invoke: (service, input) => service.getIssue(input),
+  }),
+  agentTerminalAvailability: operation({
+    input: projectIdSchema,
+    output: agentTerminalAvailabilitySchema,
+    renderer: true,
+    invoke: (service, input) => service.agentTerminalAvailability(input),
+  }),
+  resolveAgentTerminalLaunchTarget: operation({
+    input: projectIdSchema,
+    output: agentTerminalLaunchTargetSchema,
+    renderer: false,
+    invoke: (service, input) => service.resolveAgentTerminalLaunchTarget(input),
   }),
   getIssueWorkspace: operation({
     input: projectIdSchema,

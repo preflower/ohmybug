@@ -1,3 +1,4 @@
+import type { AgentTerminalAvailability } from "@oh-my-bug/runtime/protocol";
 import {
   Activity,
   Bug,
@@ -8,9 +9,11 @@ import {
   PanelRightOpen,
   Plus,
   Settings,
-  Sparkles
+  Sparkles,
+  SquareTerminal,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { toast } from "sonner";
 
 import appIconUrl from "../../assets/icons/oh-my-bug.png";
 import type { TrayNavigationTarget } from "../electron/desktop-api.js";
@@ -510,6 +513,46 @@ function IssueMetadataRail({ active, events, issue, project, workspace, onClose 
   onClose: () => void;
 }) {
   const latestInput = issue.inputs.at(-1);
+  const agentSessionId = issue.agentSession?.sessionId;
+  const terminalSessionKey = `${issue.id}\0${agentSessionId ?? ""}`;
+  const [terminalAvailabilityResult, setTerminalAvailabilityResult] = useState<{
+    key: string;
+    availability: AgentTerminalAvailability;
+  }>();
+  const terminalAvailability = terminalAvailabilityResult?.key === terminalSessionKey
+    ? terminalAvailabilityResult.availability
+    : undefined;
+  const [openingTerminal, setOpeningTerminal] = useState(false);
+  const openingTerminalRef = useRef(false);
+  useEffect(() => {
+    let current = true;
+    void api.agentTerminalAvailability(issue.id).then((availability) => {
+      if (current) setTerminalAvailabilityResult({ key: terminalSessionKey, availability });
+    }).catch(() => {
+      if (current) setTerminalAvailabilityResult({
+        key: terminalSessionKey,
+        availability: {
+          available: false,
+          reason: "APP_SERVER_UNAVAILABLE",
+        },
+      });
+    });
+    return () => { current = false; };
+  }, [issue.id, agentSessionId, terminalSessionKey]);
+  const openTerminal = async () => {
+    if (openingTerminalRef.current || terminalAvailability?.available !== true) return;
+    openingTerminalRef.current = true;
+    setOpeningTerminal(true);
+    try {
+      await api.openAgentTerminal(issue.id);
+      toast.success("已在 Terminal 中打开");
+    } catch {
+      toast.error("无法打开 Terminal");
+    } finally {
+      openingTerminalRef.current = false;
+      setOpeningTerminal(false);
+    }
+  };
   const timestamp = (value: string) => new Date(value).toLocaleString("zh-CN", {
     year: "numeric",
     month: "2-digit",
@@ -529,12 +572,38 @@ function IssueMetadataRail({ active, events, issue, project, workspace, onClose 
       {workspace?.branch ? <div className="issue-workspace-row"><dt>分支</dt><dd><code title={workspace.branch}>{workspace.branch}</code>{workspace.providerId === "git" ? <span className="workspace-kind-tag">Worktree</span> : null}</dd></div> : null}
       <div><dt>来源</dt><dd>{latestInput?.integration ?? "manual"}</dd></div>
       <div><dt>状态</dt><dd><IssueStatusBadge status={issue.status} recoveryKind={issue.finalizationRecovery?.context?.recoveryKind} recoveryStep={issue.finalizationRecovery?.diagnostic?.step} reviewKind={issue.review?.kind} /></dd></div>
-      <div><dt>Agent 会话</dt><dd><code>{issue.agentSession?.sessionId ?? "尚未创建"}</code></dd></div>
+      <div className="agent-session-row"><dt><span>Agent 会话</span><AgentTerminalAction availability={terminalAvailability} opening={openingTerminal} onOpen={() => void openTerminal()} /></dt><dd><code>{agentSessionId ?? "尚未创建"}</code></dd></div>
       <div><dt>创建时间</dt><dd><time>{timestamp(issue.createdAt)}</time></dd></div>
       <div><dt>更新时间</dt><dd><time>{timestamp(issue.updatedAt)}</time></dd></div>
     </dl>
     <AgentActivity active={active} events={events} />
   </aside>;
+}
+
+const terminalUnavailableLabels: Record<
+  Exclude<AgentTerminalAvailability, { available: true }>["reason"],
+  string
+> = {
+  UNSUPPORTED_AGENT: "当前 Agent 不支持 Terminal",
+  SESSION_NOT_READY: "Agent 会话尚未就绪",
+  WORKSPACE_NOT_READY: "Issue 工作区尚未就绪",
+  APP_SERVER_UNAVAILABLE: "Codex App Server 当前不可用",
+};
+
+function AgentTerminalAction({ availability, opening, onOpen }: {
+  availability?: AgentTerminalAvailability;
+  opening: boolean;
+  onOpen: () => void;
+}) {
+  const disabled = opening || availability?.available !== true;
+  const button = <Button aria-label="在 Terminal 中打开" className="agent-terminal-action" disabled={disabled} size="xs" tabIndex={disabled ? -1 : undefined} type="button" variant="ghost" onClick={onOpen}><SquareTerminal aria-hidden="true" size={12} /><span>{opening ? "正在打开" : "在 Terminal 中打开"}</span></Button>;
+  if (!disabled) return button;
+  const reason = opening
+    ? "正在打开 Terminal"
+    : availability?.available === false
+      ? terminalUnavailableLabels[availability.reason]
+      : "正在检查 Terminal 可用性";
+  return <Tooltip><TooltipTrigger render={<span className="agent-terminal-tooltip-trigger" tabIndex={0} />}>{button}</TooltipTrigger><TooltipContent side="bottom">{reason}</TooltipContent></Tooltip>;
 }
 
 function MetadataRailToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {

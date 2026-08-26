@@ -141,7 +141,8 @@ describe("workspace architecture boundaries", () => {
     ]);
     expect(workspaceExternalImports("packages/agent-codex/src")).toEqual([
       "@oh-my-bug/core",
-      "@openai/codex-sdk",
+      "ws",
+      "zod",
     ]);
     expect(workspaceExternalImports("packages/integration-sentry/src")).toEqual([
       "@oh-my-bug/core",

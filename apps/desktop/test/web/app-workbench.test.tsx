@@ -562,6 +562,140 @@ describe("control center workbench", () => {
     expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
   });
 
+  it.each([
+    ["UNSUPPORTED_AGENT", "当前 Agent 不支持 Terminal"],
+    ["SESSION_NOT_READY", "Agent 会话尚未就绪"],
+    ["WORKSPACE_NOT_READY", "Issue 工作区尚未就绪"],
+    ["APP_SERVER_UNAVAILABLE", "Codex App Server 当前不可用"],
+  ] as const)("disables the Terminal action for %s with a bounded reason", async (reason, label) => {
+    const selected = {
+      ...issue,
+      agentSession: { agent: "codex", sessionId: "session-1" },
+    } as IssueDto;
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([selected]);
+    vi.spyOn(api, "issue").mockResolvedValue(selected);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    const availability = vi.spyOn(api, "agentTerminalAvailability").mockResolvedValue({
+      available: false,
+      reason,
+    });
+
+    render(<App />);
+
+    const action = await screen.findByRole("button", { name: "在 Terminal 中打开" });
+    expect(action).toBeDisabled();
+    expect(availability).toHaveBeenCalledWith(selected.id);
+    fireEvent.focus(action.parentElement!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(label);
+  });
+
+  it("opens the selected Agent session once and reports success without refreshing the Issue", async () => {
+    const selected = {
+      ...issue,
+      agentSession: { agent: "codex", sessionId: "session-1" },
+    } as IssueDto;
+    let resolveOpen: (value: { opened: true }) => void = () => undefined;
+    const opening = new Promise<{ opened: true }>((resolve) => { resolveOpen = resolve; });
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([selected]);
+    const issueSnapshot = vi.spyOn(api, "issue").mockResolvedValue(selected);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    vi.spyOn(api, "agentTerminalAvailability").mockResolvedValue({ available: true });
+    const open = vi.spyOn(api, "openAgentTerminal").mockReturnValue(opening);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: "在 Terminal 中打开",
+    })).toBeEnabled());
+    const action = screen.getByRole("button", { name: "在 Terminal 中打开" });
+    fireEvent.click(action);
+    fireEvent.click(action);
+    expect(screen.getByRole("button", { name: "在 Terminal 中打开" })).toBeDisabled();
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith(selected.id);
+    resolveOpen({ opened: true });
+    expect(await screen.findByText("已在 Terminal 中打开")).toBeVisible();
+    expect(issueSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the Issue intact and reports a Terminal launch failure", async () => {
+    const selected = {
+      ...issue,
+      agentSession: { agent: "codex", sessionId: "session-1" },
+    } as IssueDto;
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([selected]);
+    vi.spyOn(api, "issue").mockResolvedValue(selected);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    vi.spyOn(api, "agentTerminalAvailability").mockResolvedValue({ available: true });
+    vi.spyOn(api, "openAgentTerminal").mockRejectedValue(new Error("TERMINAL_LAUNCH_FAILED"));
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: "在 Terminal 中打开",
+    })).toBeEnabled());
+    const action = screen.getByRole("button", { name: "在 Terminal 中打开" });
+    fireEvent.click(action);
+    expect(await screen.findByText("无法打开 Terminal")).toBeVisible();
+    expect(screen.getByRole("heading", { level: 2, name: selected.title })).toBeVisible();
+  });
+
+  it("rechecks Terminal availability when the selected Agent session changes", async () => {
+    const first = {
+      ...issue,
+      agentSession: { agent: "codex", sessionId: "session-1" },
+    } as IssueDto;
+    const resumed = {
+      ...first,
+      revision: first.revision + 1,
+      agentSession: { agent: "codex", sessionId: "session-2" },
+    } as IssueDto;
+    let listener: ((events: AgentEventDto[], cursor: number) => void) | undefined;
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([first]);
+    vi.spyOn(api, "issue").mockResolvedValueOnce(first).mockResolvedValue(resumed);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockImplementation((_id, _cursor, next) => {
+      listener = next;
+      return () => undefined;
+    });
+    const availability = vi.spyOn(api, "agentTerminalAvailability")
+      .mockResolvedValue({ available: true });
+
+    render(<App />);
+
+    await waitFor(() => expect(availability).toHaveBeenCalledTimes(1));
+    act(() => listener?.([{
+      id: "event-session-rebuilt",
+      issueId: first.id,
+      sequence: 1,
+      type: "AGENT_SESSION_REBUILT",
+      actor: "SYSTEM",
+      data: {},
+      occurredAt: "2026-08-19T09:02:00.000Z",
+    }], 1));
+    await waitFor(() => expect(availability).toHaveBeenCalledTimes(2), { timeout: 1_000 });
+    expect(availability).toHaveBeenNthCalledWith(2, resumed.id);
+  });
+
   it("does not toggle the details rail for old, repeated, Alt-modified, or editable shortcuts", async () => {
     vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
     vi.spyOn(api, "projects").mockResolvedValue([project]);

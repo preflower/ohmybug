@@ -12,8 +12,11 @@ describe("Codex activity reporting", () => {
     const activities: AgentActivityUpdate[] = [];
     const client = new FixtureClient([{
       events: [
+        { type: "turn.started", threadId: "thread-cleanup", turnId: "turn-cleanup" },
         {
           type: "item.completed",
+          threadId: "thread-cleanup",
+          turnId: "turn-cleanup",
           item: {
             type: "agent_message",
             text: JSON.stringify({
@@ -26,7 +29,7 @@ describe("Codex activity reporting", () => {
             }),
           },
         },
-        { type: "turn.completed" },
+        { type: "turn.completed", threadId: "thread-cleanup", turnId: "turn-cleanup" },
         { type: "cleanup.failed", message: "ENOTEMPTY: token=private-token" },
       ],
     }]);
@@ -55,9 +58,11 @@ describe("Codex activity reporting", () => {
     const client = new FixtureClient([{
       events: [
         { type: "thread.started", threadId: "thread-1" },
-        { type: "turn.started" },
+        { type: "turn.started", threadId: "thread-1", turnId: "turn-1" },
         {
           type: "item.started",
+          threadId: "thread-1",
+          turnId: "turn-1",
           item: {
             id: "command-1",
             type: "command_execution",
@@ -68,6 +73,8 @@ describe("Codex activity reporting", () => {
         },
         {
           type: "item.completed",
+          threadId: "thread-1",
+          turnId: "turn-1",
           item: {
             id: "command-1",
             type: "command_execution",

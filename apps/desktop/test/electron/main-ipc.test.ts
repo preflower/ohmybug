@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DESKTOP_REQUEST_CHANNEL,
   ISSUE_EVENT_CHANNEL,
+  OPEN_AGENT_TERMINAL_CHANNEL,
   OPEN_PROJECT_DIRECTORY_CHANNEL,
   SUBSCRIBE_ISSUE_CHANNEL,
   UNSUBSCRIBE_ISSUE_CHANNEL
@@ -20,7 +21,10 @@ function setup() {
   const mainFrame = { url: "file:///app/renderer/index.html" };
   const webContents = { mainFrame, send: vi.fn(), once: vi.fn() };
   const window = { webContents };
-  const request = vi.fn(async (operation: string, payload: unknown) => ({ operation, payload }));
+  const request = vi.fn(async (operation: string, payload: unknown): Promise<unknown> => ({
+    operation,
+    payload,
+  }));
   const unsubscribe = vi.fn();
   const subscribeIssue = vi.fn((_issueId: string, _cursor: number, listener: (event: unknown) => void) => {
     listener({
@@ -40,18 +44,63 @@ function setup() {
   });
   const client = { request, subscribeIssue };
   const dialog = { showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] as string[] })) };
+  const launchAgentTerminal = vi.fn(async () => ({ opened: true as const }));
   const registration = registerDesktopIpc({
     ipcMain,
     window,
     dialog,
     getClient: () => client,
+    launchAgentTerminal,
     rendererUrl: mainFrame.url
   });
   const event = { sender: webContents, senderFrame: mainFrame };
-  return { handlers, ipcMain, webContents, request, subscribeIssue, unsubscribe, dialog, registration, event };
+  return {
+    handlers,
+    ipcMain,
+    webContents,
+    request,
+    subscribeIssue,
+    unsubscribe,
+    dialog,
+    launchAgentTerminal,
+    registration,
+    event,
+  };
 }
 
 describe("Electron main IPC", () => {
+  it("resolves and launches a private target only after sender and Issue validation", async () => {
+    const fixture = setup();
+    const handle = fixture.handlers.get(OPEN_AGENT_TERMINAL_CHANNEL)!;
+    const target = {
+      agent: "codex",
+      providerThreadId: "0198e8dc-6de0-7c10-81ce-6c6544bc1bf7",
+      executablePath: "/bin/codex",
+      remoteUrl: "unix:///private/run/codex-app-server.sock",
+      workingDirectory: "/repo/worktree",
+    };
+    fixture.request.mockResolvedValueOnce(target);
+
+    await expect(handle(fixture.event, { issueId: "issue-1" })).resolves
+      .toEqual({ opened: true });
+    expect(fixture.request).toHaveBeenCalledWith(
+      "resolveAgentTerminalLaunchTarget",
+      { id: "issue-1" },
+    );
+    expect(fixture.launchAgentTerminal).toHaveBeenCalledWith(target);
+
+    await expect(handle({ sender: {}, senderFrame: {} }, { issueId: "issue-1" }))
+      .rejects.toThrow("IPC_SENDER_UNTRUSTED");
+    await expect(handle(fixture.event, {
+      issueId: "issue-1",
+      remoteUrl: "unix:///renderer-controlled",
+    })).rejects.toThrow("INVALID_REQUEST");
+    expect(fixture.request).toHaveBeenCalledTimes(1);
+
+    fixture.registration.dispose();
+    expect(fixture.ipcMain.removeHandler).toHaveBeenCalledWith(OPEN_AGENT_TERMINAL_CHANNEL);
+  });
+
   it("authorizes the sender and forwards only validated product operations", async () => {
     const fixture = setup();
     const handle = fixture.handlers.get(DESKTOP_REQUEST_CHANNEL)!;

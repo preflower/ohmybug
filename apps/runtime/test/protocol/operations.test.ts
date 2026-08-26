@@ -21,6 +21,8 @@ describe("Runtime protocol operation registry", () => {
       "testSavedIntegration",
       "listIssues",
       "getIssue",
+      "agentTerminalAvailability",
+      "resolveAgentTerminalLaunchTarget",
       "getIssueWorkspace",
       "submitManual",
       "submitReview",
@@ -46,6 +48,37 @@ describe("Runtime protocol operation registry", () => {
     expect(rendererOperationNames).toContain("rebuildAgentSession");
     expect(rendererOperationNames).toContain("grantIssueCapabilities");
     expect(rendererOperationNames).toContain("readEvidence");
+    expect(rendererOperationNames).toContain("agentTerminalAvailability");
+    expect(rendererOperationNames).not.toContain("resolveAgentTerminalLaunchTarget");
+  });
+
+  it("keeps terminal availability public and launch details main-only", () => {
+    const input = { id: "issue-1" };
+    expect(runtimeOperations.agentTerminalAvailability.input.parse(input)).toEqual(input);
+    expect(runtimeOperations.agentTerminalAvailability.output.parse({ available: true }))
+      .toEqual({ available: true });
+    expect(runtimeOperations.agentTerminalAvailability.output.parse({
+      available: false,
+      reason: "SESSION_NOT_READY",
+    })).toEqual({ available: false, reason: "SESSION_NOT_READY" });
+    expect(() => runtimeOperations.agentTerminalAvailability.output.parse({
+      available: false,
+      reason: "SESSION_NOT_READY",
+      remoteUrl: "unix:///private/socket",
+    })).toThrow();
+
+    const target = {
+      agent: "codex",
+      providerThreadId: "0198e8dc-6de0-7c10-81ce-6c6544bc1bf7",
+      executablePath: "/Applications/Oh My Bug.app/Contents/Resources/codex",
+      remoteUrl: "unix:///private/run/codex-app-server.sock",
+      workingDirectory: "/repo/worktree",
+    } as const;
+    expect(runtimeOperations.resolveAgentTerminalLaunchTarget.output.parse(target)).toEqual(target);
+    expect(() => runtimeOperations.resolveAgentTerminalLaunchTarget.output.parse({
+      ...target,
+      extraArgument: "--dangerously-bypass-approvals-and-sandbox",
+    })).toThrow();
   });
 
   it("validates strict saved Integration tests", () => {

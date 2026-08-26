@@ -708,6 +708,32 @@ a:focus-visible {
   font-size: 11px;
 }
 
+.agent-session-row dt {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-terminal-action {
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.agent-terminal-tooltip-trigger {
+  display: inline-flex;
+  min-width: 0;
+  border-radius: var(--radius-md);
+  outline: none;
+}
+
+.agent-terminal-tooltip-trigger:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 30%, transparent);
+}
+
 .issue-metadata-list dd {
   display: flex;
   min-width: 0;

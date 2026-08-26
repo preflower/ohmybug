@@ -27,12 +27,14 @@
     "test:repository": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:electron": "playwright test -c apps/desktop/playwright.config.ts",
+    "test:codex-app-server": "pnpm --dir packages/agent-codex exec vitest run test/app-server/bundled-app-server.integration.test.ts",
     "doctor": "node --import tsx scripts/doctor.ts",
-    "doctor:package": "node --import tsx apps/desktop/scripts/verify-packaged-runtime.ts"
+    "doctor:package": "node --import tsx apps/desktop/scripts/verify-packaged-runtime.ts",
+    "generate:codex-protocol": "node --import tsx scripts/generate-codex-app-server-protocol.ts"
   },
   "dependencies": {
     "@oh-my-bug/runtime": "workspace:*",
-    "@openai/codex-sdk": "^0.148.0",
+    "@openai/codex": "0.148.0",
     "better-sqlite3": "^13.0.3",
     "cross-keychain": "^1.1.0",
     "dingtalk-stream": "2.1.6-beta.1",
