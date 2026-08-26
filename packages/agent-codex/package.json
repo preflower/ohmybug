@@ -7,6 +7,15 @@
   "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
   "dependencies": {
     "@oh-my-bug/core": "workspace:*",
-    "@openai/codex-sdk": "^0.148.0"
+    "@openai/codex": "0.148.0",
+    "@openai/codex-sdk": "^0.148.0",
+    "ws": "8.21.3",
+    "zod": "4.4.3"
+  },
+  "ohMyBug": {
+    "runtimeAssets": [
+      "protocol/codex_app_server_protocol.schemas.json",
+      "protocol/version.json"
+    ]
   }
 }

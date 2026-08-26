@@ -11,8 +11,8 @@ importers:
       '@oh-my-bug/runtime':
         specifier: workspace:*
         version: link:apps/runtime
-      '@openai/codex-sdk':
-        specifier: ^0.148.0
+      '@openai/codex':
+        specifier: 0.148.0
         version: 0.148.0
       better-sqlite3:
         specifier: ^13.0.3
@@ -87,12 +87,12 @@ importers:
       '@base-ui/react':
         specifier: ^1.7.0
         version: 1.7.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@oh-my-bug/agent-codex':
+        specifier: workspace:*
+        version: link:../../packages/agent-codex
       '@oh-my-bug/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@openai/codex-sdk':
-        specifier: ^0.148.0
-        version: 0.148.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -239,9 +239,18 @@ importers:
       '@oh-my-bug/core':
         specifier: workspace:*
         version: link:../core
+      '@openai/codex':
+        specifier: 0.148.0
+        version: 0.148.0
       '@openai/codex-sdk':
         specifier: ^0.148.0
         version: 0.148.0
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/core:
     dependencies:

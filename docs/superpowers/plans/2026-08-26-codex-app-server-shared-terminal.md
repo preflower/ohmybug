@@ -53,7 +53,7 @@ Existing files changed:
 - Modify: `packages/core/test/architecture-boundary.test.ts`
 - Modify: `apps/desktop/test/electron/packaged-runtime.test.ts`
 
-- [ ] Write failing manifest/architecture tests requiring exact `@openai/codex: "0.148.0"`, `ws: "8.21.3"`, direct `zod`, no `@openai/codex-sdk`, a direct Desktop build-script dependency on `@oh-my-bug/agent-codex`, and both generated assets in `ohMyBug.runtimeAssets`.
+- [ ] Write failing manifest/architecture tests requiring exact `@openai/codex: "0.148.0"`, `ws: "8.21.3"`, direct `zod`, a direct Desktop build-script dependency on `@oh-my-bug/agent-codex`, and both generated assets in `ohMyBug.runtimeAssets`. Keep the SDK dependency only in `agent-codex` until Task 4 so every intermediate commit remains buildable; Task 4 removes it.
 
 - [ ] Run:
 
@@ -116,11 +116,9 @@ Use `mkdtemp`, explicit validated paths, and `rm(..., { recursive: true, force: 
 ```bash
 pnpm remove @openai/codex-sdk -w
 pnpm --filter @oh-my-bug/desktop remove @openai/codex-sdk
-pnpm --filter @oh-my-bug/agent-codex remove @openai/codex-sdk
 pnpm add @openai/codex@0.148.0 -w
 pnpm --filter @oh-my-bug/desktop add '@oh-my-bug/agent-codex@workspace:*'
 pnpm --filter @oh-my-bug/agent-codex add @openai/codex@0.148.0 ws@8.21.3 zod@4.4.3
-pnpm --filter @oh-my-bug/agent-codex add -D @types/ws@8.18.1
 pnpm generate:codex-protocol
 ```
 

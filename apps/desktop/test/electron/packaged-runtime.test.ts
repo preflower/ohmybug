@@ -143,7 +143,7 @@ describe("packaged desktop runtime", () => {
     expect(Object.keys(manifest.dependencies).filter((dependency) => !imported.has(dependency))).toEqual([]);
     expect([...imported].filter((dependency) => !declared.has(dependency))).toEqual([]);
     expect([...imported]).toEqual(expect.arrayContaining([
-      "@openai/codex-sdk",
+      "@oh-my-bug/agent-codex",
       "mediainfo.js",
       "@electron/asar"
     ]));
