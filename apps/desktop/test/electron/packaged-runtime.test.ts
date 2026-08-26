@@ -70,6 +70,7 @@ async function desktopSourceAndBuildImports(): Promise<Set<string>> {
 }
 
 async function createArchiveFixture(options: {
+  codexProtocolVersion?: string;
   omit?: string[];
   unpack?: boolean;
 } = {}): Promise<{
@@ -93,6 +94,9 @@ async function createArchiveFixture(options: {
   const chromiumExecutable = join("fixture", process.platform === "win32" ? "chrome-headless-shell.exe" : "chrome-headless-shell");
   const resources: RuntimeResources = {
     codexBinary: join(source, codexRelative),
+    codexPackageVersion: "0.148.0",
+    codexProtocolSchema: join(source, desktopBuildLayout.codexProtocolSchema),
+    codexProtocolVersion: join(source, desktopBuildLayout.codexProtocolVersion),
     mediaInfoWasm: join(source, mediaRelative),
     chromium: {
       source: chromiumSource,
@@ -107,7 +111,15 @@ async function createArchiveFixture(options: {
   for (const relativePath of required) {
     const path = join(source, relativePath);
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, relativePath, {
+    const contents = relativePath === desktopBuildLayout.codexProtocolVersion
+      ? `${JSON.stringify({
+        codexCliVersion: options.codexProtocolVersion ?? resources.codexPackageVersion,
+        schemaFile: "codex_app_server_protocol.schemas.json",
+      })}\n`
+      : relativePath === desktopBuildLayout.codexProtocolSchema
+        ? "{}\n"
+        : relativePath;
+    await writeFile(path, contents, {
       mode: relativePath === codexRelative ? 0o755 : 0o644
     });
   }
@@ -167,6 +179,8 @@ describe("packaged desktop runtime", () => {
       runtimeProtocol: ".vite/build/node_modules/@oh-my-bug/runtime/src/protocol/index.js",
       core: ".vite/build/node_modules/@oh-my-bug/core/src/index.js",
       agentCodex: ".vite/build/node_modules/@oh-my-bug/agent-codex/src/index.js",
+      codexProtocolSchema: ".vite/build/node_modules/@oh-my-bug/agent-codex/protocol/codex_app_server_protocol.schemas.json",
+      codexProtocolVersion: ".vite/build/node_modules/@oh-my-bug/agent-codex/protocol/version.json",
       integrationManual: ".vite/build/node_modules/@oh-my-bug/integration-manual/src/index.js",
       integrationSentry: ".vite/build/node_modules/@oh-my-bug/integration-sentry/src/index.js",
       integrationDingTalk: ".vite/build/node_modules/@oh-my-bug/integration-dingtalk/src/index.js",
@@ -196,6 +210,8 @@ describe("packaged desktop runtime", () => {
     const resources = resolveRuntimeResources();
 
     await expect(access(resources.codexBinary)).resolves.toBeUndefined();
+    await expect(access(resources.codexProtocolSchema)).resolves.toBeUndefined();
+    await expect(access(resources.codexProtocolVersion)).resolves.toBeUndefined();
     await expect(access(resources.mediaInfoWasm)).resolves.toBeUndefined();
     await expect(access(resources.chromium.source)).resolves.toBeUndefined();
     expect(resources.chromium.resourceName).toMatch(/^chromium_headless_shell-\d+$/);
@@ -233,6 +249,38 @@ describe("packaged desktop runtime", () => {
           join(fixture.resourcesPath, "app.asar.unpacked", "node_modules", "mediainfo.js", "dist", "MediaInfoModule.wasm"),
           join(fixture.resourcesPath, fixture.resources.chromium.resourceName, "fixture", process.platform === "win32" ? "chrome-headless-shell.exe" : "chrome-headless-shell")
         ])
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("rejects packaged Codex protocol metadata that differs from the direct CLI package", async () => {
+    expect("verifyPackagedArchive" in packagedRuntimeVerifier).toBe(true);
+    const verifyPackagedArchive = packagedRuntimeVerifier.verifyPackagedArchive as VerifyPackagedArchive;
+    const fixture = await createArchiveFixture({ codexProtocolVersion: "0.147.0" });
+
+    try {
+      await expect(verifyPackagedArchive(fixture.appPath, fixture.resources)).rejects.toThrow(
+        "CODEX_PROTOCOL_VERSION_MISMATCH",
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("requires both generated Codex protocol assets in app.asar", async () => {
+    expect("verifyPackagedArchive" in packagedRuntimeVerifier).toBe(true);
+    const verifyPackagedArchive = packagedRuntimeVerifier.verifyPackagedArchive as VerifyPackagedArchive;
+    const omitted = [
+      desktopBuildLayout.codexProtocolSchema,
+      desktopBuildLayout.codexProtocolVersion,
+    ];
+    const fixture = await createArchiveFixture({ omit: omitted });
+
+    try {
+      await expect(verifyPackagedArchive(fixture.appPath, fixture.resources)).rejects.toThrow(
+        `PACKAGED_RUNTIME_ARCHIVE_MISSING:${omitted.join(",")}`,
       );
     } finally {
       await fixture.cleanup();

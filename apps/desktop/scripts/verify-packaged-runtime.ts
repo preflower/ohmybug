@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { access, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { listPackage, statFile } from "@electron/asar";
+import { extractFile, listPackage, statFile } from "@electron/asar";
 
 import {
   desktopBuildLayout,
@@ -77,6 +77,21 @@ export async function verifyPackagedArchive(
   if (missingArchiveEntries.length > 0) {
     throw new Error(`PACKAGED_RUNTIME_ARCHIVE_MISSING:${missingArchiveEntries.join(",")}`);
   }
+  let packagedProtocolVersion: { codexCliVersion?: unknown; schemaFile?: unknown };
+  try {
+    packagedProtocolVersion = JSON.parse(extractFile(
+      archivePath,
+      archiveEntry(desktopBuildLayout.codexProtocolVersion),
+    ).toString("utf8")) as { codexCliVersion?: unknown; schemaFile?: unknown };
+  } catch {
+    throw new Error("CODEX_PROTOCOL_VERSION_MISMATCH");
+  }
+  if (
+    packagedProtocolVersion.codexCliVersion !== resources.codexPackageVersion ||
+    packagedProtocolVersion.schemaFile !== "codex_app_server_protocol.schemas.json"
+  ) {
+    throw new Error("CODEX_PROTOCOL_VERSION_MISMATCH");
+  }
 
   const notMarkedUnpacked: string[] = [];
   try {
@@ -144,7 +159,14 @@ export async function verifyPackagedRuntime(
 ): Promise<string[]> {
   const buildPaths = await verifyDesktopBuild(projectRoot);
   const resources = await verifyRuntimeResources();
-  const verified = [...buildPaths, resources.codexBinary, resources.mediaInfoWasm, resources.chromium.source];
+  const verified = [
+    ...buildPaths,
+    resources.codexBinary,
+    resources.codexProtocolSchema,
+    resources.codexProtocolVersion,
+    resources.mediaInfoWasm,
+    resources.chromium.source,
+  ];
   if (appPath) {
     verified.push(...await verifyPackagedArchive(appPath, resources));
   }

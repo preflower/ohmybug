@@ -441,6 +441,47 @@ describe("SQLite-backed review and recovery acceptance", () => {
     await runtime.stop();
   });
 
+  it("retries an App Server-disconnected turn in its persisted logical session", async () => {
+    const databasePath = temporaryDatabase("omb-runtime-app-server-restart-");
+    const projectRoot = join(dirname(databasePath), "project");
+    mkdirSync(projectRoot);
+    const agent = new FakeAgent();
+    const options = runtimeOptions(databasePath, agent);
+    const runtime = createRuntime(options);
+    runtime.registerProject({ ...project, path: projectRoot });
+    await runtime.start();
+    const assessed = await submitAssessed(runtime, "app-server-restart");
+    agent.repairError = new Error("CODEX_APP_SERVER_DISCONNECTED");
+    runtime.approveAssessment(assessed.id, {
+      ...assessmentReference(assessed.assessment!),
+      title: assessed.assessment!.suggestedTitle,
+    });
+    await runtime.drain();
+
+    const failed = runtime.getIssue(assessed.id);
+    expect(failed).toMatchObject({
+      status: "REPAIR_FAILED",
+      agentSession: assessed.agentSession,
+      lastFailure: { stage: "REPAIR", code: "AGENT_FAILURE" },
+    });
+    expect(failed.repair?.delivery).toBeUndefined();
+
+    agent.repairError = undefined;
+    runtime.retryIssue(failed.id);
+    await runtime.drain();
+
+    expect(runtime.getIssue(failed.id)).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      agentSession: assessed.agentSession,
+      repair: { iteration: 2 },
+    });
+    expect(agent.repairSessions).toEqual([
+      assessed.agentSession!.sessionId,
+      assessed.agentSession!.sessionId,
+    ]);
+    await runtime.stop();
+  });
+
   it("keeps a paused Repair idle across restart and resumes its preserved context once", async () => {
     const databasePath = temporaryDatabase("omb-runtime-user-paused-");
     const projectRoot = join(dirname(databasePath), "project");

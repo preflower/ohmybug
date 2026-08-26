@@ -21,6 +21,8 @@ export const desktopBuildLayout = Object.freeze({
   runtimeProtocol: ".vite/build/node_modules/@oh-my-bug/runtime/src/protocol/index.js",
   core: ".vite/build/node_modules/@oh-my-bug/core/src/index.js",
   agentCodex: ".vite/build/node_modules/@oh-my-bug/agent-codex/src/index.js",
+  codexProtocolSchema: ".vite/build/node_modules/@oh-my-bug/agent-codex/protocol/codex_app_server_protocol.schemas.json",
+  codexProtocolVersion: ".vite/build/node_modules/@oh-my-bug/agent-codex/protocol/version.json",
   integrationManual: ".vite/build/node_modules/@oh-my-bug/integration-manual/src/index.js",
   integrationSentry: ".vite/build/node_modules/@oh-my-bug/integration-sentry/src/index.js",
   integrationDingTalk: ".vite/build/node_modules/@oh-my-bug/integration-dingtalk/src/index.js",
@@ -31,6 +33,9 @@ export const desktopBuildLayout = Object.freeze({
 
 export interface RuntimeResources {
   codexBinary: string;
+  codexPackageVersion: string;
+  codexProtocolSchema: string;
+  codexProtocolVersion: string;
   mediaInfoWasm: string;
   chromium: {
     source: string;
@@ -66,7 +71,13 @@ async function verifyPaths(projectRoot: string, relativePaths: string[]): Promis
 }
 
 export function resolveRuntimeResources(): RuntimeResources {
-  const codexBinary = resolveCodexBinary().executablePath;
+  const codex = resolveCodexBinary();
+  const agentCodexEntry = import.meta.resolve("@oh-my-bug/agent-codex");
+  const codexProtocolSchema = fileURLToPath(new URL(
+    "../protocol/codex_app_server_protocol.schemas.json",
+    agentCodexEntry,
+  ));
+  const codexProtocolVersion = fileURLToPath(new URL("../protocol/version.json", agentCodexEntry));
 
   const mediaInfoWasm = fileURLToPath(import.meta.resolve("mediainfo.js/MediaInfoModule.wasm"));
   const chromiumExecutable = chromium.executablePath();
@@ -76,14 +87,23 @@ export function resolveRuntimeResources(): RuntimeResources {
   const resourceName = `chromium_headless_shell-${revision}`;
   const chromiumSource = join(dirname(chromiumInstall), resourceName);
   return {
-    codexBinary,
+    codexBinary: codex.executablePath,
+    codexPackageVersion: codex.packageVersion,
+    codexProtocolSchema,
+    codexProtocolVersion,
     mediaInfoWasm,
     chromium: { source: chromiumSource, resourceName }
   };
 }
 
 export async function verifyRuntimeResources(resources = resolveRuntimeResources()): Promise<RuntimeResources> {
-  for (const path of [resources.codexBinary, resources.mediaInfoWasm, resources.chromium.source]) {
+  for (const path of [
+    resources.codexBinary,
+    resources.codexProtocolSchema,
+    resources.codexProtocolVersion,
+    resources.mediaInfoWasm,
+    resources.chromium.source,
+  ]) {
     try {
       await access(path);
     } catch {

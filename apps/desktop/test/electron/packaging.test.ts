@@ -20,6 +20,12 @@ describe("Electron packaging", () => {
     for (const packageName of ["better-sqlite3", "esbuild", "fs-xattr", "macos-alias"]) {
       expect(workspace).toMatch(new RegExp(`^  ${packageName}: true$`, "m"));
     }
+    const agentManifest = JSON.parse(readFileSync(
+      resolve(repositoryRoot, "packages/agent-codex/package.json"),
+      "utf8",
+    )) as { dependencies?: Record<string, string> };
+    expect(manifest).not.toHaveProperty("dependencies.@openai/codex-sdk");
+    expect(agentManifest).not.toHaveProperty("dependencies.@openai/codex-sdk");
   });
 
   it("packages only compiled desktop entry points and the local renderer", () => {
@@ -27,6 +33,8 @@ describe("Electron packaging", () => {
       main: ".vite/build/apps/desktop/src/electron/main.js",
       preload: ".vite/build/apps/desktop/src/electron/preload.cjs",
       runtimeEntry: ".vite/build/node_modules/@oh-my-bug/runtime/src/entry.js",
+      codexProtocolSchema: ".vite/build/node_modules/@oh-my-bug/agent-codex/protocol/codex_app_server_protocol.schemas.json",
+      codexProtocolVersion: ".vite/build/node_modules/@oh-my-bug/agent-codex/protocol/version.json",
       renderer: ".vite/renderer/index.html",
       trayIcon: ".vite/build/apps/desktop/assets/icons/oh-my-bug-trayTemplate.png",
       trayIcon2x: ".vite/build/apps/desktop/assets/icons/oh-my-bug-trayTemplate@2x.png",
@@ -55,6 +63,8 @@ describe("Electron packaging", () => {
     expect(JSON.stringify(asar)).toContain("vendor/**/bin/*");
     expect(config.packagerConfig?.extraResource).toContain(resources.chromium.source);
     expect(basename(resources.chromium.source)).toBe(resources.chromium.resourceName);
+    expect(basename(resources.codexProtocolSchema)).toBe("codex_app_server_protocol.schemas.json");
+    expect(basename(resources.codexProtocolVersion)).toBe("version.json");
     expect(config.makers?.map((maker) => "name" in maker ? maker.name : maker.constructor.name)).toEqual([
       "@electron-forge/maker-zip",
       "@electron-forge/maker-dmg"

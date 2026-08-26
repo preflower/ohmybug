@@ -103,6 +103,45 @@ describe("Codex App Server Runtime host", () => {
     supervisor.generation.mockReturnValue(2);
     expect(() => host.resolveLaunchTarget(context())).toThrow("AGENT_TERMINAL_UNAVAILABLE");
   });
+
+  it("reattaches to a new connection after the supervisor completes its bounded restart", async () => {
+    const order: string[] = [];
+    const firstConnection = { connection: 1 } as unknown as AppServerConnection;
+    const secondConnection = { connection: 2 } as unknown as AppServerConnection;
+    const supervisor = fixtureSupervisor(order);
+    supervisor.start.mockResolvedValue(firstConnection);
+    supervisor.client.mockReturnValue(firstConnection);
+    const firstClient = fixtureClient(order);
+    const secondClient = fixtureClient(order);
+    const resumeThread = vi.spyOn(secondClient, "resumeThread");
+    const createClient = vi.fn((connection: AppServerConnection) =>
+      connection === firstConnection ? firstClient : secondClient);
+    const host = new CodexAppServerRuntimeHost({ dataRoot: "/data" }, {
+      supervisor,
+      createClient,
+      validateSocket: () => true,
+      validateDirectory: () => true,
+    });
+    await host.start();
+
+    supervisor.generation.mockReturnValue(2);
+    supervisor.client.mockReturnValue(secondConnection);
+
+    const forwardingClient = (host as unknown as { forwardingClient: CodexClient }).forwardingClient;
+    forwardingClient.resumeThread(providerThreadId, {
+      workingDirectory: "/repo/worktree",
+      sandboxMode: "read-only",
+      networkAccessEnabled: false,
+      approvalPolicy: "never",
+      sessionId: "logical-session-1",
+    });
+    expect(resumeThread).toHaveBeenCalledOnce();
+    expect(host.availability(context())).toEqual({ available: true });
+    expect(createClient).toHaveBeenNthCalledWith(1, firstConnection);
+    expect(createClient).toHaveBeenNthCalledWith(2, secondConnection);
+    expect(order).toEqual(["client-dispose"]);
+    expect(host.resolveLaunchTarget(context()).providerThreadId).toBe(providerThreadId);
+  });
 });
 
 function context(overrides: Partial<{

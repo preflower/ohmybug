@@ -58,7 +58,7 @@ export class CodexAppServerRuntimeHost {
   readonly plugin: AgentPlugin;
   private readonly supervisor: RuntimeSupervisor;
   private readonly dependencies: CodexAppServerRuntimeHostDependencies;
-  private readonly forwardingClient = new ForwardingCodexClient();
+  private readonly forwardingClient: ForwardingCodexClient;
   private runtimeClient?: RuntimeClient;
   private activeConnection?: AppServerConnection;
   private activeGeneration?: number;
@@ -79,6 +79,7 @@ export class CodexAppServerRuntimeHost {
       validateSocket: dependencies?.validateSocket ?? defaultValidateSocket,
       validateDirectory: dependencies?.validateDirectory ?? defaultValidateDirectory,
     };
+    this.forwardingClient = new ForwardingCodexClient(() => this.currentClient());
     this.plugin = codexAgent({ client: this.forwardingClient });
   }
 
@@ -130,20 +131,17 @@ export class CodexAppServerRuntimeHost {
       const client = this.dependencies.createClient(connection);
       this.activeConnection = connection;
       this.runtimeClient = client;
-      this.forwardingClient.attach(client);
       this.activeGeneration = this.supervisor.generation();
     } catch {
       this.runtimeClient = undefined;
       this.activeConnection = undefined;
       this.activeGeneration = undefined;
-      this.forwardingClient.detach();
       await this.supervisor.stop().catch(() => undefined);
     }
   }
 
   private async stopHost(): Promise<void> {
     await this.startTask?.catch(() => undefined);
-    this.forwardingClient.detach();
     await this.supervisor.stop().catch(() => undefined);
     await this.runtimeClient?.dispose();
     this.runtimeClient = undefined;
@@ -152,6 +150,7 @@ export class CodexAppServerRuntimeHost {
   }
 
   private isServerAvailable(): boolean {
+    this.refreshClientAfterRestart();
     if (
       !this.runtimeClient ||
       !this.activeConnection ||
@@ -164,22 +163,42 @@ export class CodexAppServerRuntimeHost {
       return false;
     }
   }
+
+  private currentClient(): CodexClient {
+    this.refreshClientAfterRestart();
+    if (!this.runtimeClient) throw new Error("CODEX_APP_SERVER_UNAVAILABLE");
+    return this.runtimeClient;
+  }
+
+  private refreshClientAfterRestart(): void {
+    if (!this.runtimeClient || !this.activeConnection || this.activeGeneration === undefined) return;
+    let connection: AppServerConnection;
+    try {
+      connection = this.supervisor.client();
+    } catch {
+      return;
+    }
+    const generation = this.supervisor.generation();
+    if (generation === this.activeGeneration && connection === this.activeConnection) return;
+    if (generation <= this.activeGeneration || connection === this.activeConnection) return;
+    const previous = this.runtimeClient;
+    const client = this.dependencies.createClient(connection);
+    this.runtimeClient = client;
+    this.activeConnection = connection;
+    this.activeGeneration = generation;
+    void previous.dispose().catch(() => undefined);
+  }
 }
 
 class ForwardingCodexClient implements CodexClient {
-  private delegate?: CodexClient;
-
-  attach(client: CodexClient): void { this.delegate = client; }
-  detach(): void { this.delegate = undefined; }
+  constructor(private readonly resolveDelegate: () => CodexClient) {}
 
   startThread(options: CodexThreadOptions): CodexThread {
-    if (!this.delegate) throw new Error("CODEX_APP_SERVER_UNAVAILABLE");
-    return this.delegate.startThread(options);
+    return this.resolveDelegate().startThread(options);
   }
 
   resumeThread(threadId: string, options: CodexThreadOptions): CodexThread {
-    if (!this.delegate) throw new Error("CODEX_APP_SERVER_UNAVAILABLE");
-    return this.delegate.resumeThread(threadId, options);
+    return this.resolveDelegate().resumeThread(threadId, options);
   }
 }
 
