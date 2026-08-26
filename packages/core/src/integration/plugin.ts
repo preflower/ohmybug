@@ -37,15 +37,39 @@ export const secretFieldSchema = z.object({
   placeholder: z.string().trim().min(1).optional(),
 }).strict();
 
+const staticIntegrationSummarySchema = z.object({
+  label: z.string().trim().min(1),
+  value: z.string().trim().min(1),
+}).strict();
+
+const configIntegrationSummarySchema = z.object({
+  fields: z.array(z.object({
+    key: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+    emptyValue: z.string().trim().min(1),
+    valuePrefix: z.string().min(1).optional(),
+  }).strict()).min(1),
+  separator: z.string().min(1).optional(),
+}).strict();
+
 export const integrationSectionSchema = z.object({
   id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
   label: z.string().trim().min(1),
   description: z.string().trim().min(1).optional(),
-  summary: z.object({
-    label: z.string().trim().min(1),
-    value: z.string().trim().min(1),
-  }).strict().optional(),
+  summary: z.union([
+    staticIntegrationSummarySchema,
+    configIntegrationSummarySchema,
+  ]).optional(),
   collapsed: z.boolean().optional(),
+  connectionTest: z.boolean().optional(),
+}).strict();
+
+export const integrationConnectionTestResultSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  details: z.array(z.object({
+    label: z.string().trim().min(1).max(80),
+    value: z.string().trim().min(1).max(240),
+  }).strict()).max(8),
+  testedAt: z.iso.datetime(),
 }).strict();
 
 export const integrationPluginManifestSchema = z.object({
@@ -58,6 +82,9 @@ export const integrationPluginManifestSchema = z.object({
   secretFields: z.array(secretFieldSchema),
 }).strict().superRefine((manifest, context) => {
   const sections = new Set<string>();
+  let connectionTestSections = 0;
+  const configKeys = new Set(manifest.configFields.map((field) => field.key));
+  const secretKeys = new Set(manifest.secretFields.map((field) => field.key));
   for (const [index, section] of (manifest.sections ?? []).entries()) {
     if (sections.has(section.id)) {
       context.addIssue({
@@ -67,6 +94,33 @@ export const integrationPluginManifestSchema = z.object({
       });
     }
     sections.add(section.id);
+    if (section.connectionTest) {
+      connectionTestSections += 1;
+      if (connectionTestSections > 1) {
+        context.addIssue({
+          code: "custom",
+          path: ["sections", index, "connectionTest"],
+          message: "DUPLICATE_INTEGRATION_CONNECTION_TEST",
+        });
+      }
+    }
+    if (section.summary && "fields" in section.summary) {
+      for (const [fieldIndex, field] of section.summary.fields.entries()) {
+        if (secretKeys.has(field.key)) {
+          context.addIssue({
+            code: "custom",
+            path: ["sections", index, "summary", "fields", fieldIndex, "key"],
+            message: "INTEGRATION_SUMMARY_SECRET_FORBIDDEN",
+          });
+        } else if (!configKeys.has(field.key)) {
+          context.addIssue({
+            code: "custom",
+            path: ["sections", index, "summary", "fields", fieldIndex, "key"],
+            message: "INTEGRATION_SUMMARY_FIELD_NOT_FOUND",
+          });
+        }
+      }
+    }
   }
   for (const [collection, fields] of [
     ["configFields", manifest.configFields],
@@ -88,6 +142,7 @@ export type ConfigField = z.infer<typeof configFieldSchema>;
 export type SecretField = z.infer<typeof secretFieldSchema>;
 export type IntegrationSection = z.infer<typeof integrationSectionSchema>;
 export type IntegrationPluginManifest = z.infer<typeof integrationPluginManifestSchema>;
+export type IntegrationConnectionTestResult = z.infer<typeof integrationConnectionTestResultSchema>;
 
 export interface IntegrationHealth {
   state: "stopped" | "connecting" | "connected" | "backoff";
@@ -111,10 +166,20 @@ export interface IntegrationPluginContext {
   now(): Date;
 }
 
+export interface IntegrationPluginConnectionTestContext {
+  projectId: string;
+  configuration: ProjectIntegrationConfiguration;
+  secrets: Readonly<Record<string, string>>;
+  now(): Date;
+}
+
 export interface IntegrationPlugin {
   readonly manifest: IntegrationPluginManifest;
   validate(configuration: ProjectIntegrationConfiguration): void;
   create(context: IntegrationPluginContext): Promise<ManagedIntegrationSource>;
+  testConnection?(
+    context: IntegrationPluginConnectionTestContext,
+  ): Promise<IntegrationConnectionTestResult>;
   publicError(error: unknown): string;
 }
 

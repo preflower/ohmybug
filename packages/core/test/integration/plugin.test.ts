@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  integrationConnectionTestResultSchema,
   integrationPluginManifestSchema,
   type IntegrationPluginManifest,
 } from "../../src/index.js";
@@ -94,5 +95,79 @@ describe("IntegrationPlugin manifest", () => {
       }],
       secretFields: [],
     })).toThrow();
+  });
+
+  it("serializes a connection-test section and config-derived summary", () => {
+    const manifest: IntegrationPluginManifest = {
+      id: "fixture",
+      name: "Fixture",
+      sections: [
+        { id: "connection", label: "Connection" },
+        { id: "validation", label: "Validation", connectionTest: true },
+        {
+          id: "filters",
+          label: "Filters",
+          collapsed: true,
+          summary: {
+            fields: [
+              { key: "environment", emptyValue: "All environments" },
+              { key: "query", emptyValue: "Unresolved issues", valuePrefix: "Query: " },
+            ],
+            separator: " · ",
+          },
+        },
+      ],
+      configFields: [
+        { key: "environment", type: "string", label: "Environment", required: false, section: "filters" },
+        { key: "query", type: "string", label: "Query", required: false, section: "filters" },
+      ],
+      secretFields: [{ key: "token", label: "Token", required: true, section: "connection" }],
+    };
+
+    expect(integrationPluginManifestSchema.parse(manifest)).toEqual(manifest);
+  });
+
+  it("rejects duplicate connection tests and invalid summary field references", () => {
+    const base = {
+      id: "fixture",
+      name: "Fixture",
+      configFields: [{ key: "environment", type: "string", label: "Environment", required: false }],
+      secretFields: [{ key: "token", label: "Token", required: true }],
+    } as const;
+
+    expect(() => integrationPluginManifestSchema.parse({
+      ...base,
+      sections: [
+        { id: "first", label: "First", connectionTest: true },
+        { id: "second", label: "Second", connectionTest: true },
+      ],
+    })).toThrow(/DUPLICATE_INTEGRATION_CONNECTION_TEST/);
+    expect(() => integrationPluginManifestSchema.parse({
+      ...base,
+      sections: [{
+        id: "filters",
+        label: "Filters",
+        summary: { fields: [{ key: "missing", emptyValue: "Any" }] },
+      }],
+    })).toThrow(/INTEGRATION_SUMMARY_FIELD_NOT_FOUND/);
+    expect(() => integrationPluginManifestSchema.parse({
+      ...base,
+      sections: [{
+        id: "filters",
+        label: "Filters",
+        summary: { fields: [{ key: "token", emptyValue: "Any" }] },
+      }],
+    })).toThrow(/INTEGRATION_SUMMARY_SECRET_FORBIDDEN/);
+  });
+
+  it("validates strict public connection-test results", () => {
+    const result = {
+      title: "Connected",
+      details: [{ label: "Project", value: "checkout" }],
+      testedAt: "2026-08-26T02:00:00.000Z",
+    };
+    expect(integrationConnectionTestResultSchema.parse(result)).toEqual(result);
+    expect(() => integrationConnectionTestResultSchema.parse({ ...result, token: "secret" })).toThrow();
+    expect(() => integrationConnectionTestResultSchema.parse({ ...result, testedAt: "today" })).toThrow();
   });
 });
