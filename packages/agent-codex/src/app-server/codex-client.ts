@@ -33,7 +33,7 @@ export interface AppServerCodexClientOptions {
 export class AppServerCodexClient implements CodexClient {
   private readonly subscriptions = new Map<string, TurnSubscription>();
   private readonly startingNotifications = new Map<string, RoutedNotification[]>();
-  private readonly privateTemps = new Set<string>();
+  private readonly privateTemps = new Map<string, number>();
   private readonly ensurePrivateTemp: typeof ensureAgentPrivateTemp;
   private disposed = false;
 
@@ -56,15 +56,21 @@ export class AppServerCodexClient implements CodexClient {
   private createThread(threadId: string | undefined, options: CodexThreadOptions): CodexThread {
     if (this.disposed) throw new Error("CODEX_APP_SERVER_CLIENT_DISPOSED");
     const privateTemp = this.ensurePrivateTemp(options.workingDirectory, options.sessionId);
-    this.privateTemps.add(privateTemp);
-    return new AppServerThread(this, threadId, options, privateTemp);
+    this.privateTemps.set(privateTemp, (this.privateTemps.get(privateTemp) ?? 0) + 1);
+    return new AppServerThread(
+      this,
+      threadId,
+      options,
+      privateTemp,
+      () => this.releasePrivateTemp(privateTemp),
+    );
   }
 
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
     let failure: unknown;
-    for (const path of this.privateTemps) {
+    for (const path of this.privateTemps.keys()) {
       try {
         await removePrivateTemp(path);
       } catch (error) {
@@ -73,6 +79,17 @@ export class AppServerCodexClient implements CodexClient {
     }
     this.privateTemps.clear();
     if (failure) throw failure;
+  }
+
+  private async releasePrivateTemp(path: string): Promise<void> {
+    const references = this.privateTemps.get(path);
+    if (references === undefined) return;
+    if (references > 1) {
+      this.privateTemps.set(path, references - 1);
+      return;
+    }
+    await removePrivateTemp(path);
+    this.privateTemps.delete(path);
   }
 
   async startTurn(
@@ -185,12 +202,14 @@ export class AppServerCodexClient implements CodexClient {
 
 class AppServerThread implements CodexThread {
   private threadId: string | null;
+  private disposed = false;
 
   constructor(
     private readonly client: AppServerCodexClient,
     requestedThreadId: string | undefined,
     private readonly threadOptions: CodexThreadOptions,
     private readonly privateTemp: string,
+    private readonly releasePrivateTemp: () => Promise<void>,
   ) { this.threadId = requestedThreadId ?? null; }
 
   get id(): string | null { return this.threadId; }
@@ -207,7 +226,11 @@ class AppServerThread implements CodexThread {
     return started.events;
   }
 
-  async dispose(): Promise<void> {}
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    await this.releasePrivateTemp();
+  }
 }
 
 function threadParams(

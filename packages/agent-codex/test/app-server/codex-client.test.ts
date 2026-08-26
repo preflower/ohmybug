@@ -136,7 +136,7 @@ describe("App Server Codex client", () => {
     }]);
   });
 
-  it("preserves a session-stable private temp and cleans it when the client stops", async () => {
+  it("cleans the session-stable private temp when the thread is disposed", async () => {
     const temporary = await createTempDir("oh-my-bug-app-client-");
     cleanups.push(temporary.cleanup);
     const projectDirectory = join(temporary.path, "project");
@@ -170,12 +170,13 @@ describe("App Server Codex client", () => {
       params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
     });
     await collect(stream);
-    await expect(access(privateTemp)).resolves.toBeUndefined();
+    await thread.dispose();
+    await expect(access(privateTemp)).rejects.toMatchObject({ code: "ENOENT" });
     await client.dispose();
     await expect(access(privateTemp)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("reuses the same live private temp when a later turn changes sandbox mode", async () => {
+  it("recreates the same private temp when a later turn changes sandbox mode", async () => {
     const temporary = await createTempDir("oh-my-bug-app-client-baseline-");
     cleanups.push(temporary.cleanup);
     const projectDirectory = join(temporary.path, "project");
@@ -197,9 +198,11 @@ describe("App Server Codex client", () => {
     const stableTemp = (start.params as {
       config: { shell_environment_policy: { set: { TMPDIR: string } } };
     }).config.shell_environment_policy.set.TMPDIR;
-    await expect(access(stableTemp)).resolves.toBeUndefined();
+    await writable.dispose();
+    await expect(access(stableTemp)).rejects.toMatchObject({ code: "ENOENT" });
 
     const readonly = client.resumeThread("thread-1", threadOptions(projectDirectory));
+    await expect(access(stableTemp)).resolves.toBeUndefined();
     const readonlyStream = await readonly.runStreamed("Read", { outputSchema: {} });
     const resume = rpc.calls.find(({ method }) => method === "thread/resume")!;
     expect(resume.params).toMatchObject({
@@ -215,6 +218,8 @@ describe("App Server Codex client", () => {
       params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
     });
     await collect(readonlyStream);
+    await readonly.dispose();
+    await expect(access(stableTemp)).rejects.toMatchObject({ code: "ENOENT" });
     await client.dispose();
     await expect(access(stableTemp)).rejects.toMatchObject({ code: "ENOENT" });
   });
