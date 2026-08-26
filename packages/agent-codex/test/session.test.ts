@@ -86,17 +86,6 @@ describe("durable Codex session", () => {
     expect(plugin.create({ sessions })).toBeInstanceOf(CodexAgentAdapter);
   });
 
-  it("registers without an App Server client and fails closed when a turn starts", async () => {
-    const sessions = new MemorySessions();
-    await bindSession(sessions);
-    const adapter = codexAgent().create({ sessions });
-
-    await expect(adapter.assess(
-      { agent: "codex", sessionId: "logical-1" },
-      { issue: issue(), project },
-    )).rejects.toThrow("CODEX_APP_SERVER_UNAVAILABLE");
-  });
-
   it("uses the same native task for Assessment and Repair", async () => {
     const sessions = new MemorySessions();
     await bindSession(sessions);

@@ -132,6 +132,24 @@ export interface IssueWorkspaceInfo {
   branch?: string;
 }
 
+export type AgentTerminalUnavailableReason =
+  | "UNSUPPORTED_AGENT"
+  | "SESSION_NOT_READY"
+  | "WORKSPACE_NOT_READY"
+  | "APP_SERVER_UNAVAILABLE";
+
+export type AgentTerminalAvailability =
+  | { available: true }
+  | { available: false; reason: AgentTerminalUnavailableReason };
+
+export interface AgentTerminalLaunchTarget {
+  agent: "codex";
+  providerThreadId: string;
+  executablePath: string;
+  remoteUrl: string;
+  workingDirectory: string;
+}
+
 export interface RuntimeApi {
   health(input: Record<string, never>): Promise<RuntimeHealth>;
   listIntegrationPlugins(input: Record<string, never>): Promise<IntegrationPluginManifest[]>;
@@ -159,6 +177,8 @@ export interface RuntimeApi {
   }): Promise<IntegrationConnectionTestResult>;
   listIssues(input: { id?: string }): Promise<Issue[]>;
   getIssue(input: { id: string }): Promise<Issue>;
+  agentTerminalAvailability(input: { id: string }): Promise<AgentTerminalAvailability>;
+  resolveAgentTerminalLaunchTarget(input: { id: string }): Promise<AgentTerminalLaunchTarget>;
   getIssueWorkspace(input: { id: string }): Promise<IssueWorkspaceInfo | null>;
   submitManual(input: ManualIssueCommand): Promise<Issue>;
   submitReview(input: { id: string; input: ReviewSubmission }): Promise<Issue>;

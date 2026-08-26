@@ -190,6 +190,26 @@ export const issueWorkspaceInfoSchema = z.object({
   status: z.enum(["PREPARING", "READY", "FAILED", "RELEASED"]),
   branch: identifierSchema.optional(),
 }).strict();
+export const agentTerminalUnavailableReasonSchema = z.enum([
+  "UNSUPPORTED_AGENT",
+  "SESSION_NOT_READY",
+  "WORKSPACE_NOT_READY",
+  "APP_SERVER_UNAVAILABLE",
+]);
+export const agentTerminalAvailabilitySchema = z.discriminatedUnion("available", [
+  z.object({ available: z.literal(true) }).strict(),
+  z.object({
+    available: z.literal(false),
+    reason: agentTerminalUnavailableReasonSchema,
+  }).strict(),
+]);
+export const agentTerminalLaunchTargetSchema = z.object({
+  agent: z.literal("codex"),
+  providerThreadId: identifierSchema,
+  executablePath: identifierSchema,
+  remoteUrl: z.string().startsWith("unix://"),
+  workingDirectory: identifierSchema,
+}).strict();
 export const approvalResultSchema = z.object({
   issue: issueSchema,
   branch: branchInfoSchema.optional(),

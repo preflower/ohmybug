@@ -63,7 +63,7 @@ export interface CodexActivity {
 
 export interface CodexAgentAdapterOptions {
   sessions: AgentSessionStore;
-  client?: CodexClient;
+  client: CodexClient;
   id?: () => string;
   now?: () => Date;
   onActivity?: (activity: CodexActivity) => void;
@@ -78,22 +78,13 @@ interface ActiveTurn {
 
 type CodexStageThreadOptions = Omit<CodexThreadOptions, "sessionId">;
 
-const unavailableCodexClient: CodexClient = {
-  startThread() {
-    throw new Error("CODEX_APP_SERVER_UNAVAILABLE");
-  },
-  resumeThread() {
-    throw new Error("CODEX_APP_SERVER_UNAVAILABLE");
-  },
-};
-
 export class CodexAgentAdapter implements AgentAdapter {
   private readonly client: CodexClient;
   private readonly now: () => Date;
   private readonly active = new Map<string, ActiveTurn>();
 
   constructor(private readonly options: CodexAgentAdapterOptions) {
-    this.client = options.client ?? unavailableCodexClient;
+    this.client = options.client;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -483,7 +474,7 @@ function looksPermissionBlocked(error: unknown): boolean {
 }
 
 export function codexAgent(
-  options: Omit<CodexAgentAdapterOptions, "sessions"> = {},
+  options: Omit<CodexAgentAdapterOptions, "sessions">,
 ): AgentPlugin {
   return {
     id: "codex",

@@ -6,6 +6,34 @@ import { FakeAgent } from "./helpers/fakes.js";
 import { createHarness, eventIds, now, project } from "./helpers/runtime.js";
 
 describe("Runtime shutdown", () => {
+  it("starts the Agent host before recovery and stops it after turns drain", async () => {
+    const agent = new FakeAgent();
+    const order: string[] = [];
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
+    const runtime = new OhMyBugRuntime({
+      commands,
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("agent-runtime-event"),
+      now: () => now,
+      modules: {
+        start: async () => { order.push("modules-start"); },
+        stop: async () => { order.push("modules-stop"); },
+      },
+      agentRuntime: {
+        start: async () => { order.push("agent-start"); },
+        stop: async () => { order.push("agent-stop"); },
+      },
+    });
+
+    await runtime.start();
+    await runtime.stop();
+
+    expect(order).toEqual(["modules-start", "agent-start", "agent-stop", "modules-stop"]);
+  });
+
   it("rejects new commands after idempotent shutdown", async () => {
     const agent = new FakeAgent();
     const { commands, store, agents, evidence, workspaces } = createHarness(agent);

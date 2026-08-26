@@ -12,6 +12,46 @@ import * as runtimeComposition from "../src/composition.js";
 const { createDesktopRuntimeComposition } = runtimeComposition;
 
 describe("Runtime composition boundary", () => {
+  it("owns the Codex host only for the production Agent composition", async () => {
+    const productionRoot = await mkdtemp(join(tmpdir(), "omb-runtime-agent-host-production-"));
+    const demoRoot = await mkdtemp(join(tmpdir(), "omb-runtime-agent-host-demo-"));
+    const overrideRoot = await mkdtemp(join(tmpdir(), "omb-runtime-agent-host-override-"));
+    const fixturePlugin: AgentPlugin = {
+      id: "fixture",
+      create: () => ({
+        createSession: async () => ({ agent: "fixture", sessionId: "fixture-1" }),
+        assess: async () => { throw new Error("NOT_USED"); },
+        repair: async () => { throw new Error("NOT_USED"); },
+        captureEvidence: async () => { throw new Error("NOT_USED"); },
+        cancel: async () => undefined,
+      }),
+    };
+    const production = createDesktopRuntimeComposition({
+      dataRoot: productionRoot,
+      overrides: { secrets: new MemorySecretStore() },
+    });
+    const demo = createDesktopRuntimeComposition({
+      dataRoot: demoRoot,
+      overrides: { secrets: new MemorySecretStore() },
+    }, true);
+    const overridden = createDesktopRuntimeComposition({
+      dataRoot: overrideRoot,
+      overrides: { agentPlugin: fixturePlugin, secrets: new MemorySecretStore() },
+    });
+    try {
+      expect(production.agentTerminal).toBeDefined();
+      expect(demo.agentTerminal).toBeUndefined();
+      expect(overridden.agentTerminal).toBeUndefined();
+    } finally {
+      production.store.close();
+      demo.store.close();
+      overridden.store.close();
+      await Promise.all([productionRoot, demoRoot, overrideRoot].map((path) => (
+        rm(path, { recursive: true, force: true })
+      )));
+    }
+  });
+
   it("keeps concrete Workspace packages in composition only", () => {
     const runtimeSource = resolve(import.meta.dirname, "../src");
     const sourceFiles = (directory: string): string[] =>
@@ -182,7 +222,7 @@ describe("Runtime composition boundary", () => {
   it("is the only Runtime source that installs concrete Agent and Integration plugins", () => {
     const source = readFileSync(resolve(import.meta.dirname, "../src/composition.ts"), "utf8");
 
-    expect(source).toContain("codexAgent");
+    expect(source).toContain("CodexAppServerRuntimeHost");
     expect(source).toContain("sentryPlugin");
     expect(source).toContain("dingTalkPlugin");
     expect(source).toContain("gitWorkspaceFactory");
