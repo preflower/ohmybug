@@ -14,6 +14,7 @@ export type { TrayNavigationTarget } from "./tray-navigation.js";
 
 export const DESKTOP_REQUEST_CHANNEL = "oh-my-bug:request";
 export const OPEN_PROJECT_DIRECTORY_CHANNEL = "oh-my-bug:open-project-directory";
+export const OPEN_AGENT_TERMINAL_CHANNEL = "oh-my-bug:open-agent-terminal";
 export const SUBSCRIBE_ISSUE_CHANNEL = "oh-my-bug:subscribe-issue";
 export const UNSUBSCRIBE_ISSUE_CHANNEL = "oh-my-bug:unsubscribe-issue";
 export const ISSUE_EVENT_CHANNEL = "oh-my-bug:issue-event";
@@ -54,6 +55,10 @@ export interface DesktopApi {
   ): Promise<RuntimeOperationOutput<"testSavedIntegration">>;
   listIssues(projectId?: string): Promise<RuntimeOperationOutput<"listIssues">>;
   getIssue(id: string): Promise<RuntimeOperationOutput<"getIssue">>;
+  agentTerminalAvailability(
+    id: string,
+  ): Promise<RuntimeOperationOutput<"agentTerminalAvailability">>;
+  openAgentTerminal(id: string): Promise<{ opened: true }>;
   getIssueWorkspace(id: string): Promise<RuntimeOperationOutput<"getIssueWorkspace">>;
   submitManual(input: ManualIssueCommand): Promise<RuntimeOperationOutput<"submitManual">>;
   submitReview(
@@ -138,6 +143,11 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
     }),
     listIssues: (id) => request("listIssues", { id }),
     getIssue: (id) => request("getIssue", { id }),
+    agentTerminalAvailability: (id) => request("agentTerminalAvailability", { id }),
+    openAgentTerminal: (issueId) => ipc.invoke(
+      OPEN_AGENT_TERMINAL_CHANNEL,
+      { issueId },
+    ) as Promise<{ opened: true }>,
     getIssueWorkspace: (id) => request("getIssueWorkspace", { id }),
     submitManual: (input) => request("submitManual", input),
     submitReview: (id, input) => request("submitReview", { id, input }),

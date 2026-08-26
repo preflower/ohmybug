@@ -17,9 +17,9 @@ describe("preload desktop API", () => {
     expect(Object.isFrozen(api)).toBe(true);
     expect(Object.keys(api).sort()).toEqual([
       "approveAssessment", "approveBugAssessment", "approveDelivery", "cancelIssue", "confirmDuplicate",
-      "confirmNotABug", "createProject", "getIssue", "getIssueWorkspace", "getProject", "listIntegrationPlugins",
+      "confirmNotABug", "createProject", "getIssue", "getIssueWorkspace", "getProject", "listIntegrationPlugins", "agentTerminalAvailability",
       "inspectProject", "inspectProjectBranches", "listIssues", "listProjects", "listWorkspaceProviders", "onRuntimeState", "openProjectDirectory",
-      "pauseIssue", "readEvidence", "rebuildAgentSession", "rejectDelivery", "requestReassessment", "resumeIssue", "retryIssue",
+      "openAgentTerminal", "pauseIssue", "readEvidence", "rebuildAgentSession", "rejectDelivery", "requestReassessment", "resumeIssue", "retryIssue",
       "grantIssueCapabilities", "onTrayNavigation", "saveProjectSettings", "setIntegrationSecrets", "submitManual", "submitReview", "subscribeIssueEvents", "integrationHealth", "testSavedIntegration", "updateProject"
     ].sort());
     expect("invoke" in api).toBe(false);
@@ -40,6 +40,8 @@ describe("preload desktop API", () => {
     await api.inspectProjectBranches("/work/checkout", "git", true);
     await api.openProjectDirectory();
     await api.getIssueWorkspace("issue-1");
+    await api.agentTerminalAvailability("issue-1");
+    await api.openAgentTerminal("issue-1");
     await api.grantIssueCapabilities("issue-1", 7, "request-1");
     await api.pauseIssue("issue-1");
     await api.resumeIssue("issue-1");
@@ -73,25 +75,32 @@ describe("preload desktop API", () => {
       payload: { id: "issue-1" },
     });
     expect(ipc.invoke).toHaveBeenNthCalledWith(6, "oh-my-bug:request", {
+      operation: "agentTerminalAvailability",
+      payload: { id: "issue-1" },
+    });
+    expect(ipc.invoke).toHaveBeenNthCalledWith(7, "oh-my-bug:open-agent-terminal", {
+      issueId: "issue-1",
+    });
+    expect(ipc.invoke).toHaveBeenNthCalledWith(8, "oh-my-bug:request", {
       operation: "grantIssueCapabilities",
       payload: { id: "issue-1", expectedRevision: 7, requestId: "request-1" },
     });
-    expect(ipc.invoke).toHaveBeenNthCalledWith(7, "oh-my-bug:request", {
+    expect(ipc.invoke).toHaveBeenNthCalledWith(9, "oh-my-bug:request", {
       operation: "pauseIssue",
       payload: { id: "issue-1" },
     });
-    expect(ipc.invoke).toHaveBeenNthCalledWith(8, "oh-my-bug:request", {
+    expect(ipc.invoke).toHaveBeenNthCalledWith(10, "oh-my-bug:request", {
       operation: "resumeIssue",
       payload: { id: "issue-1" },
     });
-    expect(ipc.invoke).toHaveBeenNthCalledWith(9, "oh-my-bug:request", {
+    expect(ipc.invoke).toHaveBeenNthCalledWith(11, "oh-my-bug:request", {
       operation: "submitReview",
       payload: {
         id: "issue-1",
         input: { expectedRevision: 8, requestId: "review-1", choiceId: "keep-base" },
       },
     });
-    expect(ipc.invoke).toHaveBeenNthCalledWith(10, "oh-my-bug:request", {
+    expect(ipc.invoke).toHaveBeenNthCalledWith(12, "oh-my-bug:request", {
       operation: "saveProjectSettings",
       payload: {
         mode: "create",

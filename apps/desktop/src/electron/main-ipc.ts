@@ -2,16 +2,19 @@ import {
   rendererOperationNames,
   utilityRequestSchema,
   type IssueEventEnvelope,
+  type AgentTerminalLaunchTarget,
   type RuntimeOperation,
 } from "@oh-my-bug/runtime/protocol";
 
 import {
   DESKTOP_REQUEST_CHANNEL,
   ISSUE_EVENT_CHANNEL,
+  OPEN_AGENT_TERMINAL_CHANNEL,
   OPEN_PROJECT_DIRECTORY_CHANNEL,
   SUBSCRIBE_ISSUE_CHANNEL,
   UNSUBSCRIBE_ISSUE_CHANNEL,
 } from "./desktop-api.js";
+import { openAgentTerminal as launchTerminal } from "./agent-terminal-launcher.js";
 import { isTrustedIpcSender } from "./window-security.js";
 
 interface IpcMainLike {
@@ -54,11 +57,13 @@ interface DesktopIpcDependencies {
   window: WindowLike;
   dialog: DialogLike;
   getClient: () => DesktopUtilityClient;
+  launchAgentTerminal?: (target: AgentTerminalLaunchTarget) => Promise<{ opened: true }>;
   rendererUrl: string;
 }
 
 export function registerDesktopIpc(dependencies: DesktopIpcDependencies): { dispose(): void } {
   const { ipcMain, window, dialog, getClient, rendererUrl } = dependencies;
+  const openAgentTerminal = dependencies.launchAgentTerminal ?? launchTerminal;
   const subscriptions = new Map<string, () => void>();
   const authorize = (event: IpcEventLike) => {
     if (!isTrustedIpcSender(event, window.webContents, rendererUrl)) {
@@ -91,6 +96,16 @@ export function registerDesktopIpc(dependencies: DesktopIpcDependencies): { disp
     return { canceled: false, inspection };
   });
 
+  ipcMain.handle(OPEN_AGENT_TERMINAL_CHANNEL, async (event, input) => {
+    authorize(event);
+    const issueId = parseAgentTerminalRequest(input);
+    const target = await getClient().request(
+      "resolveAgentTerminalLaunchTarget",
+      { id: issueId } as never,
+    ) as AgentTerminalLaunchTarget;
+    return openAgentTerminal(target);
+  });
+
   ipcMain.handle(SUBSCRIBE_ISSUE_CHANNEL, async (event, input) => {
     authorize(event);
     const message = utilityRequestSchema.parse({ kind: "subscribe", ...(input as object) });
@@ -118,9 +133,24 @@ export function registerDesktopIpc(dependencies: DesktopIpcDependencies): { disp
     subscriptions.clear();
     ipcMain.removeHandler(DESKTOP_REQUEST_CHANNEL);
     ipcMain.removeHandler(OPEN_PROJECT_DIRECTORY_CHANNEL);
+    ipcMain.removeHandler(OPEN_AGENT_TERMINAL_CHANNEL);
     ipcMain.removeHandler(SUBSCRIBE_ISSUE_CHANNEL);
     ipcMain.removeHandler(UNSUBSCRIBE_ISSUE_CHANNEL);
   };
   window.webContents.once?.("render-process-gone", dispose);
   return { dispose };
+}
+
+function parseAgentTerminalRequest(input: unknown): string {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("INVALID_REQUEST");
+  }
+  const entries = Object.entries(input);
+  if (
+    entries.length !== 1 ||
+    entries[0]?.[0] !== "issueId" ||
+    typeof entries[0][1] !== "string" ||
+    !entries[0][1].trim()
+  ) throw new Error("INVALID_REQUEST");
+  return entries[0][1];
 }
