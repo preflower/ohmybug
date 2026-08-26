@@ -130,7 +130,7 @@ describe("unified review panel", () => {
       "data-review-mode",
       "composing",
     );
-    expect(screen.getByLabelText("修改说明（必填）")).toBeFocused();
+    expect(screen.getByLabelText("修改说明（必填）")).toBe(document.activeElement);
     expect(screen.getByRole("button", { name: "提交修改要求" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("修改说明（必填）"), {

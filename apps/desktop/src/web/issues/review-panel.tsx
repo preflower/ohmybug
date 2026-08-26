@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button.js";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group.js";
 import { Textarea } from "../components/ui/textarea.js";
 import { CancelIssueButton } from "./cancel-issue-button.js";
-import { ReviewRenderer, ReviewResponseFields } from "./review-renderers.js";
+import { ReviewCompactContext, ReviewRenderer, ReviewResponseFields } from "./review-renderers.js";
 
 interface ReviewPanelProps {
   issue: IssueDto;
@@ -41,6 +41,7 @@ function ReviewPanelContent({
   const [choiceId, setChoiceId] = useState(choices[0]?.id ?? "");
   const [feedback, setFeedback] = useState("");
   const [choiceData, setChoiceData] = useState<Record<string, ReviewSubmissionInput["data"]>>({});
+  const [mode, setMode] = useState<"collapsed" | "composing">("collapsed");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -59,17 +60,25 @@ function ReviewPanelContent({
     && (!response || typeof response !== "object" || Array.isArray(response)
       || typeof response.duplicateOf !== "string" || !response.duplicateOf.trim());
 
-  const submit = async () => {
-    if (!selected || (selected.feedbackRequired && !feedback.trim())) return;
+  const submit = async (submittedChoiceId = choiceId) => {
+    const submittedChoice = choices.find((choice) => choice.id === submittedChoiceId);
+    const submittedResponse = choiceData[submittedChoiceId] ?? (review.kind === "assessment"
+      ? submittedChoiceId === "implement"
+        ? { title: issue.assessment?.suggestedTitle ?? issue.title }
+        : submittedChoiceId === "duplicate" && duplicateCandidate
+          ? { duplicateOf: duplicateCandidate }
+          : undefined
+      : undefined);
+    if (!submittedChoice || (submittedChoice.feedbackRequired && !feedback.trim())) return;
     setBusy(true);
     setError("");
     try {
       await onSubmit({
         expectedRevision: issue.revision,
         requestId: review.id,
-        choiceId: selected.id,
+        choiceId: submittedChoice.id,
         ...(feedback.trim() ? { feedback: feedback.trim() } : {}),
-        ...(response === undefined ? {} : { data: response }),
+        ...(submittedResponse === undefined ? {} : { data: submittedResponse }),
       });
     } catch (caught) {
       setError(reviewErrorMessage(caught));
@@ -77,6 +86,75 @@ function ReviewPanelContent({
       setBusy(false);
     }
   };
+
+  if (review.kind === "delivery") {
+    const requestChanges = choices.find((choice) => choice.id === "request-changes");
+    return (
+      <section
+        aria-label={reviewTitle(review.kind)}
+        className="review-dock"
+        data-review-kind={review.kind}
+        data-review-mode={busy ? "submitting" : mode}
+      >
+        {mode === "composing" && selected ? <div className="review-composer">
+          <label className="feedback-field">
+            {selected.feedbackRequired ? "修改说明（必填）" : "修改说明（可选）"}
+            <Textarea
+              autoFocus
+              disabled={busy}
+              value={feedback}
+              onChange={(event) => setFeedback(event.target.value)}
+            />
+          </label>
+          <div className="review-composer-actions">
+            <Button
+              aria-label="返回审核操作"
+              disabled={busy}
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setChoiceId(choices[0]?.id ?? "");
+                setFeedback("");
+                setError("");
+                setMode("collapsed");
+              }}
+            >取消</Button>
+            <Button
+              disabled={busy || Boolean(selected.feedbackRequired && !feedback.trim())}
+              type="button"
+              onClick={() => void submit(selected.id)}
+            >{busy ? "提交中…" : "提交修改要求"}</Button>
+          </div>
+        </div> : null}
+        {error ? <Alert className="form-error" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
+        <div className="review-dock-row">
+          <div className="review-dock-summary">
+            <span className="approval-kicker">等待人工决定</span>
+            <ReviewCompactContext issue={issue} />
+          </div>
+          <div className="review-dock-actions">
+            {requestChanges ? <Button
+              disabled={busy}
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setChoiceId(requestChanges.id);
+                setError("");
+                setMode("composing");
+              }}
+            >{requestChanges.label}</Button> : null}
+            {choices.filter((choice) => choice.id !== "request-changes").map((choice) => <Button
+              disabled={busy}
+              key={choice.id}
+              type="button"
+              onClick={() => void submit(choice.id)}
+            >{busy ? "提交中…" : choice.label}</Button>)}
+            {onCancel ? <CancelIssueButton disabled={busy} onCancel={onCancel} /> : null}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="approval-panel review-panel" aria-label={reviewTitle(review.kind)}>
