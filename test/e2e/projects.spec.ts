@@ -283,15 +283,19 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
         };
       })
     );
-    const expectedSwitchContract = [
-      { slot: "switch", width: 36, height: 20, track: "rgb(113, 107, 255)", thumb: "rgb(255, 255, 255)" },
-      { slot: "switch", width: 36, height: 20, track: "rgb(113, 107, 255)", thumb: "rgb(255, 255, 255)" },
+    const expectedDarkSwitchContract = [
+      { slot: "switch", width: 36, height: 20, track: "rgb(113, 107, 255)", thumb: "rgb(23, 23, 28)" },
+      { slot: "switch", width: 36, height: 20, track: "rgb(113, 107, 255)", thumb: "rgb(23, 23, 28)" },
     ];
-    await expect.poll(readSwitchContract).toEqual(expectedSwitchContract);
+    await expect.poll(readSwitchContract).toEqual(expectedDarkSwitchContract);
 
     await page.emulateMedia({ colorScheme: "light" });
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-    await expect.poll(readSwitchContract).toEqual(expectedSwitchContract);
+    const expectedLightSwitchContract = expectedDarkSwitchContract.map((control) => ({
+      ...control,
+      thumb: "rgb(255, 255, 255)",
+    }));
+    await expect.poll(readSwitchContract).toEqual(expectedLightSwitchContract);
 
     const outputDir = resolve(".artifacts", "visual-diff", "dingtalk-settings");
     await mkdir(outputDir, { recursive: true });
