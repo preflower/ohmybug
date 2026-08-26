@@ -20,6 +20,7 @@ import type { DirectorySelection, ProductTransport } from "./api/transport.js";
 import type { BranchInfoDto, IntegrationHealth, IntegrationPluginManifest, IssueDto, IssueWorkspaceInfoDto, ProjectDto, ProjectInspection, WorkspaceProviderManifest } from "./api/types.js";
 import { CommandMenu } from "./command/command-menu.js";
 import { Button } from "./components/ui/button.js";
+import { Toaster } from "./components/ui/sonner.js";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip.js";
 import { NewIssueDialog } from "./dialogs/new-issue-dialog.js";
 import { IssueDetail } from "./issues/issue-detail.js";
@@ -85,6 +86,7 @@ export function App() {
     <ThemeProvider>
       <TooltipProvider>
         <AppContent />
+        <Toaster />
       </TooltipProvider>
     </ThemeProvider>
   );

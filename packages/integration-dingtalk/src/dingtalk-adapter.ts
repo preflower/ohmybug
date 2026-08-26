@@ -9,6 +9,7 @@ import {
 export type DingTalkRawData = Record<string, unknown>;
 
 export interface DingTalkAdapterOptions {
+  conversationFilterEnabled: boolean;
   conversationIds: string[];
   messageRule?: string;
   threadKeyField?: string;
@@ -30,7 +31,10 @@ implements IntegrationAdapter<DingTalkRawData> {
 
   async adapt(rawData: DingTalkRawData): Promise<IntegrationInput<DingTalkRawData>> {
     const conversationId = requiredString(rawData.conversationId, "DINGTALK_CONVERSATION_ID_REQUIRED");
-    if (!this.options.conversationIds.includes(conversationId)) {
+    if (
+      this.options.conversationFilterEnabled
+      && !this.options.conversationIds.includes(conversationId)
+    ) {
       throw new Error("DINGTALK_CONVERSATION_NOT_ALLOWED");
     }
     const messageId = requiredString(rawData.msgId, "DINGTALK_MESSAGE_ID_REQUIRED");

@@ -23,7 +23,7 @@ const manifest = {
   id: "dingtalk",
   name: "DingTalk",
   icon: "dingtalk",
-  description: "从指定群聊接收消息并创建 Issue。",
+  description: "从群聊接收 @ 机器人的消息并创建 Issue。",
   sections: [
     {
       id: "credentials",
@@ -33,7 +33,6 @@ const manifest = {
     {
       id: "rules",
       label: "接收规则",
-      summary: { label: "接收范围", value: "指定群聊" },
     },
     {
       id: "advanced",
@@ -44,6 +43,15 @@ const manifest = {
   ],
   configFields: [
     {
+      key: "conversationFilterEnabled",
+      type: "boolean",
+      label: "群聊过滤",
+      description: "开启后仅处理指定群聊；关闭时处理任意群聊中 @ 机器人的消息。",
+      required: false,
+      defaultValue: false,
+      section: "rules",
+    },
+    {
       key: "conversationIds",
       type: "string[]",
       label: "群聊 ID",
@@ -51,6 +59,7 @@ const manifest = {
       required: true,
       section: "rules",
       addLabel: "添加群聊",
+      visibleWhen: { key: "conversationFilterEnabled", equals: true },
     },
     {
       key: "messageRule",
@@ -111,7 +120,7 @@ export function dingTalkPlugin(options: DingTalkPluginOptions = {}): Integration
 
 function validateDingTalkConfiguration(configuration: ProjectIntegrationConfiguration): void {
   assertAllowed(Object.keys(configuration.config), [
-    "conversationIds", "mention", "messageRule", "threadKeyField",
+    "conversationFilterEnabled", "conversationIds", "mention", "messageRule", "threadKeyField",
   ], "DINGTALK_CONFIG_UNKNOWN_FIELD");
   assertAllowed(
     Object.keys(configuration.secretRefs),
@@ -128,18 +137,29 @@ function validateDingTalkConfiguration(configuration: ProjectIntegrationConfigur
 }
 
 function dingTalkConfig(configuration: ProjectIntegrationConfiguration): {
+  conversationFilterEnabled: boolean;
   conversationIds: string[];
   messageRule?: string;
   threadKeyField?: string;
 } {
+  const rawFilterEnabled = configuration.config.conversationFilterEnabled;
+  if (rawFilterEnabled !== undefined && typeof rawFilterEnabled !== "boolean") {
+    throw new Error("DINGTALK_CONFIG_CONVERSATION_FILTER_ENABLED_INVALID");
+  }
   const rawIds = configuration.config.conversationIds;
-  if (!Array.isArray(rawIds)) throw new Error("DINGTALK_CONFIG_CONVERSATION_IDS_INVALID");
-  const conversationIds = rawIds.map((value) => value.trim());
-  if (
+  const legacyFilterEnabled = rawFilterEnabled === undefined
+    && Array.isArray(rawIds)
+    && rawIds.length > 0;
+  const conversationFilterEnabled = rawFilterEnabled ?? legacyFilterEnabled;
+  if (rawIds !== undefined && !Array.isArray(rawIds)) {
+    throw new Error("DINGTALK_CONFIG_CONVERSATION_IDS_INVALID");
+  }
+  const conversationIds = (rawIds ?? []).map((value) => value.trim());
+  if (conversationFilterEnabled && (
     conversationIds.length === 0 ||
     conversationIds.some((value) => !value) ||
     new Set(conversationIds).size !== conversationIds.length
-  ) {
+  )) {
     throw new Error("DINGTALK_CONFIG_CONVERSATION_IDS_INVALID");
   }
   const messageRule = optionalString(
@@ -151,6 +171,7 @@ function dingTalkConfig(configuration: ProjectIntegrationConfiguration): {
     "DINGTALK_CONFIG_THREAD_KEY_FIELD_INVALID",
   );
   return {
+    conversationFilterEnabled,
     conversationIds,
     ...(messageRule ? { messageRule } : {}),
     ...(threadKeyField ? { threadKeyField } : {}),
