@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { resolveCodexBinary } from "@oh-my-bug/agent-codex";
 import { chromium } from "playwright";
 
+export const desktopAsarUnpackPattern =
+  "{*.node,*.wasm,*.dylib,*.so,*.dll,*.exe,codex}";
+
 export const desktopBuildLayout = Object.freeze({
   main: ".vite/build/apps/desktop/src/electron/main.js",
   preload: ".vite/build/apps/desktop/src/electron/preload.cjs",

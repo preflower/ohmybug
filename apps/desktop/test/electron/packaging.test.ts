@@ -4,7 +4,11 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import forgeConfig, { createForgeConfig } from "../../forge.config.js";
-import { desktopBuildLayout, resolveRuntimeResources } from "../../scripts/packaged-runtime.js";
+import {
+  desktopAsarUnpackPattern,
+  desktopBuildLayout,
+  resolveRuntimeResources,
+} from "../../scripts/packaged-runtime.js";
 
 const desktopRoot = resolve(import.meta.dirname, "../..");
 const repositoryRoot = resolve(desktopRoot, "../..");
@@ -58,10 +62,10 @@ describe("Electron packaging", () => {
     const config = createForgeConfig(resources);
     const asar = config.packagerConfig?.asar;
 
-    expect(asar).toEqual(expect.objectContaining({
-      unpack: expect.stringContaining("*.node")
-    }));
-    expect(JSON.stringify(asar)).toContain("vendor/**/bin/*");
+    expect(asar).toEqual({ unpack: desktopAsarUnpackPattern });
+    expect(desktopAsarUnpackPattern).toContain("*.node");
+    expect(desktopAsarUnpackPattern).toContain("codex");
+    expect(desktopAsarUnpackPattern).not.toContain("/");
     expect(config.packagerConfig?.extraResource).toContain(resources.chromium.source);
     expect(basename(resources.chromium.source)).toBe(resources.chromium.resourceName);
     expect(basename(resources.codexProtocolSchema)).toBe("codex_app_server_protocol.schemas.json");

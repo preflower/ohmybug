@@ -4,6 +4,7 @@ import { createPackageWithOptions } from "@electron/asar";
 import { describe, expect, it } from "vitest";
 
 import {
+  desktopAsarUnpackPattern,
   desktopBuildLayout,
   requiredDesktopBuildPaths,
   resolveRuntimeResources,
@@ -130,7 +131,7 @@ async function createArchiveFixture(options: {
   }
   await mkdir(resourcesPath, { recursive: true });
   await createPackageWithOptions(source, archivePath, options.unpack === false ? {} : {
-    unpack: "**/{*.wasm,vendor/**/bin/*}"
+    unpack: desktopAsarUnpackPattern
   });
   const packagedChromiumExecutable = join(resourcesPath, resources.chromium.resourceName, chromiumExecutable);
   await mkdir(dirname(join(chromiumSource, chromiumExecutable)), { recursive: true });
@@ -252,6 +253,40 @@ describe("packaged desktop runtime", () => {
       );
     } finally {
       await fixture.cleanup();
+    }
+  });
+
+  it("unpacks runtime resources below a hidden temporary directory", async () => {
+    const temporary = await createTempDir("oh-my-bug-hidden-temp-");
+    const hiddenTemporary = join(temporary.path, ".hidden");
+    const previousTemporaryEnvironment = {
+      TMPDIR: process.env.TMPDIR,
+      TMP: process.env.TMP,
+      TEMP: process.env.TEMP,
+    };
+    let fixture: Awaited<ReturnType<typeof createArchiveFixture>> | undefined;
+
+    try {
+      await mkdir(hiddenTemporary, { recursive: true });
+      process.env.TMPDIR = hiddenTemporary;
+      process.env.TMP = hiddenTemporary;
+      process.env.TEMP = hiddenTemporary;
+      fixture = await createArchiveFixture();
+
+      const verifyPackagedArchive = packagedRuntimeVerifier.verifyPackagedArchive as VerifyPackagedArchive;
+      await expect(verifyPackagedArchive(fixture.appPath, fixture.resources)).resolves.toEqual(
+        expect.arrayContaining([
+          join(fixture.resourcesPath, "app.asar.unpacked", "node_modules", "mediainfo.js", "dist", "MediaInfoModule.wasm"),
+          join(fixture.resourcesPath, "app.asar.unpacked", "node_modules", `@openai/codex-${process.platform}-${process.arch}`, "vendor", "fixture", "bin", process.platform === "win32" ? "codex.exe" : "codex"),
+        ]),
+      );
+    } finally {
+      await fixture?.cleanup();
+      for (const [name, value] of Object.entries(previousTemporaryEnvironment)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      await temporary.cleanup();
     }
   });
 

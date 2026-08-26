@@ -1,7 +1,11 @@
 import { resolve } from "node:path";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
-import { resolveRuntimeResources, type RuntimeResources } from "./scripts/packaged-runtime.js";
+import {
+  desktopAsarUnpackPattern,
+  resolveRuntimeResources,
+  type RuntimeResources,
+} from "./scripts/packaged-runtime.js";
 
 interface ForgeConfigOptions {
   development?: boolean;
@@ -19,7 +23,7 @@ export function createForgeConfig(
       appBundleId: "com.ohmybug.desktop",
       appCategoryType: "public.app-category.developer-tools",
       asar: {
-        unpack: "**/{*.node,*.wasm,*.dylib,*.so,*.dll,*.exe,vendor/**/bin/*}"
+        unpack: desktopAsarUnpackPattern
       },
       extraResource: [resources.chromium.source],
       ignore: [

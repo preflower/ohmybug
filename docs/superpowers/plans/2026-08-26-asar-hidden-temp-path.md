@@ -15,11 +15,11 @@
 **Files:**
 - Modify: `apps/desktop/test/electron/packaged-runtime.test.ts`
 
-- [ ] **Step 1: Add an archive fixture root option and hidden-path regression**
+- [x] **Step 1: Add a hidden-path regression**
 
-Allow `createArchiveFixture` to accept a parent directory, create `.hidden/oh-my-bug-asar-*` beneath it, and assert that Codex and MediaInfo are unpacked when the source path crosses `.hidden`.
+Temporarily point the process temporary-directory environment variables below a `.hidden` directory, then assert that Codex and MediaInfo are unpacked when the fixture source path crosses that directory.
 
-- [ ] **Step 2: Run the focused test before changing production code**
+- [x] **Step 2: Run the focused test before changing production code**
 
 Run the packaged-runtime test with a regular OS temp root.
 
@@ -32,7 +32,7 @@ Expected: FAIL with `PACKAGED_RUNTIME_ARCHIVE_UNPACKED_REQUIRED` for Codex and M
 - Modify: `apps/desktop/forge.config.ts`
 - Modify: `apps/desktop/test/electron/packaged-runtime.test.ts`
 
-- [ ] **Step 1: Export a shared basename-only unpack pattern**
+- [x] **Step 1: Export a shared basename-only unpack pattern**
 
 Add:
 
@@ -41,11 +41,11 @@ export const desktopAsarUnpackPattern =
   "{*.node,*.wasm,*.dylib,*.so,*.dll,*.exe,codex}";
 ```
 
-- [ ] **Step 2: Use the shared pattern in Forge and the archive fixture**
+- [x] **Step 2: Use the shared pattern in Forge and the archive fixture**
 
 Replace both path-bearing glob literals with `desktopAsarUnpackPattern`.
 
-- [ ] **Step 3: Run the focused test**
+- [x] **Step 3: Run the focused test**
 
 Expected: all packaged-runtime tests pass, including the hidden-path regression.
 
@@ -55,15 +55,14 @@ Expected: all packaged-runtime tests pass, including the hidden-path regression.
 - Test: `apps/desktop/test/electron/packaged-runtime.test.ts`
 - Test: `apps/desktop/test/electron/packaging.test.ts`
 
-- [ ] **Step 1: Run the full Desktop Vitest suite under a hidden TMPDIR**
+- [x] **Step 1: Run the full Desktop Vitest suite under a hidden TMPDIR**
 
 Expected: all Desktop test files and tests pass.
 
-- [ ] **Step 2: Run Desktop type checking and lint**
+- [x] **Step 2: Run Desktop type checking and lint**
 
 Expected: both commands exit successfully.
 
-- [ ] **Step 3: Review the diff and commit**
+- [x] **Step 3: Review the diff and commit**
 
 Expected: only the shared unpack rule, its regression coverage, and these design/plan documents change.
-
