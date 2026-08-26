@@ -140,6 +140,7 @@ export function ReviewResponseFields({
       <label className="feedback-field">
         Issue 标题
         <Input
+          autoFocus
           value={text(response.title) ?? issue.assessment?.suggestedTitle ?? issue.title}
           onChange={(event) => onDataChange({ ...response, title: event.target.value })}
         />
@@ -152,6 +153,7 @@ export function ReviewResponseFields({
       <label className="feedback-field">
         重复 Issue
         <Input
+          autoFocus
           value={text(response.duplicateOf) ?? ""}
           onChange={(event) => onDataChange({ ...response, duplicateOf: event.target.value })}
         />

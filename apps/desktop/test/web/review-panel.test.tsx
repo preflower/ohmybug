@@ -152,10 +152,17 @@ describe("unified review panel", () => {
     render(<ReviewPanel issue={issue} onSubmit={onSubmit} />);
 
     expect(screen.getByRole("region", { name: "确认业务冲突处理" })).toBeVisible();
+    expect(screen.queryByText("Keep the order pending when the gateway times out.")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择处理方式" }));
     expect(screen.getByText("Keep the order pending when the gateway times out.")).toBeVisible();
     expect(screen.getByText("Cancel the order immediately when the gateway times out.")).toBeVisible();
     expect(screen.getByText("src/checkout/cancel.ts")).toBeVisible();
     expect(screen.getByText("Use the latest main-branch cancellation policy.")).toBeVisible();
+    expect(screen.getByRole("region", { name: "确认业务冲突处理" })).toHaveAttribute(
+      "data-review-mode",
+      "expanded",
+    );
+    expect(screen.getByRole("button", { name: "提交审核" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("radio", { name: /保留 Issue 行为/ }));
     const submit = screen.getByRole("button", { name: "保留 Issue 行为" });
@@ -197,12 +204,20 @@ describe("unified review panel", () => {
     };
     render(<ReviewPanel issue={assessmentIssue} onSubmit={async () => undefined} />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "要求重新分析" }));
-    expect(screen.getByRole("button", { name: "要求重新分析" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "要求重新分析" }));
+    expect(screen.getByLabelText("补充说明（必填）")).toBe(document.activeElement);
+    const composer = document.querySelector<HTMLElement>(".review-composer");
+    expect(composer).not.toBeNull();
+    expect(within(composer!).getByRole("button", { name: "要求重新分析" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("补充说明（必填）"), {
       target: { value: "Compare the gateway retry contract first." },
     });
-    expect(screen.getByRole("button", { name: "要求重新分析" })).toBeEnabled();
+    expect(within(composer!).getByRole("button", { name: "要求重新分析" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回审核操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始实现" }));
+    expect(screen.getByLabelText("Issue 标题")).toHaveValue("Checkout cancellation semantics");
+    expect(screen.queryByLabelText("补充说明（必填）")).not.toBeInTheDocument();
   });
 
   it("hides a persisted duplicate choice when Assessment did not suggest a target", () => {
@@ -226,7 +241,7 @@ describe("unified review panel", () => {
       },
     }} onSubmit={async () => undefined} />);
 
-    expect(screen.queryByRole("radio", { name: "确认为重复 Issue" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认为重复 Issue" })).not.toBeInTheDocument();
   });
 
   it("prefills the Agent duplicate candidate and submits only duplicate data", async () => {
@@ -252,12 +267,12 @@ describe("unified review panel", () => {
       },
     }} onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByLabelText("Issue 标题"), {
-      target: { value: "Edited implementation title" },
-    });
-    fireEvent.click(screen.getByRole("radio", { name: "确认为重复 Issue" }));
-    expect(screen.getByLabelText("重复 Issue")).toHaveValue("CHK-9");
     fireEvent.click(screen.getByRole("button", { name: "确认为重复 Issue" }));
+    expect(screen.getByLabelText("重复 Issue")).toHaveValue("CHK-9");
+    fireEvent.click(within(document.querySelector<HTMLElement>(".review-composer")!).getByRole(
+      "button",
+      { name: "确认为重复 Issue" },
+    ));
 
     await act(async () => undefined);
     expect(onSubmit).toHaveBeenCalledWith({
@@ -268,7 +283,7 @@ describe("unified review panel", () => {
     });
   });
 
-  it("keeps choice-dependent assessment fields after the processing choices", () => {
+  it("shows only fields required by the chosen Assessment action", () => {
     const assessmentIssue: IssueDto = {
       ...issue,
       assessment: { ...issue.assessment!, suspectedDuplicateOf: "CHK-9" },
@@ -296,21 +311,56 @@ describe("unified review panel", () => {
     };
     render(<ReviewPanel issue={assessmentIssue} onSubmit={async () => undefined} />);
 
-    const processingChoices = screen.getByRole("radiogroup", { name: "选择处理方式" });
-    const expectAfterChoices = (field: HTMLElement) => {
-      expect(
-        processingChoices.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    };
-
-    expectAfterChoices(screen.getByLabelText("Issue 标题"));
-
-    fireEvent.click(screen.getByRole("radio", { name: "确认为重复 Issue" }));
+    expect(screen.queryByRole("radiogroup", { name: "选择处理方式" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Issue 标题")).not.toBeInTheDocument();
-    expectAfterChoices(screen.getByLabelText("重复 Issue"));
-
-    fireEvent.click(screen.getByRole("radio", { name: "要求重新分析" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认为重复 Issue" }));
+    expect(screen.getByLabelText("重复 Issue")).toHaveValue("CHK-9");
+    expect(screen.queryByLabelText("Issue 标题")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回审核操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "要求重新分析" }));
     expect(screen.queryByLabelText("Issue 标题")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("重复 Issue")).not.toBeInTheDocument();
+  });
+
+  it("preserves the selected composer after a submission error", async () => {
+    const onSubmit = vi.fn(async () => { throw new Error("审核提交失败"); });
+    render(<ReviewPanel issue={deliveryIssue} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByRole("button", { name: "要求修改" }));
+    fireEvent.change(screen.getByLabelText("修改说明（必填）"), {
+      target: { value: "Use a darker close-button surface." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交修改要求" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("审核提交失败");
+    expect(screen.getByLabelText("修改说明（必填）")).toHaveValue(
+      "Use a darker close-button surface.",
+    );
+  });
+
+  it("keeps Issue cancellation in the dock overflow", () => {
+    render(<ReviewPanel
+      issue={deliveryIssue}
+      onCancel={async () => undefined}
+      onSubmit={async () => undefined}
+    />);
+    expect(screen.queryByRole("button", { name: "取消 Issue" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多 Issue 操作" }));
+    expect(screen.getByRole("button", { name: "取消 Issue" })).toBeInTheDocument();
+  });
+
+  it("expands bounded context before choosing an unknown review kind", () => {
+    const extensionIssue: IssueDto = {
+      ...issue,
+      review: {
+        ...issue.review!,
+        id: "review-extension-1",
+        kind: "extension-review",
+        payload: { provider: "example", records: [1, 2, 3] },
+      },
+    };
+    render(<ReviewPanel issue={extensionIssue} onSubmit={async () => undefined} />);
+    expect(screen.queryByText("provider")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择处理方式" }));
+    expect(screen.getByText("provider")).toBeVisible();
+    expect(screen.getByText("example")).toBeVisible();
   });
 });
