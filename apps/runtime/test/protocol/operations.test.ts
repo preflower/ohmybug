@@ -18,6 +18,7 @@ describe("Runtime protocol operation registry", () => {
       "updateProject",
       "setIntegrationSecrets",
       "integrationHealth",
+      "testSavedIntegration",
       "listIssues",
       "getIssue",
       "getIssueWorkspace",
@@ -43,6 +44,21 @@ describe("Runtime protocol operation registry", () => {
     expect(rendererOperationNames).toContain("rebuildAgentSession");
     expect(rendererOperationNames).toContain("grantIssueCapabilities");
     expect(rendererOperationNames).toContain("readEvidence");
+  });
+
+  it("validates strict saved Integration tests", () => {
+    const input = { projectId: "project-1", integrationId: "sentry" };
+    const output = {
+      title: "连接成功",
+      details: [{ label: "Project", value: "checkout" }],
+      testedAt: "2026-08-26T02:00:00.000Z",
+    };
+    expect(runtimeOperations.testSavedIntegration.input.parse(input)).toEqual(input);
+    expect(runtimeOperations.testSavedIntegration.output.parse(output)).toEqual(output);
+    expect(() => runtimeOperations.testSavedIntegration.input.parse({ ...input, token: "secret" }))
+      .toThrow();
+    expect(() => runtimeOperations.testSavedIntegration.output.parse({ ...output, token: "secret" }))
+      .toThrow();
   });
 
   it("validates optimistic generic review submission", () => {
