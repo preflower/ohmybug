@@ -287,7 +287,17 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
       { slot: "switch", width: 36, height: 20, track: "rgb(113, 107, 255)", thumb: "rgb(23, 23, 28)" },
       { slot: "switch", width: 36, height: 20, track: "rgb(113, 107, 255)", thumb: "rgb(23, 23, 28)" },
     ];
+    const readSurfaceContract = () => page.locator(".project-settings-tabs").evaluate((root) => ({
+      navigation: getComputedStyle(root.querySelector(".project-settings-nav")!).backgroundColor,
+      main: getComputedStyle(root.querySelector(".project-settings-main")!).backgroundColor,
+      actions: getComputedStyle(root.querySelector(".project-settings-actions")!).backgroundColor,
+    }));
     await expect.poll(readSwitchContract).toEqual(expectedDarkSwitchContract);
+    await expect.poll(readSurfaceContract).toEqual({
+      navigation: "rgb(23, 23, 28)",
+      main: "rgb(17, 17, 21)",
+      actions: "rgb(17, 17, 21)",
+    });
 
     await page.emulateMedia({ colorScheme: "light" });
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -296,6 +306,11 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
       thumb: "rgb(255, 255, 255)",
     }));
     await expect.poll(readSwitchContract).toEqual(expectedLightSwitchContract);
+    await expect.poll(readSurfaceContract).toEqual({
+      navigation: "rgb(255, 255, 255)",
+      main: "rgb(247, 247, 248)",
+      actions: "rgb(247, 247, 248)",
+    });
 
     const outputDir = resolve(".artifacts", "visual-diff", "dingtalk-settings");
     await mkdir(outputDir, { recursive: true });

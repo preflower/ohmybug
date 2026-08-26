@@ -74,6 +74,13 @@ describe("project settings layout", () => {
     expect(styles).toMatch(/\.integration-section-fields \[data-slot="button"\]\s*\{[^}]*min-height:\s*30px;/s);
   });
 
+  it("uses the shared surface hierarchy for project settings", () => {
+    expect(cssRule("\\.project-settings-nav")).toMatch(/background:\s*var\(--surface\);/);
+    expect(styles).toMatch(/\.project-settings-nav \[data-slot="tabs-trigger"\]:hover\s*\{[^}]*background:\s*var\(--surface-raised\);/s);
+    expect(cssRule("\\.project-settings-main")).toMatch(/background:\s*var\(--canvas\);/);
+    expect(cssRule("\\.project-settings-actions")).toMatch(/background:\s*var\(--canvas\);/);
+  });
+
   it("does not apply a DingTalk-specific scale", () => {
     expect(styles).not.toMatch(/\[data-brand-icon="dingtalk"\]\s*\{/s);
   });
