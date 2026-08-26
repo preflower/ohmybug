@@ -90,6 +90,42 @@ export function ReviewRenderer({ issue }: { issue: IssueDto }) {
   );
 }
 
+export function ReviewCompactContext({ issue }: { issue: IssueDto }) {
+  const review = issue.review;
+  if (!review) return null;
+  const payload = record(review.payload) ?? {};
+
+  if (review.kind === "delivery") {
+    const iteration = payload.repairIteration ?? issue.repair?.iteration ?? "-";
+    const evidenceCount = payload.evidenceCount ?? issue.repair?.delivery?.evidence.length ?? 0;
+    return <>
+      <strong>迭代 {String(iteration)} · {String(evidenceCount)} 项证据</strong>
+      <span>接受后发布已验证 commit</span>
+    </>;
+  }
+
+  if (review.kind === "assessment") {
+    const verdict = text(payload.verdict) ?? issue.assessment?.verdict ?? "待确认";
+    const revision = issue.assessment?.revision ?? "-";
+    return <>
+      <strong>{verdict} · Assessment {String(revision)}</strong>
+      <span>批准后允许 Agent 修改 Issue 工作区并运行验证</span>
+    </>;
+  }
+
+  if (review.kind === "business-merge-conflict") {
+    return <>
+      <strong>业务行为冲突</strong>
+      <span>选择最终语义后，Agent 将继续当前 Repair</span>
+    </>;
+  }
+
+  return <>
+    <strong>扩展审核</strong>
+    <span>展开上下文后选择明确操作</span>
+  </>;
+}
+
 export function ReviewResponseFields({
   issue,
   choiceId,
@@ -104,6 +140,7 @@ export function ReviewResponseFields({
       <label className="feedback-field">
         Issue 标题
         <Input
+          autoFocus
           value={text(response.title) ?? issue.assessment?.suggestedTitle ?? issue.title}
           onChange={(event) => onDataChange({ ...response, title: event.target.value })}
         />
@@ -116,6 +153,7 @@ export function ReviewResponseFields({
       <label className="feedback-field">
         重复 Issue
         <Input
+          autoFocus
           value={text(response.duplicateOf) ?? ""}
           onChange={(event) => onDataChange({ ...response, duplicateOf: event.target.value })}
         />

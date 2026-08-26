@@ -20,12 +20,18 @@ test("runs the two-gate manual Issue workflow and shows acceptance evidence", as
     const rootApproval = page.getByRole("region", { name: "确认 Assessment" });
     await expect(rootApproval).toBeVisible({ timeout: 15_000 });
     await rootApproval.getByRole("button", { name: "开始实现" }).click();
+    await expect(rootApproval.getByRole("textbox", { name: "Issue 标题" })).toBeVisible();
+    await rootApproval.locator(".review-composer").getByRole("button", { name: "开始实现" }).click();
 
     const acceptanceApproval = page.getByRole("region", { name: "验收 Delivery" });
     await expect(acceptanceApproval).toBeVisible({ timeout: 15_000 });
     const evidence = page.getByRole("img", { name: "Checkout acceptance" });
     await expect(evidence).toBeVisible({ timeout: 15_000 });
     await expect(evidence).toHaveJSProperty("naturalWidth", 1280);
+    const acceptanceBounds = await acceptanceApproval.boundingBox();
+    expect(acceptanceBounds).not.toBeNull();
+    expect(acceptanceBounds!.height).toBeLessThanOrEqual(72);
+    await page.getByRole("button", { name: "播放 Checkout recording" }).scrollIntoViewIfNeeded();
     const artifactDir = process.env.OH_MY_BUG_EVIDENCE_DIR
       ? resolve(process.env.OH_MY_BUG_EVIDENCE_DIR)
       : resolve("test-results", "acceptance");

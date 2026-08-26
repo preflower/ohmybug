@@ -412,6 +412,7 @@ describe("Issue detail", () => {
     />);
 
     expect(screen.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "更多 Issue 操作" }));
     fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
     expect(screen.getByRole("dialog", { name: "确认取消 Issue？" })).toBeVisible();
     expect(onCancel).not.toHaveBeenCalled();

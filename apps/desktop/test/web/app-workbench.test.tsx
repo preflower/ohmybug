@@ -349,7 +349,8 @@ describe("control center workbench", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "取消 Issue" }));
+    fireEvent.click(await screen.findByRole("button", { name: "更多 Issue 操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
     fireEvent.click(screen.getByRole("button", { name: "确认取消" }));
 
     await waitFor(() => expect(cancel).toHaveBeenCalledWith(issue.id));
@@ -1153,6 +1154,8 @@ describe("control center workbench", () => {
 
     render(<App />);
 
+    const deliveryReview = await screen.findByRole("region", { name: "验收 Delivery" });
+    expect(within(deliveryReview).queryByRole("radiogroup")).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", {
       name: "接受交付",
     }));
@@ -1212,6 +1215,7 @@ describe("control center workbench", () => {
 
     const rail = await screen.findByTestId("issue-metadata-rail");
     expect(await within(rail).findByText("ohmybug/chk-1")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "更多 Issue 操作" }));
     fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
     fireEvent.click(screen.getByRole("button", { name: "确认取消" }));
     await waitFor(() => expect(cancel).toHaveBeenCalledWith(issue.id));
