@@ -12,6 +12,7 @@ import type {
   ApprovalResultDto,
   ApproveAssessmentInput,
   AssessmentReference,
+  IntegrationConnectionTestResult,
   IntegrationHealth,
   IssueDto,
   IssueWorkspaceInfoDto,
@@ -71,6 +72,10 @@ export interface ProductTransport {
     requestId: string,
   ): Promise<IssueDto>;
   integrationHealth(): Promise<Record<string, IntegrationHealth>>;
+  testSavedIntegration(
+    projectId: string,
+    integrationId: string,
+  ): Promise<IntegrationConnectionTestResult>;
   openProjectDirectory(): Promise<DirectorySelection>;
   subscribeIssueEvents(
     id: string,

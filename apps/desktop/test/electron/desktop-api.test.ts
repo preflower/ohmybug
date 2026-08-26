@@ -20,7 +20,7 @@ describe("preload desktop API", () => {
       "confirmNotABug", "createProject", "getIssue", "getIssueWorkspace", "getProject", "listIntegrationPlugins",
       "inspectProject", "inspectProjectBranches", "listIssues", "listProjects", "listWorkspaceProviders", "onRuntimeState", "openProjectDirectory",
       "readEvidence", "rebuildAgentSession", "rejectDelivery", "requestReassessment", "retryIssue",
-      "grantIssueCapabilities", "onTrayNavigation", "saveProjectSettings", "setIntegrationSecrets", "submitManual", "submitReview", "subscribeIssueEvents", "integrationHealth", "updateProject"
+      "grantIssueCapabilities", "onTrayNavigation", "saveProjectSettings", "setIntegrationSecrets", "submitManual", "submitReview", "subscribeIssueEvents", "integrationHealth", "testSavedIntegration", "updateProject"
     ].sort());
     expect("invoke" in api).toBe(false);
     expect("filesystem" in api).toBe(false);
@@ -51,6 +51,7 @@ describe("preload desktop API", () => {
       project: { path: "/work/checkout", key: "CHK" },
       secretPatches: {},
     });
+    await api.testSavedIntegration("project-1", "sentry");
 
     expect(ipc.invoke).toHaveBeenNthCalledWith(1, "oh-my-bug:request", {
       operation: "listProjects",
@@ -87,6 +88,10 @@ describe("preload desktop API", () => {
         project: { path: "/work/checkout", key: "CHK" },
         secretPatches: {},
       },
+    });
+    expect(ipc.invoke).toHaveBeenCalledWith("oh-my-bug:request", {
+      operation: "testSavedIntegration",
+      payload: { projectId: "project-1", integrationId: "sentry" },
     });
   });
 

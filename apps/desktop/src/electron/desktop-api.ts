@@ -48,6 +48,10 @@ export interface DesktopApi {
     patch: Record<string, string | null>,
   ): Promise<RuntimeOperationOutput<"setIntegrationSecrets">>;
   integrationHealth(): Promise<RuntimeOperationOutput<"integrationHealth">>;
+  testSavedIntegration(
+    projectId: string,
+    integrationId: string,
+  ): Promise<RuntimeOperationOutput<"testSavedIntegration">>;
   listIssues(projectId?: string): Promise<RuntimeOperationOutput<"listIssues">>;
   getIssue(id: string): Promise<RuntimeOperationOutput<"getIssue">>;
   getIssueWorkspace(id: string): Promise<RuntimeOperationOutput<"getIssueWorkspace">>;
@@ -126,6 +130,10 @@ export function createDesktopApi(ipc: RendererIpc): Readonly<DesktopApi> {
       patch,
     }),
     integrationHealth: () => request("integrationHealth", {}),
+    testSavedIntegration: (projectId, integrationId) => request("testSavedIntegration", {
+      projectId,
+      integrationId,
+    }),
     listIssues: (id) => request("listIssues", { id }),
     getIssue: (id) => request("getIssue", { id }),
     getIssueWorkspace: (id) => request("getIssueWorkspace", { id }),

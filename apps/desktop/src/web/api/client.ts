@@ -41,6 +41,7 @@ const unavailableTransport: ProductTransport = {
   rebuildSession: unavailable,
   grantIssueCapabilities: unavailable,
   integrationHealth: unavailable,
+  testSavedIntegration: unavailable,
   openProjectDirectory: unavailable,
   subscribeIssueEvents: () => () => undefined,
   evidenceSource: unavailable,

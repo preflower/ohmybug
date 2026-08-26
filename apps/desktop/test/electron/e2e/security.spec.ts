@@ -46,6 +46,7 @@ test("keeps the packaged renderer isolated behind the frozen desktop bridge", as
       "submitManual",
       "submitReview",
       "subscribeIssueEvents",
+      "testSavedIntegration",
       "updateProject"
     ]
   });

@@ -64,7 +64,7 @@ export function IntegrationFields({
           </details>
         : <section className="integration-section" data-integration-section={section.id} key={section.id}>
             <header><h3>{section.label}</h3>{section.description ? <p>{section.description}</p> : null}</header>
-            {section.summary ? <div className="integration-section-summary">
+            {section.summary && "label" in section.summary ? <div className="integration-section-summary">
               <span>{section.summary.label}</span>
               <strong><i aria-hidden="true" />{section.summary.value}</strong>
             </div> : null}
