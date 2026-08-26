@@ -3240,6 +3240,94 @@ a:focus-visible {
   padding: 0 0 24px 19px;
 }
 
+.integration-section-collapsed .integration-section-summary-inline {
+  min-width: 0;
+  margin-left: auto;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: right;
+}
+
+.integration-connection-test {
+  display: grid;
+  gap: 14px;
+}
+
+.integration-connection-test-action {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 16px;
+}
+
+.integration-connection-test-action [data-slot="button"] {
+  width: fit-content;
+  min-width: 132px;
+}
+
+.integration-connection-test-action small {
+  grid-column: 2;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.integration-connection-test-result {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  padding: 14px 16px;
+}
+
+.integration-connection-test-result[data-state="success"] {
+  border-color: color-mix(in oklab, var(--success) 38%, var(--border));
+  background: var(--success-soft);
+}
+
+.integration-connection-test-result h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.integration-connection-test-result dl {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 12px 0 0;
+}
+
+.integration-connection-test-result dt {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.integration-connection-test-result dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.integration-connection-test-result footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.integration-connection-test > [data-slot="alert"] {
+  margin: 0;
+}
+
 .credential-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3536,7 +3624,7 @@ a:focus-visible {
   font: 10px var(--font-mono);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 800px) {
   .agent-mode span {
     display: none;
   }
@@ -3657,6 +3745,20 @@ a:focus-visible {
   .secret-field-editing > [data-slot="button"] {
     width: fit-content;
     grid-row: auto;
+  }
+
+  .integration-connection-test-action,
+  .integration-connection-test-result dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .integration-connection-test-action small {
+    grid-column: 1;
+  }
+
+  .integration-connection-test-result footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

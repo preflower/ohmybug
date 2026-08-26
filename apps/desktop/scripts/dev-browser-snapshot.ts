@@ -52,7 +52,11 @@ function fallbackSnapshot(
         commands: { test: "pnpm test", start: "pnpm dev:web" },
         agent: { plugin: "codex" },
         integrations: {
-          sentry: { enabled: true, config: {}, secretConfigured: {} },
+          sentry: {
+            enabled: true,
+            config: { organization: "acme", project: "checkout" },
+            secretConfigured: { token: true },
+          },
           dingtalk: { enabled: true, config: {}, secretConfigured: {} },
         },
         workspace: { provider: "local", config: {} },

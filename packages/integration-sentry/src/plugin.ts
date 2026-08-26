@@ -132,7 +132,7 @@ export function sentryPlugin(options: SentryPluginOptions = {}): IntegrationPlug
       try {
         await client.testConnection(config, token);
       } catch (error) {
-        throw new Error(sentryConnectionError(error));
+        throw publicConnectionError(sentryConnectionError(error));
       }
       return {
         title: "连接成功",
@@ -192,6 +192,11 @@ function sentryConnectionError(error: unknown): string {
   if (message === "SENTRY_HTTP_404") return "SENTRY_CONNECTION_RESOURCE_NOT_FOUND";
   if (error instanceof TypeError) return "SENTRY_CONNECTION_NETWORK";
   return "SENTRY_CONNECTION_FAILED";
+}
+
+function publicConnectionError(code: string): Error {
+  // Never attach the remote cause: HTTP and fetch errors may contain secret bytes.
+  return new Error(code);
 }
 
 function requiredString(value: unknown, code: string): string {

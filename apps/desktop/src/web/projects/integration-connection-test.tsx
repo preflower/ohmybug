@@ -16,9 +16,9 @@ interface IntegrationConnectionTestProps {
 
 type ConnectionTestState =
   | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "success"; result: IntegrationConnectionTestResult }
-  | { kind: "error"; message: string };
+  | { kind: "loading"; identity: string }
+  | { kind: "success"; identity: string; result: IntegrationConnectionTestResult }
+  | { kind: "error"; identity: string; message: string };
 
 const messages: Record<string, string> = {
   SENTRY_CONNECTION_FILTER_INVALID: "已保存的过滤条件无法用于当前 Sentry 项目。",
@@ -39,23 +39,29 @@ export function IntegrationConnectionTest({
   onTest,
 }: IntegrationConnectionTestProps) {
   const requestSequence = useRef(0);
+  const identity = `${projectId ?? ""}\u0000${integrationId}`;
   const [state, setState] = useState<ConnectionTestState>({ kind: "idle" });
-
-  useEffect(() => {
-    requestSequence.current += 1;
-    setState({ kind: "idle" });
-  }, [projectId, integrationId]);
+  useEffect(() => () => { requestSequence.current += 1; }, [identity]);
+  const visibleState = state.kind === "idle" || state.identity === identity
+    ? state
+    : { kind: "idle" as const };
 
   const run = async () => {
     if (!projectId) return;
     const request = ++requestSequence.current;
-    setState({ kind: "loading" });
+    setState({ kind: "loading", identity });
     try {
       const result = await onTest(projectId, integrationId);
-      if (request === requestSequence.current) setState({ kind: "success", result });
+      if (request === requestSequence.current) {
+        setState({ kind: "success", identity, result });
+      }
     } catch (error) {
       if (request === requestSequence.current) {
-        setState({ kind: "error", message: connectionErrorMessage(error, integrationId) });
+        setState({
+          kind: "error",
+          identity,
+          message: connectionErrorMessage(error, integrationId),
+        });
       }
     }
   };
@@ -63,36 +69,37 @@ export function IntegrationConnectionTest({
   return <section className="integration-connection-test">
     <div className="integration-connection-test-action">
       <Button
-        disabled={!projectId || state.kind === "loading"}
+        disabled={!projectId || visibleState.kind === "loading"}
         type="button"
         onClick={() => { void run(); }}
       >
-        {state.kind === "loading" ? "测试中…" : "测试已保存配置"}
+        {visibleState.kind === "loading" ? "测试中…" : "测试已保存配置"}
       </Button>
       <small>{projectId ? "仅使用已保存的配置和凭证。" : "保存项目后可测试连接"}</small>
       {projectId && dirty ? <small>当前修改不会用于本次测试</small> : null}
     </div>
-    {state.kind === "success" ? <div
+    {visibleState.kind === "success" ? <div
       aria-live="polite"
       className="integration-connection-test-result"
+      data-state="success"
       role="status"
     >
-      <strong>{state.result.title}</strong>
+      <h4>{visibleState.result.title}</h4>
       <dl>
-        {state.result.details.map((detail) => <div key={detail.label}>
+        {visibleState.result.details.map((detail) => <div key={detail.label}>
           <dt>{detail.label}</dt>
           <dd>{detail.value}</dd>
         </div>)}
       </dl>
       <footer>
         <span>基于已保存配置</span>
-        <time dateTime={state.result.testedAt}>
-          {new Date(state.result.testedAt).toLocaleString("zh-CN")}
+        <time dateTime={visibleState.result.testedAt}>
+          {new Date(visibleState.result.testedAt).toLocaleString("zh-CN")}
         </time>
       </footer>
     </div> : null}
-    {state.kind === "error" ? <Alert variant="destructive">
-      <AlertDescription>{state.message}</AlertDescription>
+    {visibleState.kind === "error" ? <Alert variant="destructive">
+      <AlertDescription>{visibleState.message}</AlertDescription>
     </Alert> : null}
   </section>;
 }

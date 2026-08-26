@@ -84,7 +84,7 @@ export function IntegrationFields({
         ? <details className="integration-section integration-section-collapsed" key={section.id}>
             <summary>
               <div><h3>{section.label}</h3>{section.description ? <p>{section.description}</p> : null}</div>
-              {summary ? <strong className="integration-section-collapsed-summary">{summary}</strong> : null}
+              {summary ? <strong className="integration-section-summary-inline">{summary}</strong> : null}
             </summary>
             {connectionTest}
             {content}

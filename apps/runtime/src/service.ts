@@ -415,7 +415,7 @@ export class RuntimeService implements RuntimeApi {
       if (error instanceof Error && error.message.startsWith("INTEGRATION_CONNECTION_TEST_")) {
         throw error;
       }
-      throw new Error(plugin.publicError(error));
+      throw publicConnectionError(plugin.publicError(error));
     }
   }
 
@@ -691,6 +691,11 @@ function cloneWorkspaceConfiguration(
 
 function secretReference(projectId: string, pluginId: string, key: string): string {
   return `integration-secret:${projectId}:${pluginId}:${key}`;
+}
+
+function publicConnectionError(code: string): Error {
+  // Never attach the plugin cause: Integration errors may contain loaded secret bytes.
+  return new Error(code);
 }
 
 async function canonicalDirectory(input: string): Promise<string> {
