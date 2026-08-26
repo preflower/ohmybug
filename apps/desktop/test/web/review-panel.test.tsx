@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { IssueDto } from "../../src/web/api/types.js";
@@ -69,7 +69,82 @@ const issue: IssueDto = {
   updatedAt: timestamp,
 };
 
+const deliveryIssue: IssueDto = {
+  ...issue,
+  repair: {
+    iteration: 2,
+    delivery: {
+      summary: "Cancellation semantics now match the approved policy.",
+      evidence: [{
+        type: "screenshot",
+        evidenceId: `sha256-${"a".repeat(64)}`,
+        label: "Cancellation acceptance",
+      }],
+    },
+  },
+  review: {
+    id: "review-delivery-1",
+    kind: "delivery",
+    requestedFrom: "EVIDENCE_CHECK",
+    payload: { repairIteration: 2, evidenceCount: 1 },
+    choices: [{
+      id: "accept",
+      label: "接受交付",
+      continuation: { operation: "FINALIZE", resumeStatus: "FINALIZING", resolution: "FIXED" },
+    }, {
+      id: "request-changes",
+      label: "要求修改",
+      feedbackRequired: true,
+      continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+    }],
+    requestedAt: timestamp,
+  },
+};
+
 describe("unified review panel", () => {
+  it("renders Delivery review as a collapsed action dock and accepts directly", async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    render(<ReviewPanel issue={deliveryIssue} onSubmit={onSubmit} />);
+
+    const dock = screen.getByRole("region", { name: "验收 Delivery" });
+    expect(dock).toHaveAttribute("data-review-mode", "collapsed");
+    expect(within(dock).getByText("迭代 2 · 1 项证据")).toBeVisible();
+    expect(within(dock).getByText("接受后发布已验证 commit")).toBeVisible();
+    expect(within(dock).queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(within(dock).queryByLabelText(/补充说明/)).not.toBeInTheDocument();
+
+    fireEvent.click(within(dock).getByRole("button", { name: "接受交付" }));
+    await act(async () => undefined);
+    expect(onSubmit).toHaveBeenCalledWith({
+      expectedRevision: 12,
+      requestId: "review-delivery-1",
+      choiceId: "accept",
+    });
+  });
+
+  it("expands feedback only for request changes and can return to the dock", () => {
+    render(<ReviewPanel issue={deliveryIssue} onSubmit={async () => undefined} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "要求修改" }));
+    expect(screen.getByRole("region", { name: "验收 Delivery" })).toHaveAttribute(
+      "data-review-mode",
+      "composing",
+    );
+    expect(screen.getByLabelText("修改说明（必填）")).toBeFocused();
+    expect(screen.getByRole("button", { name: "提交修改要求" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("修改说明（必填）"), {
+      target: { value: "Keep the close control visible on light images." },
+    });
+    expect(screen.getByRole("button", { name: "提交修改要求" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "返回审核操作" }));
+    expect(screen.queryByLabelText("修改说明（必填）")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "验收 Delivery" })).toHaveAttribute(
+      "data-review-mode",
+      "collapsed",
+    );
+  });
+
   it("shows the mutually exclusive business intents and submits the exact current request once", async () => {
     let finish: (() => void) | undefined;
     const pending = new Promise<void>((resolve) => { finish = resolve; });
