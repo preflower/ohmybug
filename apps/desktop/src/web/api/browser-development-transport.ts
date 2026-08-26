@@ -97,6 +97,8 @@ export function createBrowserDevelopmentTransport(
     requestReassessment: readOnly,
     rejectDelivery: readOnly,
     approveDelivery: readOnly,
+    pause: readOnly,
+    resume: readOnly,
     cancel: readOnly,
     retry: readOnly,
     rebuildSession: readOnly,

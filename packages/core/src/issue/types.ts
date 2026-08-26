@@ -22,6 +22,7 @@ export type IssueStatus =
   | "FINALIZING"
   | "FINALIZATION_RECOVERY"
   | "FINALIZATION_FAILED"
+  | "PAUSED"
   | "COMPLETED"
   | "CLOSED"
   | "CANCELED";
@@ -151,6 +152,23 @@ export interface PendingCapabilityRequest extends AgentCapabilityRequest {
   requestedAt: string;
 }
 
+export type IssuePauseOperation =
+  | "ASSESS"
+  | "REPAIR"
+  | "CAPTURE_EVIDENCE"
+  | "RECOVER_FINALIZATION";
+
+export interface IssuePauseContext {
+  operation: IssuePauseOperation;
+  resumeStatus:
+    | "ASSESSING"
+    | "REPAIRING"
+    | "EVIDENCE_CAPTURE"
+    | "FINALIZATION_RECOVERY";
+  pausedAt: string;
+  ready: boolean;
+}
+
 export interface Issue {
   id: string;
   projectId: string;
@@ -171,6 +189,7 @@ export interface Issue {
   pendingCapabilityRequest?: PendingCapabilityRequest;
   review?: ReviewRequest;
   finalizationRecovery?: FinalizationRecoveryState;
+  pauseContext?: IssuePauseContext;
   revision: number;
   createdAt: string;
   updatedAt: string;

@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog.js";
+import { CancelIssueButton } from "./cancel-issue-button.js";
 
 interface CapabilityRequestPanelProps {
   request: NonNullable<IssueDto["pendingCapabilityRequest"]>;
@@ -51,26 +52,26 @@ export function CapabilityRequestPanel({
   onGrant,
   onCancel,
 }: CapabilityRequestPanelProps) {
-  const [busy, setBusy] = useState<"grant" | "cancel">();
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [hostConfirmationOpen, setHostConfirmationOpen] = useState(false);
   const requiresHostConfirmation = request.capabilities.includes("HOST_EXECUTION");
 
-  const run = async (kind: "grant" | "cancel", action: () => Promise<void>) => {
-    setBusy(kind);
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
     setError("");
     try {
       await action();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : kind === "grant" ? "授权失败" : "取消失败");
+      setError(caught instanceof Error ? caught.message : "授权失败");
     } finally {
-      setBusy(undefined);
+      setBusy(false);
     }
   };
 
   const grant = () => {
     setHostConfirmationOpen(false);
-    void run("grant", onGrant);
+    void run(onGrant);
   };
 
   return (
@@ -103,15 +104,13 @@ export function CapabilityRequestPanel({
       {error ? <Alert className="form-error" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
 
       <div className="capability-request-actions">
-        <Button disabled={Boolean(busy)} type="button" variant="secondary" onClick={() => void run("cancel", onCancel)}>
-          {busy === "cancel" ? "取消中…" : "取消 Issue"}
-        </Button>
-        <Button disabled={Boolean(busy)} type="button" onClick={() => {
+        <CancelIssueButton disabled={busy} onCancel={onCancel} />
+        <Button disabled={busy} type="button" onClick={() => {
           setError("");
           if (requiresHostConfirmation) setHostConfirmationOpen(true);
           else grant();
         }}>
-          {busy === "grant" ? "授权中…" : "授权并继续"}
+          {busy ? "授权中…" : "授权并继续"}
         </Button>
       </div>
 
@@ -124,8 +123,8 @@ export function CapabilityRequestPanel({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <DialogClose render={<Button disabled={Boolean(busy)} type="button" variant="secondary" />}>返回</DialogClose>
-            <Button disabled={Boolean(busy)} type="button" onClick={grant}>确认授权并继续</Button>
+            <DialogClose render={<Button disabled={busy} type="button" variant="secondary" />}>返回</DialogClose>
+            <Button disabled={busy} type="button" onClick={grant}>确认授权并继续</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog> : null}

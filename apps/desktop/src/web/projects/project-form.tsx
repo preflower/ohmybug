@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { Bot, ClipboardCheck, Folder, MessageCircle, Plug, Webhook } from "lucide-react";
+import { toast } from "sonner";
 
 import { DingTalkIcon, SentryIcon } from "../components/brand-icons.js";
 import { Alert, AlertDescription } from "../components/ui/alert.js";
@@ -17,6 +18,7 @@ import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
 import { Textarea } from "../components/ui/textarea.js";
 import type { ConfigValue, IntegrationConnectionTestResult, IntegrationHealth, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../api/types.js";
 import { ConfigFields } from "./config-fields.js";
+import { isConfigFieldVisible, withConditionalConfigDefaults } from "./config-field-visibility.js";
 import { GitWorkspaceFields } from "./git-workspace-fields.js";
 import { IntegrationFields } from "./integration-fields.js";
 import { IntegrationHealthStatus } from "./integration-health.js";
@@ -88,7 +90,6 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
   const [editingSecrets, setEditingSecrets] = useState<Record<string, Record<string, boolean>>>({});
   const [integrationErrors, setIntegrationErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(Boolean(initial));
   const [saveConfirmed, setSaveConfirmed] = useState(false);
 
@@ -146,7 +147,6 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
     }
     setSaving(true);
     setSaved(false);
-    setSaveError("");
     try {
       const normalized = {
         ...project,
@@ -164,7 +164,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
       setSaved(true);
       setSaveConfirmed(true);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "保存更改失败");
+      toast.error(error instanceof Error ? error.message : "保存更改失败");
     } finally {
       setSaving(false);
     }
@@ -297,7 +297,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
             />
           </section></div> : null;
         })}
-      </div>{saveError ? <Alert className="project-save-alert" variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert> : null}<footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存更改"}</Button></div></footer></div>
+      </div><footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存更改"}</Button></div></footer></div>
     </Tabs>
   </form>;
 }
@@ -309,7 +309,11 @@ function unsupportedConnectionTest(): Promise<never> {
 function initialValue(manifests: IntegrationPluginManifest[], workspaceProviders: WorkspaceProviderManifest[], initial?: ProjectDto, inspection?: ProjectInspection): ProjectFormValue {
   const integrations = Object.fromEntries(manifests.map((manifest) => {
     const stored = initial?.integrations?.[manifest.id];
-    return [manifest.id, { enabled: stored?.enabled ?? false, config: stored?.config ?? defaults(manifest), secretConfigured: stored?.secretConfigured ?? {} }];
+    return [manifest.id, {
+      enabled: stored?.enabled ?? false,
+      config: withConditionalConfigDefaults(manifest.configFields, stored?.config ?? {}),
+      secretConfigured: stored?.secretConfigured ?? {},
+    }];
   }));
   const workspace = initial?.workspace
     ? {
@@ -411,6 +415,7 @@ function validateIntegrations(
     const integration = project.integrations[manifest.id];
     if (!integration?.enabled) continue;
     for (const field of manifest.configFields) {
+      if (!isConfigFieldVisible(field, manifest.configFields, integration.config)) continue;
       const value = integration.config[field.key] ?? field.defaultValue;
       if (field.type === "string[]") {
         const normalized = Array.isArray(value)

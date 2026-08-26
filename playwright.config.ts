@@ -18,7 +18,7 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: `pnpm --filter @oh-my-bug/desktop dev:renderer -- --port ${port}`,
+    command: `pnpm --filter @oh-my-bug/desktop exec vite --config vite.config.ts --port ${port}`,
     url: baseURL,
     reuseExistingServer: true
   }

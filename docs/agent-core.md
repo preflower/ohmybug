@@ -11,12 +11,12 @@ createSession
   → 人工确认 Delivery
   → COMPLETED / FIXED or IMPLEMENTED
 
-cancel
+pause / resume / cancel
 ```
 
 ## Assessment
 
-Assessment 包含 revision、规范化 content hash、`BUG | FEATURE | NOT_A_BUG | UNCERTAIN`、reasoning，以及可选 root cause、solution 和疑似重复 Issue。所有 verdict 都生成 `REVIEW_REQUIRED` 下的 `assessment` 请求，只有人工选择有限选项后才能实现、重分析或关闭。
+Assessment 包含 revision、规范化 content hash、`BUG | FEATURE | NOT_A_BUG | UNCERTAIN`、reasoning，以及可选 root cause、solution 和疑似重复 Issue。所有 verdict 都生成 `REVIEW_REQUIRED` 下的 `assessment` 请求，只有人工选择有限选项后才能实现、重分析或关闭。“确认为重复 Issue”仅在 Agent 给出 `suspectedDuplicateOf` 候选时出现并预填，最终仍由人工确认。
 
 ## Repair 与证据
 
@@ -31,5 +31,13 @@ Agent 返回 summary、集成快照、验证结果与截图/录屏的相对路�
 同一 Issue 的 Assessment、重分析和所有 Repair iteration 必须复用同一个逻辑会话及 provider-native 会话。Codex provider 会话不存在时，插件抛出精确的 `AGENT_SESSION_UNAVAILABLE`，不会自动创建替代上下文。
 
 Issue 详情只对该错误显示“重建 Agent 会话”。用户确认后，Runtime 在同一个事务中退休旧会话、绑定新的逻辑会话、记录重建事件并恢复失败阶段；Issue、Assessment、Delivery 与反馈历史保持不变。
+
+## 暂停、继续与取消
+
+`pauseIssue` 先持久化 `PAUSED + pauseContext`，再以 `USER_PAUSED` 中断当前 Agent 回合；若正在运行配置的宿主证据抓取，也会中止并等待该操作完全收尾。`pauseContext` 记录原操作、恢复状态和持久化的 `ready` 门闩，因此 Runtime 重启不会自动运行已暂停 Issue，也不需要猜测暂停前的阶段。只有当前操作安全退出后 `ready` 才会变为 `true`；暂停清理完成前或清理失败后，`resumeIssue` 会返回 `ISSUE_PAUSE_IN_PROGRESS`，避免同一 Issue 启动重叠任务。
+
+`resumeIssue` 消费 `pauseContext`，重新排队原操作，并把 `USER_RESUMED` continuation 交给同一个逻辑会话。工作目录、Assessment、Repair iteration、Delivery draft 和恢复诊断保持不变；暂停前回合的迟到结果因 revision 与状态校验不能覆盖暂停快照。
+
+`cancelIssue` 是终态操作，只用于用户明确取消整个 Issue，不用于暂停 Agent。Agent 活跃阶段提供暂停；已暂停和其他可中断的被动阶段提供终态取消；`FINALIZING` 及终态不再提供生命周期操作。
 
 确定性 Demo Agent 只存在于 Electron E2E 的一次性 token 握手路径，生产 Runtime 没有用户可配置的 Demo 开关。

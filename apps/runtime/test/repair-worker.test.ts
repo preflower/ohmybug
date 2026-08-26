@@ -534,7 +534,7 @@ describe("Runtime repair worker", () => {
     expect(store.listPendingOperations()).toEqual([]);
   });
 
-  it("does not persist a stale Delivery after human cancellation", async () => {
+  it("does not persist a stale Delivery after a user pause", async () => {
     const agent = new FakeAgent();
     let releaseRepair!: (result: RepairResult) => void;
     let markStarted!: () => void;
@@ -559,11 +559,14 @@ describe("Runtime repair worker", () => {
     });
     const draining = worker.drain();
     await started;
-    await commands.cancelIssue(issue.id);
+    await commands.pauseIssue(issue.id);
     releaseRepair(repairResult);
     await draining;
 
-    expect(store.getIssue(issue.id)).toMatchObject({ status: "CANCELED", resolution: "CANCELED" });
+    expect(store.getIssue(issue.id)).toMatchObject({
+      status: "PAUSED",
+      pauseContext: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+    });
     expect(store.getIssue(issue.id)?.repair).not.toHaveProperty("delivery");
     expect(store.readEvents(issue.id).map((event) => event.type)).not.toContain("DELIVERY_READY");
     expect(evidence.cleaned).toBe(1);
@@ -639,5 +642,25 @@ describe("Runtime repair worker", () => {
       reason: "RUNTIME_INTERRUPTED",
       previousAttemptId: "attempt-before-restart",
     });
+  });
+
+  it("passes a durable user-resume marker into continued Repair", async () => {
+    const agent = new FakeAgent();
+    const { commands, store, agents, evidence, workspaces } = createHarness(agent);
+    const issue = repairingIssue("repair-user-resumed");
+    store.transaction((transaction) => transaction.insertIssue(issue, "REPAIR"));
+    await commands.pauseIssue(issue.id);
+    commands.resumeIssue(issue.id);
+
+    await new RuntimeWorker({
+      store,
+      agents,
+      evidence,
+      workspaces,
+      id: eventIds("repair-user-resumed"),
+      now: () => now,
+    }).drainOne();
+
+    expect(agent.repairInputs[0]?.continuation).toEqual({ reason: "USER_RESUMED" });
   });
 });

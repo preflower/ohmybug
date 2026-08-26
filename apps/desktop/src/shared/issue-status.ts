@@ -16,6 +16,7 @@ export const issueStatusLabels: Record<DesktopIssueStatus, string> = {
   FINALIZING: "交付处理中",
   FINALIZATION_RECOVERY: "AI 正在恢复交付",
   FINALIZATION_FAILED: "交付失败，待重新验证",
+  PAUSED: "已暂停",
   COMPLETED: "已完成",
   CLOSED: "已关闭",
   CANCELED: "已取消",

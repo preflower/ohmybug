@@ -61,6 +61,12 @@ function installRuntimeProtocolFixture() {
     } & Record<string, unknown>;
     resolution?: string;
     duplicateOf?: string;
+    pauseContext?: {
+      operation: "ASSESS" | "REPAIR" | "CAPTURE_EVIDENCE" | "RECOVER_FINALIZATION";
+      resumeStatus: "ASSESSING" | "REPAIRING" | "EVIDENCE_CAPTURE" | "FINALIZATION_RECOVERY";
+      pausedAt: string;
+      ready: boolean;
+    };
     lastFailure?: { stage: "ASSESSMENT" | "REPAIR"; code: string };
     revision: number;
     createdAt: string;
@@ -128,13 +134,22 @@ function installRuntimeProtocolFixture() {
       ],
     },
     {
-      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从指定群聊接收消息并创建 Issue。",
+      id: "dingtalk", name: "DingTalk", icon: "dingtalk", description: "从群聊接收 @ 机器人的消息并创建 Issue。",
       sections: [
         { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
-        { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
+        { id: "rules", label: "接收规则" },
         { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
       ],
       configFields: [
+        {
+          key: "conversationFilterEnabled",
+          type: "boolean",
+          label: "群聊过滤",
+          description: "开启后仅处理指定群聊；关闭时处理任意群聊中 @ 机器人的消息。",
+          required: false,
+          defaultValue: false,
+          section: "rules",
+        },
         {
           key: "conversationIds",
           type: "string[]",
@@ -143,6 +158,7 @@ function installRuntimeProtocolFixture() {
           required: true,
           section: "rules",
           addLabel: "添加群聊",
+          visibleWhen: { key: "conversationFilterEnabled", equals: true },
         },
         { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
         { key: "threadKeyField", type: "string", label: "消息归并字段", required: false, section: "advanced" },
@@ -342,6 +358,37 @@ function installRuntimeProtocolFixture() {
       const stage = current.lastFailure?.stage ?? "ASSESSMENT";
       const next = { ...current, status: stage === "ASSESSMENT" ? "ASSESSING" : "REPAIRING", lastFailure: undefined, revision: current.revision + 1, updatedAt: now() };
       return saveIssue(next);
+    },
+    pauseIssue: async (id: string) => {
+      const current = requireIssue(id);
+      const byStatus = {
+        ASSESSING: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+        REPAIRING: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+        EVIDENCE_CAPTURE: { operation: "CAPTURE_EVIDENCE", resumeStatus: "EVIDENCE_CAPTURE" },
+        FINALIZATION_RECOVERY: { operation: "RECOVER_FINALIZATION", resumeStatus: "FINALIZATION_RECOVERY" },
+      } as const;
+      const pauseContext = byStatus[current.status as keyof typeof byStatus];
+      if (!pauseContext) throw new Error("PAUSE_NOT_AVAILABLE");
+      return saveIssue({
+        ...current,
+        status: "PAUSED",
+        pauseContext: { ...pauseContext, pausedAt: now(), ready: true },
+        revision: current.revision + 1,
+        updatedAt: now(),
+      });
+    },
+    resumeIssue: async (id: string) => {
+      const current = requireIssue(id);
+      if (current.status !== "PAUSED" || !current.pauseContext) {
+        throw new Error("PAUSE_CONTEXT_REQUIRED");
+      }
+      const { pauseContext: _pauseContext, ...rest } = current;
+      return saveIssue({
+        ...rest,
+        status: current.pauseContext.resumeStatus,
+        revision: current.revision + 1,
+        updatedAt: now(),
+      });
     },
     cancelIssue: async (id: string) => saveIssue({ ...requireIssue(id), status: "CANCELED", resolution: "CANCELED", updatedAt: now() }),
     readEvidence: async (_issueId: string, requestedEvidenceId: string) => {

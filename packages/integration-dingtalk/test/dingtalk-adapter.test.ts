@@ -14,6 +14,7 @@ const message = {
 describe("DingTalk integration adapter", () => {
   it("keeps a one-sentence message as content without inventing summary or groupKey", async () => {
     const adapter = new DingTalkIntegrationAdapter({
+      conversationFilterEnabled: true,
       conversationIds: ["cidCheckoutTeam"],
       secretValues: ["secret-token"],
       id: () => "input-1",
@@ -34,6 +35,7 @@ describe("DingTalk integration adapter", () => {
 
   it("rejects disallowed conversations and messages without the configured mention", async () => {
     const adapter = new DingTalkIntegrationAdapter({
+      conversationFilterEnabled: true,
       conversationIds: ["allowed"],
     });
 
@@ -45,8 +47,21 @@ describe("DingTalk integration adapter", () => {
     })).rejects.toThrow("DINGTALK_MENTION_REQUIRED");
   });
 
+  it("accepts any mentioned group when conversation filtering is disabled", async () => {
+    const adapter = new DingTalkIntegrationAdapter({
+      conversationFilterEnabled: false,
+      conversationIds: ["previously-allowed"],
+    });
+
+    await expect(adapter.adapt({
+      ...message,
+      conversationId: "another-group",
+    })).resolves.toMatchObject({ inputKey: "msg-20260819-1" });
+  });
+
   it("uses an upstream thread key only when that field is explicitly configured", async () => {
     const adapter = new DingTalkIntegrationAdapter({
+      conversationFilterEnabled: true,
       conversationIds: ["cidCheckoutTeam"],
       threadKeyField: "threadId",
     });
@@ -56,7 +71,10 @@ describe("DingTalk integration adapter", () => {
   });
 
   it("uses DingTalk at metadata and removes only a leading robot mention", async () => {
-    const adapter = new DingTalkIntegrationAdapter({ conversationIds: ["cidCheckoutTeam"] });
+    const adapter = new DingTalkIntegrationAdapter({
+      conversationFilterEnabled: true,
+      conversationIds: ["cidCheckoutTeam"],
+    });
 
     await expect(adapter.adapt({
       ...message,

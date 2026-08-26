@@ -241,6 +241,18 @@ export const runtimeOperations = {
     renderer: true,
     invoke: (service, input) => service.grantIssueCapabilities(input),
   }),
+  pauseIssue: operation({
+    input: projectIdSchema,
+    output: outputSchemas.issue,
+    renderer: true,
+    invoke: (service, input) => service.pauseIssue(input),
+  }),
+  resumeIssue: operation({
+    input: projectIdSchema,
+    output: outputSchemas.issue,
+    renderer: true,
+    invoke: (service, input) => service.resumeIssue(input),
+  }),
   cancelIssue: operation({
     input: projectIdSchema,
     output: outputSchemas.issue,

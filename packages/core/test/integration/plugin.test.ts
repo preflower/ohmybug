@@ -14,7 +14,13 @@ describe("IntegrationPlugin manifest", () => {
       icon: "dingtalk",
       configFields: [
         { key: "workspace", type: "string", label: "Workspace", required: true },
-        { key: "channels", type: "string[]", label: "Channels", required: true },
+        {
+          key: "channels",
+          type: "string[]",
+          label: "Channels",
+          required: true,
+          visibleWhen: { key: "enabled", equals: true },
+        },
         { key: "limit", type: "number", label: "Limit", required: false, defaultValue: 10 },
         { key: "enabled", type: "boolean", label: "Enabled", required: false, defaultValue: true },
       ],
@@ -39,6 +45,21 @@ describe("IntegrationPlugin manifest", () => {
       }],
       secretFields: [],
     })).toThrow();
+  });
+
+  it("rejects visibility references to unknown config fields", () => {
+    expect(() => integrationPluginManifestSchema.parse({
+      id: "fixture",
+      name: "Fixture",
+      configFields: [{
+        key: "channels",
+        type: "string[]",
+        label: "Channels",
+        required: true,
+        visibleWhen: { key: "missing", equals: true },
+      }],
+      secretFields: [],
+    })).toThrow("INTEGRATION_VISIBILITY_FIELD_NOT_FOUND");
   });
 
   it("serializes optional Integration presentation sections", () => {

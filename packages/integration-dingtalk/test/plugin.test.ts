@@ -24,6 +24,7 @@ function context(overrides: Partial<IntegrationPluginContext> = {}): Integration
     configuration: {
       enabled: true,
       config: {
+        conversationFilterEnabled: true,
         conversationIds: ["conversation-1"],
         messageRule: "bug",
         threadKeyField: "conversationId",
@@ -45,7 +46,7 @@ describe("DingTalk plugin", () => {
       id: "dingtalk",
       name: "DingTalk",
       icon: "dingtalk",
-      description: "从指定群聊接收消息并创建 Issue。",
+      description: "从群聊接收 @ 机器人的消息并创建 Issue。",
       sections: [
         {
           id: "credentials",
@@ -55,7 +56,6 @@ describe("DingTalk plugin", () => {
         {
           id: "rules",
           label: "接收规则",
-          summary: { label: "接收范围", value: "指定群聊" },
         },
         {
           id: "advanced",
@@ -66,6 +66,15 @@ describe("DingTalk plugin", () => {
       ],
       configFields: [
         {
+          key: "conversationFilterEnabled",
+          type: "boolean",
+          label: "群聊过滤",
+          description: "开启后仅处理指定群聊；关闭时处理任意群聊中 @ 机器人的消息。",
+          required: false,
+          defaultValue: false,
+          section: "rules",
+        },
+        {
           key: "conversationIds",
           type: "string[]",
           label: "群聊 ID",
@@ -73,6 +82,7 @@ describe("DingTalk plugin", () => {
           required: true,
           section: "rules",
           addLabel: "添加群聊",
+          visibleWhen: { key: "conversationFilterEnabled", equals: true },
         },
         {
           key: "messageRule",
@@ -107,6 +117,30 @@ describe("DingTalk plugin", () => {
       ...context().configuration,
       config: { conversationIds: ["allowed"], webhook: "no" },
     })).toThrow("DINGTALK_CONFIG_UNKNOWN_FIELD:webhook");
+  });
+
+  it("allows an enabled integration without group IDs when filtering is disabled", () => {
+    const plugin = dingTalkPlugin();
+    expect(() => plugin.validate({
+      ...context().configuration,
+      config: { conversationFilterEnabled: false },
+    })).not.toThrow();
+  });
+
+  it("requires unique group IDs when filtering is enabled", () => {
+    const plugin = dingTalkPlugin();
+    expect(() => plugin.validate({
+      ...context().configuration,
+      config: { conversationFilterEnabled: true, conversationIds: [] },
+    })).toThrow("DINGTALK_CONFIG_CONVERSATION_IDS_INVALID");
+  });
+
+  it("preserves the legacy allowlist when the explicit switch is absent", () => {
+    const plugin = dingTalkPlugin();
+    expect(() => plugin.validate({
+      ...context().configuration,
+      config: { conversationIds: ["allowed"] },
+    })).not.toThrow();
   });
 
   it("accepts legacy mention configuration without requiring it", () => {

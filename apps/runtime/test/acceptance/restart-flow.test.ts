@@ -229,7 +229,12 @@ describe("SQLite-backed review and recovery acceptance", () => {
       solution: undefined,
     };
     const notABug = await submitAssessed(runtime, "not-a-bug");
-    agent.nextAssessment = { ...assessment, revision: 2, contentHash: "b".repeat(64) };
+    agent.nextAssessment = {
+      ...assessment,
+      revision: 2,
+      contentHash: "b".repeat(64),
+      suspectedDuplicateOf: target.identifier,
+    };
     const duplicate = await submitAssessed(runtime, "duplicate");
     await runtime.stop();
 
@@ -434,5 +439,55 @@ describe("SQLite-backed review and recovery acceptance", () => {
       (event) => event.type === "RUNTIME_INTERRUPTED",
     )).toHaveLength(1);
     await runtime.stop();
+  });
+
+  it("keeps a paused Repair idle across restart and resumes its preserved context once", async () => {
+    const databasePath = temporaryDatabase("omb-runtime-user-paused-");
+    const projectRoot = join(dirname(databasePath), "project");
+    mkdirSync(projectRoot);
+    const agent = new FakeAgent();
+    const options = runtimeOptions(databasePath, agent);
+    const runtime = createRuntime(options);
+    runtime.registerProject({ ...project, path: projectRoot });
+    await runtime.start();
+
+    const assessed = await submitAssessed(runtime, "user-paused-repair");
+    const repairing = runtime.approveAssessment(assessed.id, {
+      ...assessmentReference(assessed.assessment!),
+      title: assessed.assessment!.suggestedTitle,
+    });
+    const paused = await runtime.pauseIssue(repairing.id);
+    expect(paused).toMatchObject({
+      status: "PAUSED",
+      agentSession: repairing.agentSession,
+      repair: { iteration: repairing.repair!.iteration },
+      pauseContext: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+    });
+    await runtime.stop();
+
+    const reopened = createRuntime(options);
+    await reopened.start();
+    await reopened.drain();
+    expect(reopened.getIssue(paused.id)).toEqual(paused);
+    expect(agent.repairSessions).toEqual([]);
+
+    const resumed = reopened.resumeIssue(paused.id);
+    expect(resumed).toMatchObject({
+      status: "REPAIRING",
+      agentSession: repairing.agentSession,
+      repair: { iteration: repairing.repair!.iteration },
+    });
+    await reopened.drain();
+
+    expect(reopened.getIssue(paused.id)).toMatchObject({
+      status: "REVIEW_REQUIRED",
+      agentSession: repairing.agentSession,
+      repair: { iteration: repairing.repair!.iteration },
+    });
+    expect(agent.repairSessions).toEqual([repairing.agentSession!.sessionId]);
+    expect(agent.repairInputs[0]?.continuation).toEqual({ reason: "USER_RESUMED" });
+    expect(agent.repairInputs[0]?.issue.projectPath).toBe(paused.projectPath);
+    expect(agent.repairInputs[0]?.project.path).toBe(paused.projectPath);
+    await reopened.stop();
   });
 });

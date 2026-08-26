@@ -8,7 +8,7 @@ import {
   type DesktopHarness,
 } from "./electron-fixture.js";
 
-test("reconciles interrupted Agent work and resumes it after an explicit retry", async () => {
+test("reconciles interrupted Agent work automatically after Runtime restart", async () => {
   const data = await createTempDir("oh-my-bug-electron-recovery-");
   const project = await createTempDir("oh-my-bug-project-");
   let first: DesktopHarness | undefined;
@@ -17,7 +17,7 @@ test("reconciles interrupted Agent work and resumes it after an explicit retry",
     first = await launchPackagedDesktop({ dataRoot: data.path, delayMs: 30_000 });
     await registerProject(first, project.path, "RST");
     await createIssue(first.page, "Restart recovery returns 500");
-    await expect(first.page.getByRole("button", { name: "取消 Agent 运行" })).toBeVisible();
+    await expect(first.page.getByRole("button", { name: "暂停 Agent" })).toBeVisible();
 
     const child = first.app.process();
     child.kill("SIGKILL");
@@ -27,11 +27,8 @@ test("reconciles interrupted Agent work and resumes it after an explicit retry",
 
     second = await launchPackagedDesktop({ dataRoot: data.path });
     await second.page.getByText("Restart recovery returns 500", { exact: true }).first().click();
-    await expect(second.page.getByText("分析失败", { exact: true })).toBeVisible();
-    await expect(second.page.getByText("分析意外中断", { exact: true })).toBeVisible();
-    await second.page.getByRole("button", { name: "重试分析" }).click();
     await expect(second.page.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
-    await expect(second.page.getByText("待确认判断", { exact: true })).toBeVisible();
+    await expect(second.page.getByText("Runtime 已重启，正在恢复分析")).toBeVisible();
   } finally {
     await first?.app.close().catch(() => undefined);
     await second?.app.close().catch(() => undefined);
@@ -40,18 +37,47 @@ test("reconciles interrupted Agent work and resumes it after an explicit retry",
   }
 });
 
-test("cancels an in-flight Agent turn through the packaged Runtime protocol", async () => {
-  const data = await createTempDir("oh-my-bug-electron-cancel-");
+test("pauses and resumes an in-flight Agent turn through the packaged Runtime protocol", async () => {
+  const data = await createTempDir("oh-my-bug-electron-pause-");
   const project = await createTempDir("oh-my-bug-project-");
   let desktop: DesktopHarness | undefined;
   try {
     desktop = await launchPackagedDesktop({ dataRoot: data.path, delayMs: 30_000 });
-    await registerProject(desktop, project.path, "CAN");
-    await createIssue(desktop.page, "Cancel this Agent turn");
-    await desktop.page.getByRole("button", { name: "取消 Agent 运行" }).click();
+    await registerProject(desktop, project.path, "PAU");
+    await createIssue(desktop.page, "Pause this Agent turn");
+    await desktop.page.getByRole("button", { name: "暂停 Agent" }).click();
 
-    await expect(desktop.page.getByText("CANCELED", { exact: true })).toBeVisible();
-    await expect(desktop.page.getByText("已取消", { exact: true })).toBeVisible();
+    await expect(desktop.page.getByLabel("Issue 详情", { exact: true })
+      .getByText("已暂停", { exact: true })).toBeVisible();
+    await expect(desktop.page.getByRole("button", { name: "继续执行" })).toBeVisible();
+    await expect(desktop.page.getByRole("button", { name: "取消 Issue" })).toBeVisible();
+    await desktop.page.getByRole("button", { name: "继续执行" }).click();
+    await expect(desktop.page.getByLabel("Issue 详情", { exact: true })
+      .getByText("分析中", { exact: true })).toBeVisible();
+    await expect(desktop.page.getByRole("button", { name: "暂停 Agent" })).toBeVisible();
+  } finally {
+    await desktop?.app.close().catch(() => undefined);
+    await project.cleanup();
+    await data.cleanup();
+  }
+});
+
+test("cancels a passive Issue only after confirmation", async () => {
+  const data = await createTempDir("oh-my-bug-electron-cancel-");
+  const project = await createTempDir("oh-my-bug-project-");
+  let desktop: DesktopHarness | undefined;
+  try {
+    desktop = await launchPackagedDesktop({ dataRoot: data.path });
+    await registerProject(desktop, project.path, "CAN");
+    await createIssue(desktop.page, "Cancel this reviewed Issue");
+    await expect(desktop.page.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
+    await desktop.page.getByRole("button", { name: "取消 Issue" }).click();
+    await expect(desktop.page.getByRole("dialog", { name: "确认取消 Issue？" })).toBeVisible();
+    await desktop.page.getByRole("button", { name: "确认取消" }).click();
+
+    await expect(desktop.page.getByRole("status").filter({ hasText: "结果：CANCELED" })).toBeVisible();
+    await expect(desktop.page.getByLabel("Issue 详情", { exact: true })
+      .getByText("已取消", { exact: true })).toBeVisible();
   } finally {
     await desktop?.app.close().catch(() => undefined);
     await project.cleanup();
@@ -77,8 +103,7 @@ test("discloses a missing native session and rebuilds only after user confirmati
       level: 2,
       name: "Missing Agent session keeps Issue context",
     })).toBeVisible();
-    await desktop.page.getByRole("button", { name: "Agent 活动" }).click();
-    await expect(desktop.page.getByText("USER · AGENT_SESSION_REBUILT")).toBeVisible();
+    await expect(desktop.page.getByText("Codex 会话已重建")).toBeVisible();
   } finally {
     await desktop?.app.close().catch(() => undefined);
     await project.cleanup();

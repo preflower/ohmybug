@@ -24,7 +24,22 @@ export type IssueAction =
   | "RETRY_FINALIZATION"
   | "RETRY_FINALIZATION_REPAIR"
   | "COMPLETE_DELIVERY"
+  | "PAUSE"
+  | "RESUME"
   | "CANCEL";
+
+const pauseByStatus = {
+  ASSESSING: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+  REPAIRING: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+  EVIDENCE_CAPTURE: {
+    operation: "CAPTURE_EVIDENCE",
+    resumeStatus: "EVIDENCE_CAPTURE",
+  },
+  FINALIZATION_RECOVERY: {
+    operation: "RECOVER_FINALIZATION",
+    resumeStatus: "FINALIZATION_RECOVERY",
+  },
+} as const;
 
 const transitions: Record<
   IssueStatus,
@@ -34,7 +49,7 @@ const transitions: Record<
   ASSESSING: {
     ASSESSMENT_READY: "ASSESSING",
     ASSESSMENT_ERRORED: "ASSESSMENT_FAILED",
-    CANCEL: "CANCELED",
+    PAUSE: "PAUSED",
   },
   ASSESSMENT_FAILED: {
     RETRY_ASSESSMENT: "ASSESSING",
@@ -43,12 +58,12 @@ const transitions: Record<
   REPAIRING: {
     IMPLEMENTATION_READY: "EVIDENCE_CAPTURE",
     REPAIR_ERRORED: "REPAIR_FAILED",
-    CANCEL: "CANCELED",
+    PAUSE: "PAUSED",
   },
   EVIDENCE_CAPTURE: {
     DELIVERY_READY: "EVIDENCE_CHECK",
     EVIDENCE_ERRORED: "EVIDENCE_FAILED",
-    CANCEL: "CANCELED",
+    PAUSE: "PAUSED",
   },
   EVIDENCE_CHECK: {
     EVIDENCE_REJECTED: "EVIDENCE_CAPTURE",
@@ -76,9 +91,10 @@ const transitions: Record<
     RETRY_FINALIZATION: "FINALIZING",
     FINALIZATION_RECOVERY_ERRORED: "FINALIZATION_FAILED",
     FINALIZATION_RECOVERY_CHANGED_DELIVERY: "EVIDENCE_CAPTURE",
-    CANCEL: "CANCELED",
+    PAUSE: "PAUSED",
   },
-  FINALIZATION_FAILED: { RETRY_FINALIZATION_REPAIR: "REPAIRING" },
+  FINALIZATION_FAILED: { RETRY_FINALIZATION_REPAIR: "REPAIRING", CANCEL: "CANCELED" },
+  PAUSED: { CANCEL: "CANCELED" },
   COMPLETED: {},
   CLOSED: {},
   CANCELED: {},
@@ -89,7 +105,12 @@ function applyTransition(
   action: IssueAction,
   now: string,
 ): Issue {
-  const nextStatus = transitions[issue.status][action];
+  if (action === "RESUME" && issue.pauseContext?.ready !== true) {
+    throw new Error("ISSUE_PAUSE_IN_PROGRESS");
+  }
+  const nextStatus = action === "RESUME" && issue.status === "PAUSED"
+    ? issue.pauseContext?.resumeStatus
+    : transitions[issue.status][action];
   if (!nextStatus) {
     throw new Error(
       "Illegal Issue transition: " + issue.status + " + " + action,
@@ -117,6 +138,12 @@ function applyTransition(
     revision: issue.revision + 1,
     updatedAt: now,
   };
+  if (action === "PAUSE") {
+    const pause = pauseByStatus[issue.status as keyof typeof pauseByStatus];
+    if (!pause) throw new Error("PAUSE_CONTEXT_NOT_AVAILABLE");
+    nextIssue.pauseContext = { ...pause, pausedAt: now, ready: false };
+  }
+  if (action === "RESUME") delete nextIssue.pauseContext;
   if (
     action === "START_ASSESSMENT" ||
     action === "RETRY_ASSESSMENT"
@@ -132,6 +159,7 @@ function applyTransition(
     delete nextIssue.finalizationRecovery;
     delete nextIssue.review;
     delete nextIssue.lastFailure;
+    delete nextIssue.pauseContext;
   }
   return nextIssue;
 }
@@ -142,4 +170,17 @@ export function transitionIssue(
   now: string,
 ): Issue {
   return applyTransition(issue, action, now);
+}
+
+export function completeIssuePause(issue: Issue, now: string): Issue {
+  if (issue.status !== "PAUSED" || !issue.pauseContext) {
+    throw new Error("PAUSE_CONTEXT_REQUIRED");
+  }
+  if (issue.pauseContext.ready) return issue;
+  return {
+    ...issue,
+    pauseContext: { ...issue.pauseContext, ready: true },
+    revision: issue.revision + 1,
+    updatedAt: now,
+  };
 }

@@ -5,11 +5,13 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 
 import type { IntegrationConnectionTestResult, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../../src/web/api/types.js";
+import { Toaster } from "../../src/web/components/ui/sonner.js";
 import { GitBranchCombobox } from "../../src/web/projects/git-branch-combobox.js";
 import { IntegrationConnectionTest } from "../../src/web/projects/integration-connection-test.js";
 import { IntegrationFields } from "../../src/web/projects/integration-fields.js";
 import { IntegrationHealthStatus } from "../../src/web/projects/integration-health.js";
 import { ProjectForm } from "../../src/web/projects/project-form.js";
+import { ThemeProvider } from "../../src/web/theme/theme-provider.js";
 
 class ResizeObserverMock {
   disconnect() {}
@@ -37,14 +39,15 @@ const manifests: IntegrationPluginManifest[] = [{
 const groupedManifest: IntegrationPluginManifest = {
   id: "dingtalk",
   name: "DingTalk",
-  description: "从指定群聊接收消息并创建 Issue。",
+  description: "从群聊接收 @ 机器人的消息并创建 Issue。",
   sections: [
     { id: "credentials", label: "应用凭证", description: "凭证仅保存在这台电脑的系统钥匙串中。" },
-    { id: "rules", label: "接收规则", summary: { label: "接收范围", value: "指定群聊" } },
+    { id: "rules", label: "接收规则" },
     { id: "advanced", label: "高级设置", description: "关键词过滤与消息归并", collapsed: true },
   ],
   configFields: [
-    { key: "conversationIds", type: "string[]", label: "群聊 ID", required: true, section: "rules", addLabel: "添加群聊" },
+    { key: "conversationFilterEnabled", type: "boolean", label: "群聊过滤", description: "开启后仅处理指定群聊；关闭时处理任意群聊中 @ 机器人的消息。", required: false, defaultValue: false, section: "rules" },
+    { key: "conversationIds", type: "string[]", label: "群聊 ID", required: true, section: "rules", addLabel: "添加群聊", visibleWhen: { key: "conversationFilterEnabled", equals: true } },
     { key: "messageRule", type: "string", label: "消息关键词", required: false, section: "advanced" },
   ],
   secretFields: [
@@ -274,7 +277,7 @@ describe("Project configuration", () => {
   it("renders manifest sections, keeps advanced settings collapsed, and replaces configured secrets on demand", () => {
     const onEditSecret = vi.fn();
     const { rerender } = render(<IntegrationFields
-      config={{ conversationIds: ["cid-a"] }}
+      config={{ conversationFilterEnabled: true, conversationIds: ["cid-a"] }}
       editingSecrets={{}}
       manifest={groupedManifest}
       secretConfigured={{ clientId: true, clientSecret: true }}
@@ -287,8 +290,7 @@ describe("Project configuration", () => {
     expect(screen.getByRole("heading", { name: "应用凭证" })).toBeVisible();
     expect(screen.getByText("凭证仅保存在这台电脑的系统钥匙串中。")).toBeVisible();
     expect(screen.getAllByText("已配置")).toHaveLength(2);
-    expect(screen.getByText("接收范围")).toBeVisible();
-    expect(screen.getByText("指定群聊")).toBeVisible();
+    expect(screen.getByRole("switch", { name: "群聊过滤" })).toBeChecked();
     expect(screen.getByRole("button", { name: "添加群聊" })).toBeVisible();
     expect(screen.queryByLabelText("Client ID")).not.toBeInTheDocument();
     expect(screen.getByText("高级设置").closest("details")).not.toHaveAttribute("open");
@@ -296,7 +298,7 @@ describe("Project configuration", () => {
     fireEvent.click(screen.getByRole("button", { name: "替换 Client ID" }));
     expect(onEditSecret).toHaveBeenCalledWith("clientId", true);
     rerender(<IntegrationFields
-      config={{ conversationIds: ["cid-a"] }}
+      config={{ conversationFilterEnabled: true, conversationIds: ["cid-a"] }}
       editingSecrets={{ clientId: true }}
       manifest={groupedManifest}
       secretConfigured={{ clientId: true, clientSecret: true }}
@@ -308,15 +310,68 @@ describe("Project configuration", () => {
     expect(screen.getByLabelText("Client ID")).toHaveAttribute("type", "password");
   });
 
+  it("shows the group ID editor only while group filtering is enabled", () => {
+    const onConfigChange = vi.fn();
+    const props = {
+      editingSecrets: {},
+      manifest: groupedManifest,
+      secretConfigured: {},
+      secretValues: {},
+      onConfigChange,
+      onEditSecret: vi.fn(),
+      onSecretChange: vi.fn(),
+    };
+    const { rerender } = render(<IntegrationFields
+      {...props}
+      config={{ conversationFilterEnabled: false, conversationIds: ["cid-a"] }}
+    />);
+
+    expect(screen.getByRole("switch", { name: "群聊过滤" })).not.toBeChecked();
+    expect(screen.queryByRole("button", { name: "添加群聊" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "群聊过滤" }));
+    expect(onConfigChange).toHaveBeenCalledWith("conversationFilterEnabled", true);
+
+    rerender(<IntegrationFields
+      {...props}
+      config={{ conversationFilterEnabled: true, conversationIds: ["cid-a"] }}
+    />);
+    expect(screen.getByRole("button", { name: "添加群聊" })).toBeVisible();
+  });
+
   it.each([
     [true, { state: "connected" as const }, "已连接"],
     [true, { state: "connecting" as const }, "正在连接"],
     [true, { state: "backoff" as const, lastError: "凭证无效" }, "连接失败，正在重试：凭证无效"],
     [true, { state: "stopped" as const }, "已停用"],
-    [false, undefined, "已停用"],
   ])("shows integration health for enabled=%s as %s", (enabled, health, label) => {
     render(<IntegrationHealthStatus enabled={enabled} health={health} />);
     expect(screen.getByRole("status")).toHaveTextContent(label);
+  });
+
+  it("omits redundant health when an integration is disabled", () => {
+    render(<IntegrationHealthStatus enabled={false} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("hydrates legacy group IDs as an enabled filter", () => {
+    render(<ProjectForm
+      initial={{
+        ...configuredProject,
+        integrations: {
+          dingtalk: {
+            enabled: true,
+            config: { conversationIds: ["legacy-group"] },
+            secretConfigured: { clientId: true, clientSecret: true },
+          },
+        },
+      }}
+      manifests={[groupedManifest]}
+      onSave={vi.fn(async () => undefined)}
+    />);
+
+    selectTab("DingTalk");
+    expect(screen.getByRole("switch", { name: "群聊过滤" })).toBeChecked();
+    expect(screen.getByLabelText("群聊 ID 1")).toHaveValue("legacy-group");
   });
 
   it("activates the integration tab and focuses the first missing required field", async () => {
@@ -327,7 +382,7 @@ describe("Project configuration", () => {
         integrations: {
           dingtalk: {
             enabled: true,
-            config: { conversationIds: [] },
+            config: { conversationFilterEnabled: true, conversationIds: [] },
             secretConfigured: { clientId: true, clientSecret: true },
           },
         },
@@ -372,9 +427,24 @@ describe("Project configuration", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       integrations: expect.objectContaining({
-        dingtalk: expect.objectContaining({ config: { conversationIds: ["cid-a", "cid-b"] } }),
+        dingtalk: expect.objectContaining({ config: { conversationFilterEnabled: true, conversationIds: ["cid-a", "cid-b"] } }),
       }),
     }), {}));
+  });
+
+  it("shows persistence failures in a toast instead of an inline alert", async () => {
+    render(<ThemeProvider>
+      <ProjectForm
+        initial={configuredProject}
+        manifests={manifests}
+        onSave={async () => { throw new Error("浏览器样式预览为只读模式"); }}
+      />
+      <Toaster />
+    </ThemeProvider>);
+
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+    expect(await screen.findByText("浏览器样式预览为只读模式")).toBeVisible();
+    expect(document.querySelector(".project-save-alert")).not.toBeInTheDocument();
   });
 
   it("shows local branches first, then appends searchable remote branches", async () => {
@@ -592,7 +662,7 @@ describe("Project configuration", () => {
     expect(screen.getByLabelText("Workspace slug")).toHaveValue("acme");
     expect(screen.getByLabelText("Channels 1")).toHaveValue("alerts");
     expect(screen.getByLabelText("Batch size")).toHaveValue(50);
-    expect(screen.getByRole("checkbox", { name: "Include archived" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Include archived" })).toBeChecked();
     expect(screen.getByText("已配置")).toBeVisible();
     expect(screen.getByRole("button", { name: "替换 API token" })).toBeVisible();
     expect(screen.queryByLabelText("API token")).not.toBeInTheDocument();
@@ -787,14 +857,15 @@ describe("Project configuration", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("shows a request error above the save footer without clearing the form", async () => {
-    render(<ProjectForm inspection={inspection} manifests={manifests} onSave={async () => Promise.reject(new Error("目录不可用"))} />);
+  it("shows a request error in a toast without clearing the form", async () => {
+    render(<ThemeProvider>
+      <ProjectForm inspection={inspection} manifests={manifests} onSave={async () => Promise.reject(new Error("目录不可用"))} />
+      <Toaster />
+    </ThemeProvider>);
     fireEvent.change(screen.getByLabelText("项目名称"), { target: { value: "Broken" } });
     const saveButton = screen.getByRole("button", { name: "保存更改" });
     fireEvent.click(saveButton);
-    const alert = await screen.findByRole("alert");
-    expect(Boolean(alert.compareDocumentPosition(saveButton) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(alert).toHaveTextContent("目录不可用");
+    expect(await screen.findByText("目录不可用")).toBeVisible();
     expect(screen.getByLabelText("项目名称")).toHaveValue("Broken");
   });
 
@@ -831,15 +902,16 @@ describe("Project configuration", () => {
 
   it("keeps secret drafts when the unified save fails", async () => {
     const onSave = vi.fn(async () => Promise.reject(new Error("系统钥匙串不可用")));
-    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />);
+    render(<ThemeProvider>
+      <ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />
+      <Toaster />
+    </ThemeProvider>);
     selectTab("Example source");
     fireEvent.click(screen.getByRole("button", { name: "替换 API token" }));
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "secret-token" } });
     const save = screen.getByRole("button", { name: "保存更改" });
     fireEvent.click(save);
-    const alert = await screen.findByRole("alert");
-    expect(Boolean(alert.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(alert).toHaveTextContent("系统钥匙串不可用");
+    expect(await screen.findByText("系统钥匙串不可用")).toBeVisible();
     expect(screen.getByLabelText("API token")).toHaveValue("secret-token");
   });
 });

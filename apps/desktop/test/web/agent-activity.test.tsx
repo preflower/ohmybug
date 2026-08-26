@@ -6,8 +6,14 @@ import { describe, expect, it } from "vitest";
 
 import { AgentActivity } from "../../src/web/issues/agent-activity.js";
 
+function openActivity(label: string | RegExp): HTMLElement {
+  const toggle = screen.getByRole("button", { name: label });
+  fireEvent.click(toggle);
+  return toggle;
+}
+
 describe("Agent activity", () => {
-  it("labels merge preparation and resolution events", () => {
+  it("renders non-turn events directly without an activity-record disclosure", () => {
     render(<AgentActivity active={false} events={[
       {
         id: "issue-1:1",
@@ -29,8 +35,7 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
-
+    expect(screen.queryByRole("button", { name: "活动记录" })).not.toBeInTheDocument();
     expect(screen.getByText("已准备合并冲突供 AI 解析")).toBeVisible();
     expect(screen.getByText("AI 已解析合并冲突，等待重新验证")).toBeVisible();
   });
@@ -46,10 +51,71 @@ describe("Agent activity", () => {
       data: { detail: "ENOTEMPTY: directory not empty", level: "error" },
     }]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
-
     expect(screen.getByText("临时目录清理失败")).toBeVisible();
     expect(screen.getByText("ENOTEMPTY: directory not empty")).toBeVisible();
+  });
+
+  it("renders each Codex turn as a default-collapsed terminal disclosure", () => {
+    render(<AgentActivity active={false} events={[
+      { id: "issue-1:1", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始分析" } },
+      { id: "issue-1:2", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "AGENT_COMMAND_STARTED", occurredAt: "2026-08-24T09:00:01Z", data: { message: "正在执行项目命令", detail: "$ pnpm test" } },
+      { id: "issue-1:3", issueId: "issue-1", sequence: 3, actor: "AGENT", type: "AGENT_COMMAND_COMPLETED", occurredAt: "2026-08-24T09:00:02Z", data: { message: "项目命令执行完成", detail: "$ pnpm test\n12 passed" } },
+      { id: "issue-1:4", issueId: "issue-1", sequence: 4, actor: "AGENT", type: "AGENT_TURN_COMPLETED", occurredAt: "2026-08-24T09:00:03Z", data: { message: "Codex 已完成分析" } },
+    ]} />);
+
+    expect(screen.getByText("Agent 活动")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Agent 活动" })).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Codex 开始分析" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("log", { name: "Codex 开始分析 Terminal" })).not.toBeInTheDocument();
+    expect(screen.queryByText("$ pnpm test")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const terminal = screen.getByRole("log", { name: "Codex 开始分析 Terminal" });
+    const output = screen.getByText("12 passed");
+    expect(terminal).toBeVisible();
+    expect(terminal).toHaveClass("activity-turn-body", "activity-terminal");
+    expect(output).toHaveClass("activity-log-output");
+    expect(output.parentElement).toBe(terminal.querySelector(".activity-log-command"));
+    expect(screen.getAllByText("$ pnpm test")).toHaveLength(1);
+    expect(output).toBeVisible();
+  });
+
+  it("expands Codex turns independently", () => {
+    const turn = (prefix: string, sequence: number, message: string) => [
+      { id: `issue-1:${prefix}-start`, issueId: "issue-1", sequence, actor: "AGENT" as const, type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message } },
+      { id: `issue-1:${prefix}-message`, issueId: "issue-1", sequence: sequence + 1, actor: "AGENT" as const, type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { message: `${prefix} output` } },
+      { id: `issue-1:${prefix}-end`, issueId: "issue-1", sequence: sequence + 2, actor: "AGENT" as const, type: "AGENT_TURN_COMPLETED", occurredAt: "2026-08-24T09:00:02Z", data: { message: `${message}完成` } },
+    ];
+    render(<AgentActivity active={false} events={[
+      ...turn("analysis", 1, "Codex 开始分析"),
+      ...turn("repair", 4, "Codex 开始实现"),
+    ]} />);
+
+    openActivity("Codex 开始分析");
+    expect(screen.getByText("analysis output")).toBeVisible();
+    expect(screen.queryByText("repair output")).not.toBeInTheDocument();
+
+    openActivity("Codex 开始实现");
+    expect(screen.getByText("analysis output")).toBeVisible();
+    expect(screen.getByText("repair output")).toBeVisible();
+  });
+
+  it("does not leak expanded turns when switching Issues", () => {
+    const events = (issueId: string) => [
+      { id: `${issueId}:1`, issueId, sequence: 1, actor: "AGENT" as const, type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始分析" } },
+      { id: `${issueId}:2`, issueId, sequence: 2, actor: "AGENT" as const, type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { message: `${issueId} output` } },
+    ];
+    const view = render(<AgentActivity active events={events("issue-1")} />);
+    openActivity("Codex 开始分析");
+    expect(screen.getByRole("log", { name: "Codex 开始分析 Terminal" })).toHaveTextContent("issue-1 output");
+
+    view.rerender(<AgentActivity active events={events("issue-2")} />);
+
+    expect(screen.getByRole("button", { name: "Codex 开始分析" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("log", { name: "Codex 开始分析 Terminal" })).not.toBeInTheDocument();
   });
 
   it("merges command lifecycle events into one continuous turn log", () => {
@@ -101,9 +167,9 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    openActivity("Codex 开始实现");
 
-    expect(screen.getByRole("log", { name: "Agent 连续活动日志" })).toBeVisible();
+    expect(screen.getByRole("log", { name: "Codex 开始实现 Terminal" })).toBeVisible();
     expect(screen.getByRole("group", { name: "Codex 开始实现" })).toBeVisible();
     expect(screen.getAllByText("$ pnpm test")).toHaveLength(1);
     expect(screen.getByText("Tests 12 passed")).toBeVisible();
@@ -136,7 +202,7 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    openActivity("Codex 开始分析");
 
     expect(screen.getAllByText("$ rg AgentActivity")).toHaveLength(1);
     expect(screen.getByText("运行中")).toBeVisible();
@@ -183,7 +249,7 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    openActivity("Codex 开始实现");
 
     expect(screen.getByText("失败")).toBeVisible();
     expect(screen.getByText("有错误")).toBeVisible();
@@ -230,7 +296,7 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Codex 开始实现" })[0]!);
 
     expect(screen.getAllByText("已中断")).toHaveLength(2);
     expect(screen.getAllByText("进行中")).toHaveLength(1);
@@ -245,10 +311,27 @@ describe("Agent activity", () => {
       { id: "issue-1:3", issueId: "issue-1", sequence: 3, actor: "SYSTEM", type: "ISSUE_CANCELED", occurredAt: "2026-08-24T09:00:02Z", data: {} },
     ]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    openActivity("Codex 开始实现");
 
     expect(screen.getAllByText("已取消")).toHaveLength(2);
     expect(screen.queryByText("运行中")).not.toBeInTheDocument();
+  });
+
+  it("marks a paused turn interrupted and records a later resume without a fake command", () => {
+    render(<AgentActivity active={false} events={[
+      { id: "issue-1:1", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始实现" } },
+      { id: "issue-1:2", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "AGENT_COMMAND_STARTED", occurredAt: "2026-08-24T09:00:01Z", data: { message: "正在执行项目命令", detail: "$ pnpm test" } },
+      { id: "issue-1:3", issueId: "issue-1", sequence: 3, actor: "USER", type: "ISSUE_PAUSED", occurredAt: "2026-08-24T09:00:02Z", data: {} },
+      { id: "issue-1:4", issueId: "issue-1", sequence: 4, actor: "USER", type: "ISSUE_RESUMED", occurredAt: "2026-08-24T09:01:00Z", data: { operation: "REPAIR" } },
+    ]} />);
+
+    openActivity("Codex 开始实现");
+
+    expect(screen.getByText("Issue 已暂停")).toBeVisible();
+    expect(screen.getByText("Issue 已继续执行")).toBeVisible();
+    expect(screen.getAllByText("已中断")).toHaveLength(2);
+    expect(screen.queryByText("已取消")).not.toBeInTheDocument();
+    expect(screen.getAllByText("$ pnpm test")).toHaveLength(1);
   });
 
   it("uses correlation IDs when identical commands finish out of order", () => {
@@ -261,7 +344,7 @@ describe("Agent activity", () => {
       { id: "issue-1:6", issueId: "issue-1", sequence: 6, actor: "AGENT", type: "AGENT_TURN_COMPLETED", occurredAt: "2026-08-24T09:00:05Z", data: { message: "Codex 已完成实现" } },
     ]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    openActivity("Codex 开始实现");
 
     expect(screen.getByText("output A").closest(".activity-log-command")).toHaveTextContent("完成");
     expect(screen.getByText("output B").closest(".activity-log-command")).toHaveTextContent("失败");
@@ -279,12 +362,10 @@ describe("Agent activity", () => {
     }));
     render(<AgentActivity active={false} events={events} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
-
     expect(screen.queryByText("活动 1")).not.toBeInTheDocument();
-    expect(screen.getByText("活动 90")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /加载更早活动/ }));
     expect(screen.getByText("活动 1")).toBeVisible();
+    expect(screen.getByText("活动 90")).toBeVisible();
   });
 
   it("keeps cancellation truthful when pagination starts inside a turn", () => {
@@ -304,9 +385,8 @@ describe("Agent activity", () => {
     ];
     render(<AgentActivity active={false} events={[...earlierEvents, ...visibleEvents]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
-
-    expect(screen.getAllByText("已取消")).toHaveLength(2);
+    expect(screen.getByText("已取消")).toBeVisible();
+    expect(screen.getByText("任务已取消")).toBeVisible();
     expect(screen.queryByText("已中断")).not.toBeInTheDocument();
   });
 
@@ -321,7 +401,6 @@ describe("Agent activity", () => {
       data: { message: `${issueId} 活动 ${index + 1}` },
     }));
     const view = render(<AgentActivity active={false} events={issueEvents("issue-1", 170)} />);
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
     fireEvent.click(screen.getByRole("button", { name: /加载更早活动/ }));
     expect(screen.getByText("issue-1 活动 11")).toBeVisible();
 
@@ -361,8 +440,6 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
-
     expect(screen.getByText("second'")).toBeVisible();
     expect(screen.getByText("$ printf 'first")).toHaveAttribute("title", "$ printf 'first");
   });
@@ -374,12 +451,10 @@ describe("Agent activity", () => {
       { id: "issue-1:2", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "COMMAND", occurredAt: "2026-08-19T09:01:00Z", data: { message: "pnpm test" } }
     ]} />);
 
-    expect(screen.getByText("pnpm test")).toBeVisible();
-    const toggle = screen.getByRole("button", { name: "Agent 活动" });
-    expect(toggle).toHaveAttribute("data-slot", "button");
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByText("pnpm test")).toHaveLength(2);
+    expect(screen.getByText("Agent 活动")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Agent 活动" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "活动记录" })).not.toBeInTheDocument();
     expect(screen.getByText("Issue 已创建")).toBeVisible();
     expect(screen.getByText("Oh My Bug")).toBeVisible();
     expect(screen.queryByText("ISSUE_CREATED")).not.toBeInTheDocument();
@@ -401,8 +476,6 @@ describe("Agent activity", () => {
     ]} />);
 
     expect(screen.queryByText("请检查窄窗口下的活动记录")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
-
     expect(screen.getAllByText("已要求重新分析")).toHaveLength(2);
     expect(screen.getByText("用户")).toBeVisible();
     const detailToggle = screen.getByRole("button", { name: "查看重新分析说明" });
@@ -440,8 +513,7 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    expect(screen.getByText("Codex 网络连接中断")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    expect(screen.getAllByText("Codex 网络连接中断")).toHaveLength(2);
     expect(screen.getByText("stream disconnected before completion: error sending request")).toBeVisible();
     expect(screen.queryByText("查看详情")).not.toBeInTheDocument();
   });
@@ -468,8 +540,7 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    expect(screen.getByText("Runtime 已重启，正在恢复实现")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    expect(screen.getAllByText("Runtime 已重启，正在恢复实现")).toHaveLength(2);
     expect(screen.getByText("Runtime 已重启，正在恢复分析")).toBeVisible();
     expect(screen.queryByText("任务意外中断")).not.toBeInTheDocument();
   });
@@ -496,8 +567,7 @@ describe("Agent activity", () => {
       },
     ]} />);
 
-    expect(screen.getByText("Runtime 已重启，正在恢复证据采集")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Agent 活动" }));
+    expect(screen.getAllByText("Runtime 已重启，正在恢复证据采集")).toHaveLength(2);
     expect(screen.getByText("实现完成，准备采集证据")).toBeVisible();
   });
 });

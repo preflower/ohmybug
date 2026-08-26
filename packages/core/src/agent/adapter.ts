@@ -19,7 +19,10 @@ import type {
   FinalizationRecoveryResult,
 } from "./types.js";
 
-export type AgentInterruptionReason = "RUNTIME_STOPPING" | "USER_CANCELED";
+export type AgentInterruptionReason =
+  | "RUNTIME_STOPPING"
+  | "USER_CANCELED"
+  | "USER_PAUSED";
 
 export class AgentTurnInterruptedError extends Error {
   readonly code = "AGENT_TURN_INTERRUPTED" as const;
@@ -37,6 +40,9 @@ export function isAgentTurnInterruptedError(
 }
 
 export type AgentContinuation =
+  | {
+      reason: "USER_RESUMED";
+    }
   | {
       reason: "RUNTIME_INTERRUPTED";
       previousAttemptId?: string;

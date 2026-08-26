@@ -181,6 +181,8 @@ export interface RuntimeApi {
     expectedRevision: number;
     requestId: string;
   }): Promise<Issue>;
+  pauseIssue(input: { id: string }): Promise<Issue>;
+  resumeIssue(input: { id: string }): Promise<Issue>;
   cancelIssue(input: { id: string }): Promise<Issue>;
   issueEvents(input: { id: string; cursor: number }): Promise<IssueEventPage>;
   readEvidence(input: { issueId: string; evidenceId: string }): Promise<EvidencePayload>;

@@ -142,6 +142,8 @@ async function harness(
     retryIssue: commands.retryIssue.bind(commands),
     rebuildAgentSession: commands.rebuildAgentSession.bind(commands),
     grantIssueCapabilities: commands.grantIssueCapabilities.bind(commands),
+    pauseIssue: commands.pauseIssue.bind(commands),
+    resumeIssue: commands.resumeIssue.bind(commands),
     cancelIssue: commands.cancelIssue.bind(commands),
     stop: async () => undefined,
   };

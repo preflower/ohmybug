@@ -129,7 +129,7 @@ test("registers a local project and renders built-in plugins from manifests", as
 
     await page.setViewportSize({ width: 768, height: 512 });
     await expect(page.locator(".project-settings-nav")).toHaveCSS("border-bottom-width", "1px");
-    await page.locator(".project-editor-page").evaluate((element) => {
+    await page.locator(".project-settings-content").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
     const zoomMetrics = await page.locator(".project-settings-content").evaluate((content) => {
@@ -233,6 +233,7 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     await page.getByRole("checkbox", { name: "启用" }).click();
     await page.getByLabel("Client ID").fill("ding-client-id");
     await page.getByLabel("Client Secret").fill("ding-client-secret");
+    await page.getByRole("switch", { name: "群聊过滤" }).click();
     await page.getByRole("button", { name: "添加群聊" }).click();
     await page.getByRole("textbox", { name: "群聊 ID 1", exact: true }).fill("cid-acceptance-group");
 
@@ -246,8 +247,7 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     await page.getByRole("textbox", { name: "群聊 ID 1", exact: true })
       .fill("dingtalk1234567890abcdef1234567890abcdef");
     await expect(page.getByText("有未保存的更改")).toBeVisible();
-    await expect(page.getByText("接收范围")).toBeVisible();
-    await expect(page.getByText("指定群聊", { exact: true })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "群聊过滤" })).toBeChecked();
     await page.locator(".integration-heading h2").click();
 
     const visualContract = await page.locator(".project-settings-tabs").evaluate((root) => {
@@ -273,6 +273,49 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
     const outputDir = resolve(".artifacts", "visual-diff", "dingtalk-settings");
     await mkdir(outputDir, { recursive: true });
     await page.locator(".project-settings-tabs").screenshot({ path: resolve(outputDir, "actual.png") });
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("keeps the reviewed narrow project settings aligned and bottom-anchored", async ({ page }) => {
+  const fixture = await registerProject(page, String(Date.now()));
+  try {
+    await page.setViewportSize({ width: 693, height: 755 });
+    await page.getByRole("tab", { name: "DingTalk" }).click();
+    await expect(page.getByRole("switch", { name: "群聊过滤" })).not.toBeChecked();
+    await expect(page.getByRole("button", { name: "添加群聊" })).not.toBeVisible();
+    await page.getByRole("switch", { name: "群聊过滤" }).click();
+    await expect(page.getByRole("button", { name: "添加群聊" })).toBeVisible();
+    await expect.poll(() => page.getByRole("switch", { name: "群聊过滤" }).evaluate((filter) => {
+      const thumb = filter.querySelector<HTMLElement>('[data-slot="switch-thumb"]')!.getBoundingClientRect();
+      return Math.round(thumb.left - filter.getBoundingClientRect().left);
+    })).toBeGreaterThan(10);
+
+    const metrics = await page.getByTestId("project-settings-form").evaluate((form) => {
+      const fieldset = form.querySelector<HTMLElement>('[data-config-key="conversationIds"]')!;
+      const footer = form.querySelector<HTMLElement>(".project-settings-actions")!;
+      const filter = form.querySelector<HTMLElement>('[role="switch"][aria-checked="true"]')!;
+      const thumb = filter.querySelector<HTMLElement>('[data-slot="switch-thumb"]')!.getBoundingClientRect();
+      const filterRect = filter.getBoundingClientRect();
+      const formRect = form.getBoundingClientRect();
+      const footerRect = footer.getBoundingClientRect();
+      return {
+        fieldsetColumns: getComputedStyle(fieldset).gridTemplateColumns,
+        filterDataChecked: filter.hasAttribute("data-checked"),
+        thumbDataChecked: filter.querySelector<HTMLElement>('[data-slot="switch-thumb"]')!.hasAttribute("data-checked"),
+        filterThumbOffset: Math.round(thumb.left - filterRect.left),
+        bottomGap: Math.round(formRect.bottom - footerRect.bottom),
+      };
+    });
+    expect(metrics.fieldsetColumns).toContain("160px");
+    expect(metrics.filterDataChecked || metrics.thumbDataChecked).toBe(true);
+    expect(metrics.filterThumbOffset).toBeGreaterThan(10);
+    expect(metrics.bottomGap).toBe(0);
+
+    const outputDir = resolve(".artifacts", "project-settings-browser-feedback");
+    await mkdir(outputDir, { recursive: true });
+    await page.screenshot({ path: resolve(outputDir, "filter-on.png"), fullPage: false });
   } finally {
     await fixture.cleanup();
   }

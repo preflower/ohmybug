@@ -76,6 +76,23 @@ describe("PlaywrightEvidenceCaptureProvider", () => {
     expect((await stat(artifact.path)).size).toBeGreaterThan(0);
   });
 
+  it("stops the configured command process tree when its signal is aborted", async () => {
+    const controller = new AbortController();
+    const port = await reservePort();
+    const request = {
+      ...commandRequest(`PORT=${port} node spawn-grandchild.mjs`),
+      signal: controller.signal,
+    };
+
+    const capturing = provider.capture(request);
+    const url = `http://127.0.0.1:${port}`;
+    await waitUntilReachable(url);
+    controller.abort(new Error("ISSUE_PAUSED"));
+
+    await expect(capturing).rejects.toThrow();
+    await expect(waitUntilUnreachable(url)).resolves.toBeUndefined();
+  });
+
   it.each([
     ["unreachable", "EVIDENCE_TARGET_UNREACHABLE"],
     ["permission", "EVIDENCE_CAPTURE_PERMISSION_DENIED"],
@@ -135,4 +152,30 @@ async function reservePort(): Promise<number> {
     server.close((error) => error ? reject(error) : resolveClose());
   });
   return address.port;
+}
+
+async function waitUntilReachable(url: string): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    try {
+      if ((await fetch(url)).ok) return;
+    } catch {
+      // The spawned grandchild may not be listening yet.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+  }
+  throw new Error("TEST_SERVER_NOT_REACHABLE");
+}
+
+async function waitUntilUnreachable(url: string): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    try {
+      await fetch(url);
+    } catch {
+      return;
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+  }
+  throw new Error("TEST_SERVER_STILL_REACHABLE");
 }
