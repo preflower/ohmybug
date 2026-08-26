@@ -360,6 +360,21 @@ function EventLogLine({ line }: { line: EventLine }) {
   </div>;
 }
 
+function ActivityLogLine({ line }: { line: ActivityLine }) {
+  return line.kind === "command"
+    ? <CommandLogLine line={line} />
+    : <EventLogLine line={line} />;
+}
+
+function FlatActivityLines({ group }: { group: ActivityGroup }) {
+  return <div className="activity-flat-lines">
+    {group.lines.map((line) => <ActivityLogLine
+      key={line.kind === "command" ? line.id : line.event.id}
+      line={line}
+    />)}
+  </div>;
+}
+
 function ActivityTurn({
   expanded,
   group,
@@ -397,9 +412,10 @@ function ActivityTurn({
       id={bodyId}
       role="log"
     >
-      {group.lines.length ? group.lines.map((line) => line.kind === "command"
-        ? <CommandLogLine key={line.id} line={line} />
-        : <EventLogLine key={line.event.id} line={line} />)
+      {group.lines.length ? group.lines.map((line) => <ActivityLogLine
+        key={line.kind === "command" ? line.id : line.event.id}
+        line={line}
+      />)
         : <p className="activity-turn-empty">等待活动…</p>}
     </div> : null}
   </section>;
@@ -445,12 +461,15 @@ export function AgentActivity({ events, active }: { events: AgentEventDto[]; act
       })}>
         加载更早活动（剩余 {hiddenEventCount} 条）
       </Button> : null}
-      {groups.length ? groups.map((group) => <ActivityTurn
-        expanded={expandedGroupIds.has(group.id)}
-        group={group}
-        key={group.id}
-        onToggle={() => toggleGroup(group.id)}
-      />) : <p className="activity-empty">Agent 尚未产生事件。</p>}
+      {groups.length ? groups.map((group) => group.turn
+        ? <ActivityTurn
+            expanded={expandedGroupIds.has(group.id)}
+            group={group}
+            key={group.id}
+            onToggle={() => toggleGroup(group.id)}
+          />
+        : <FlatActivityLines group={group} key={group.id} />)
+        : <p className="activity-empty">Agent 尚未产生事件。</p>}
     </div>
   </section>;
 }
