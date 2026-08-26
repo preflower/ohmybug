@@ -15,7 +15,7 @@ import {
 } from "../components/ui/select.js";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
 import { Textarea } from "../components/ui/textarea.js";
-import type { ConfigValue, IntegrationHealth, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../api/types.js";
+import type { ConfigValue, IntegrationConnectionTestResult, IntegrationHealth, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../api/types.js";
 import { ConfigFields } from "./config-fields.js";
 import { GitWorkspaceFields } from "./git-workspace-fields.js";
 import { IntegrationFields } from "./integration-fields.js";
@@ -54,6 +54,10 @@ interface ProjectFormProps {
     providerId: string,
   ): Promise<WorkspaceBranchDiscoveryDto>;
   health?: Record<string, IntegrationHealth>;
+  onTestSavedIntegration?(
+    projectId: string,
+    integrationId: string,
+  ): Promise<IntegrationConnectionTestResult>;
   onSave(
     project: ProjectFormValue,
     secretPatches: Record<string, Record<string, string | null>>,
@@ -69,7 +73,7 @@ const localWorkspaceProvider: WorkspaceProviderManifest = {
   configFields: [],
 };
 
-export function ProjectForm({ manifests, workspaceProviders = [localWorkspaceProvider], initial, inspection, onCancel, onSelectDirectory, onRefreshWorkspaceBranches, health = {}, onSave }: ProjectFormProps) {
+export function ProjectForm({ manifests, workspaceProviders = [localWorkspaceProvider], initial, inspection, onCancel, onSelectDirectory, onRefreshWorkspaceBranches, health = {}, onTestSavedIntegration = unsupportedConnectionTest, onSave }: ProjectFormProps) {
   const allManifests = useMemo(() => withUnavailableManifests(manifests, initial), [manifests, initial]);
   const allWorkspaceProviders = useMemo(
     () => withUnavailableWorkspaceProviders(workspaceProviders, initial),
@@ -261,9 +265,12 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
             <IntegrationFields
               manifest={manifest}
               config={value.config}
+              dirty={!saved}
+              projectId={project.id}
               secretConfigured={value.secretConfigured}
               secretValues={secretValues[manifest.id] ?? {}}
               editingSecrets={editingSecrets[manifest.id] ?? {}}
+              onTestSavedIntegration={onTestSavedIntegration}
               onConfigChange={(key, configValue) => updateProject((current) => ({
                 ...current,
                 integrations: {
@@ -293,6 +300,10 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
       </div>{saveError ? <Alert className="project-save-alert" variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert> : null}<footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存更改"}</Button></div></footer></div>
     </Tabs>
   </form>;
+}
+
+function unsupportedConnectionTest(): Promise<never> {
+  return Promise.reject(new Error("INTEGRATION_CONNECTION_TEST_UNSUPPORTED"));
 }
 
 function initialValue(manifests: IntegrationPluginManifest[], workspaceProviders: WorkspaceProviderManifest[], initial?: ProjectDto, inspection?: ProjectInspection): ProjectFormValue {

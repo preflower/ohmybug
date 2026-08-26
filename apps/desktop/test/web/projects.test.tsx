@@ -4,8 +4,9 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../../src/web/api/types.js";
+import type { IntegrationConnectionTestResult, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../../src/web/api/types.js";
 import { GitBranchCombobox } from "../../src/web/projects/git-branch-combobox.js";
+import { IntegrationConnectionTest } from "../../src/web/projects/integration-connection-test.js";
 import { IntegrationFields } from "../../src/web/projects/integration-fields.js";
 import { IntegrationHealthStatus } from "../../src/web/projects/integration-health.js";
 import { ProjectForm } from "../../src/web/projects/project-form.js";
@@ -50,6 +51,42 @@ const groupedManifest: IntegrationPluginManifest = {
     { key: "clientId", label: "Client ID", required: true, section: "credentials" },
     { key: "clientSecret", label: "Client Secret", required: true, section: "credentials" },
   ],
+};
+
+const sentryManifest: IntegrationPluginManifest = {
+  id: "sentry",
+  name: "Sentry",
+  icon: "sentry",
+  description: "从指定 Sentry 项目接收 Issue 和事件。",
+  sections: [
+    { id: "connection", label: "连接配置", description: "用于定位项目并读取事件。" },
+    {
+      id: "validation",
+      label: "连接验证",
+      description: "仅使用已保存的配置和凭证。",
+      connectionTest: true,
+    },
+    {
+      id: "filters",
+      label: "过滤规则",
+      description: "限制进入 Oh My Bug 的 Sentry Issue。",
+      summary: {
+        fields: [
+          { key: "environment", emptyValue: "全部环境" },
+          { key: "query", emptyValue: "未解决 Issue", valuePrefix: "Query: " },
+        ],
+        separator: " · ",
+      },
+      collapsed: true,
+    },
+  ],
+  configFields: [
+    { key: "organization", type: "string", label: "Organization", required: true, section: "connection" },
+    { key: "project", type: "string", label: "Project", required: true, section: "connection" },
+    { key: "environment", type: "string", label: "Environment", required: false, section: "filters" },
+    { key: "query", type: "string", label: "Query", required: false, section: "filters" },
+  ],
+  secretFields: [{ key: "token", label: "Auth token", required: true, section: "connection" }],
 };
 
 const workspaceProviders: WorkspaceProviderManifest[] = [
@@ -107,11 +144,133 @@ const configuredProject: ProjectDto = {
   updatedAt: "2026-08-20T09:00:00.000Z",
 };
 
+const sentryProject: ProjectDto = {
+  ...configuredProject,
+  integrations: {
+    sentry: {
+      enabled: false,
+      config: {
+        organization: "saved-org",
+        project: "saved-project",
+        environment: "",
+        query: "",
+      },
+      secretConfigured: { token: true },
+    },
+  },
+};
+
 function selectTab(name: string) {
   fireEvent.click(screen.getByRole("tab", { name }));
 }
 
 describe("Project configuration", () => {
+  it("renders config-derived collapsed summaries", () => {
+    render(<IntegrationFields
+      config={{ environment: "", query: "" }}
+      dirty={false}
+      editingSecrets={{}}
+      manifest={sentryManifest}
+      secretConfigured={{ token: true }}
+      secretValues={{}}
+      onConfigChange={vi.fn()}
+      onEditSecret={vi.fn()}
+      onSecretChange={vi.fn()}
+      onTestSavedIntegration={vi.fn()}
+    />);
+    const filters = screen.getByText("过滤规则").closest("details");
+    expect(filters).toHaveTextContent("全部环境 · 未解决 Issue");
+    expect(filters).not.toHaveAttribute("open");
+  });
+
+  it("disables testing before first save", () => {
+    render(<ProjectForm
+      inspection={inspection}
+      manifests={[sentryManifest]}
+      onSave={async () => undefined}
+      onTestSavedIntegration={vi.fn()}
+    />);
+    selectTab("Sentry");
+    expect(screen.getByRole("button", { name: "测试已保存配置" })).toBeDisabled();
+    expect(screen.getByText("保存项目后可测试连接")).toBeVisible();
+  });
+
+  it("tests persisted settings while warning about unsaved edits", async () => {
+    const testSaved = vi.fn(async () => ({
+      title: "连接成功",
+      details: [
+        { label: "Organization", value: "saved-org" },
+        { label: "Project", value: "saved-project" },
+      ],
+      testedAt: "2026-08-26T02:00:00.000Z",
+    }));
+    render(<ProjectForm
+      initial={sentryProject}
+      manifests={[sentryManifest]}
+      onSave={async () => undefined}
+      onTestSavedIntegration={testSaved}
+    />);
+    selectTab("Sentry");
+    fireEvent.change(screen.getByLabelText("Organization"), {
+      target: { value: "unsaved-org" },
+    });
+    expect(screen.getByText("当前修改不会用于本次测试")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "测试已保存配置" }));
+    await screen.findByText("连接成功");
+    expect(testSaved).toHaveBeenCalledWith("project-1", "sentry");
+    expect(screen.getByText("saved-org")).toBeVisible();
+    expect(screen.getByText("基于已保存配置")).toBeVisible();
+  });
+
+  it("ignores a connection result after the project changes", async () => {
+    let resolve!: (value: IntegrationConnectionTestResult) => void;
+    const onTest = vi.fn(() => new Promise<IntegrationConnectionTestResult>((done) => {
+      resolve = done;
+    }));
+    const { rerender } = render(<IntegrationConnectionTest
+      dirty={false}
+      integrationId="sentry"
+      projectId="project-1"
+      onTest={onTest}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: "测试已保存配置" }));
+    rerender(<IntegrationConnectionTest
+      dirty={false}
+      integrationId="sentry"
+      projectId="project-2"
+      onTest={onTest}
+    />);
+    await act(async () => resolve({
+      title: "连接成功",
+      details: [{ label: "Project", value: "old-project" }],
+      testedAt: "2026-08-26T02:00:00.000Z",
+    }));
+    expect(screen.queryByText("old-project")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["SENTRY_CONNECTION_FILTER_INVALID", "已保存的过滤条件无法用于当前 Sentry 项目。"],
+    ["SENTRY_CONNECTION_TOKEN_INVALID", "Auth token 无效或已失效。"],
+    ["SENTRY_CONNECTION_PERMISSION_DENIED", "Auth token 缺少读取事件的权限，请确认已授予 event:read。"],
+    ["SENTRY_CONNECTION_RESOURCE_NOT_FOUND", "Organization 或 Project 不存在，或当前 Token 无权访问。"],
+    ["SENTRY_CONNECTION_NETWORK", "无法连接 Sentry，请检查网络后重试。"],
+    ["SENTRY_CONFIG_ORGANIZATION_REQUIRED", "请先保存 Organization。"],
+    ["SENTRY_CONFIG_PROJECT_REQUIRED", "请先保存 Project。"],
+    ["SENTRY_SECRET_TOKEN_REQUIRED", "请先保存 Auth token。"],
+    ["INTEGRATION_CONNECTION_TEST_UNSUPPORTED", "该 Integration 不支持连接测试。"],
+  ])("maps %s without rendering raw error bytes", async (code, message) => {
+    render(<IntegrationConnectionTest
+      dirty={false}
+      integrationId="sentry"
+      projectId="project-1"
+      onTest={async () => Promise.reject(Object.assign(new Error(`token-value:${code}`), { code }))}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "测试已保存配置" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.queryByText(/token-value/)).not.toBeInTheDocument();
+  });
+
   it("renders manifest sections, keeps advanced settings collapsed, and replaces configured secrets on demand", () => {
     const onEditSecret = vi.fn();
     const { rerender } = render(<IntegrationFields

@@ -1,8 +1,13 @@
-import type { ConfigValue, IntegrationPluginManifest } from "../api/types.js";
+import type {
+  ConfigValue,
+  IntegrationConnectionTestResult,
+  IntegrationPluginManifest,
+} from "../api/types.js";
 
 import { Button } from "../components/ui/button.js";
 import { Input } from "../components/ui/input.js";
 import { ConfigFields } from "./config-fields.js";
+import { IntegrationConnectionTest } from "./integration-connection-test.js";
 
 interface IntegrationFieldsProps {
   manifest: IntegrationPluginManifest;
@@ -10,9 +15,15 @@ interface IntegrationFieldsProps {
   secretConfigured: Record<string, boolean>;
   secretValues: Record<string, string>;
   editingSecrets: Record<string, boolean>;
+  projectId?: string;
+  dirty?: boolean;
   onConfigChange(key: string, value: ConfigValue): void;
   onEditSecret(key: string, editing: boolean): void;
   onSecretChange(key: string, value: string): void;
+  onTestSavedIntegration?(
+    projectId: string,
+    integrationId: string,
+  ): Promise<IntegrationConnectionTestResult>;
 }
 
 export function IntegrationFields({
@@ -21,9 +32,12 @@ export function IntegrationFields({
   secretConfigured,
   secretValues,
   editingSecrets,
+  projectId,
+  dirty = false,
   onConfigChange,
   onEditSecret,
   onSecretChange,
+  onTestSavedIntegration = unsupportedConnectionTest,
 }: IntegrationFieldsProps) {
   if (!manifest.sections?.length) {
     return <div className="form-grid integration-fields-legacy">
@@ -44,7 +58,9 @@ export function IntegrationFields({
     {manifest.sections.map((section) => {
       const configFields = manifest.configFields.filter((field) => field.section === section.id);
       const secretFields = manifest.secretFields.filter((field) => field.section === section.id);
-      const content = <div className="form-grid integration-section-fields">
+      const summary = section.summary ? sectionSummary(section.summary, config) : undefined;
+      const content = configFields.length > 0 || secretFields.length > 0
+        ? <div className="form-grid integration-section-fields">
         <ConfigFields fields={configFields} config={config} idPrefix={`${manifest.id}-${section.id}`} onChange={onConfigChange} />
         {secretFields.map((field) => <SecretField
           configured={Boolean(secretConfigured[field.key])}
@@ -55,23 +71,52 @@ export function IntegrationFields({
           onEdit={onEditSecret}
           onChange={onSecretChange}
         />)}
-      </div>;
+      </div>
+        : null;
+      const connectionTest = section.connectionTest ? <IntegrationConnectionTest
+        dirty={dirty}
+        integrationId={manifest.id}
+        projectId={projectId}
+        onTest={onTestSavedIntegration}
+      /> : null;
 
       return section.collapsed
         ? <details className="integration-section integration-section-collapsed" key={section.id}>
-            <summary><div><h3>{section.label}</h3>{section.description ? <p>{section.description}</p> : null}</div></summary>
+            <summary>
+              <div><h3>{section.label}</h3>{section.description ? <p>{section.description}</p> : null}</div>
+              {summary ? <strong className="integration-section-collapsed-summary">{summary}</strong> : null}
+            </summary>
+            {connectionTest}
             {content}
           </details>
         : <section className="integration-section" data-integration-section={section.id} key={section.id}>
             <header><h3>{section.label}</h3>{section.description ? <p>{section.description}</p> : null}</header>
-            {section.summary && "label" in section.summary ? <div className="integration-section-summary">
-              <span>{section.summary.label}</span>
-              <strong><i aria-hidden="true" />{section.summary.value}</strong>
+            {section.summary && summary ? <div className="integration-section-summary">
+              {"label" in section.summary ? <span>{section.summary.label}</span> : null}
+              <strong><i aria-hidden="true" />{summary}</strong>
             </div> : null}
+            {connectionTest}
             {content}
           </section>;
     })}
   </div>;
+}
+
+type IntegrationSection = NonNullable<IntegrationPluginManifest["sections"]>[number];
+
+function sectionSummary(
+  summary: NonNullable<IntegrationSection["summary"]>,
+  config: Record<string, ConfigValue>,
+): string {
+  if ("value" in summary) return summary.value;
+  return summary.fields.map((field) => {
+    const value = String(config[field.key] ?? "").trim();
+    return value ? `${field.valuePrefix ?? ""}${value}` : field.emptyValue;
+  }).join(summary.separator ?? " · ");
+}
+
+function unsupportedConnectionTest(): Promise<never> {
+  return Promise.reject(new Error("INTEGRATION_CONNECTION_TEST_UNSUPPORTED"));
 }
 
 type SecretFieldDefinition = IntegrationPluginManifest["secretFields"][number];
