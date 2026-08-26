@@ -11,6 +11,7 @@ import { AppServerRpcClient } from "../../src/app-server/rpc-client.js";
 interface Fixture {
   socketPath: string;
   received: unknown[];
+  upgradeHeaders: Record<string, string | string[] | undefined>;
   send(value: unknown): void;
   close(): Promise<void>;
 }
@@ -30,6 +31,7 @@ describe("App Server JSON-RPC client", () => {
       remoteUrl: `unix://${fixture.socketPath}`,
     });
     cleanups.push(() => client.close());
+    expect(fixture.upgradeHeaders["sec-websocket-extensions"]).toBeUndefined();
 
     await expect(client.request("thread/read", {
       threadId: "thread-1",
@@ -75,12 +77,14 @@ describe("App Server JSON-RPC client", () => {
     fixture.server.send({
       method: "turn/started",
       params: { threadId: "thread-1", turn: { id: "turn-1" } },
+      emittedAtMs: 1_787_731_062_407,
     });
     await expect(iterator.next()).resolves.toEqual({
       done: false,
       value: {
         method: "turn/started",
         params: { threadId: "thread-1", turn: { id: "turn-1" } },
+        emittedAtMs: 1_787_731_062_407,
       },
     });
 
@@ -149,9 +153,11 @@ async function createFixture(): Promise<Fixture> {
   const server = createServer();
   const webSockets = new WebSocketServer({ noServer: true });
   const received: unknown[] = [];
+  const upgradeHeaders: Record<string, string | string[] | undefined> = {};
   let peer: WebSocket | undefined;
   let closed = false;
   server.on("upgrade", (request, socket, head) => {
+    Object.assign(upgradeHeaders, request.headers);
     webSockets.handleUpgrade(request, socket, head, (connected) => {
       peer = connected;
       connected.on("message", (data) => received.push(JSON.parse(data.toString())));
@@ -173,6 +179,7 @@ async function createFixture(): Promise<Fixture> {
   return {
     socketPath,
     received,
+    upgradeHeaders,
     send(value) {
       if (!peer) throw new Error("TEST_PEER_NOT_CONNECTED");
       peer.send(JSON.stringify(value));

@@ -108,11 +108,11 @@ The `CodexClient` interface may gain turn correlation and lifecycle methods need
 
 ### Private temporary-directory compatibility
 
-The current SDK client gives every `workspace-write` turn a private temporary directory inside the Issue worktree and excludes the global temporary directories from the sandbox. The App Server migration must preserve that behavior.
+The current SDK client gives every `workspace-write` turn a private temporary directory inside the Issue worktree and excludes the global temporary directories from the sandbox. The App Server migration must preserve that isolation without assuming that an existing thread's environment can be replaced on resume.
 
-Before starting or resuming a thread for a `workspace-write` stage, the client creates the existing marked private-temp directory and applies a thread-scoped shell-environment override for `TMPDIR`, `TMP`, and `TEMP`. It also preserves the current workspace-write exclusions for global temporary directories. A later stage replaces or clears those thread-scoped values before its turn starts, and turn cleanup removes the owned directory with the existing bounded cleanup behavior.
+The pinned App Server retains the environment from `thread/start`; real-binary testing proved that `thread/resume` does not replace it. Therefore every logical Agent session receives one deterministic, marked private-temp path inside its Issue worktree before its first thread starts. The same path is recreated before every resume, used for `TMPDIR`, `TMP`, and `TEMP` across all stages, and retained while the shared App Server is live so a connected CLI never inherits a deleted path. Per-turn sandbox policy still controls write access: read-only turns cannot write there, while workspace-write turns retain the existing global-temp exclusions. Runtime shutdown removes all client-owned directories with the existing bounded three-retry/100 ms cleanup after active turns drain and the shared server stops. A later Runtime process recreates the same deterministic path before resuming the persisted thread.
 
-The exact configuration keys are taken from the generated schema and configuration reference for the pinned Codex build. Equivalent isolation is a migration gate: if the pinned App Server cannot express a per-thread environment override without weakening the sandbox, the implementation must retain an isolated execution boundary rather than silently falling back to the App Server process environment.
+The exact configuration keys are taken from the generated schema and configuration reference for the pinned Codex build. The implementation must never send SDK-only options such as `skip_git_repo_check` as App Server config, weaken a turn's sandbox, or silently fall back to the App Server process environment.
 
 ## Failure handling
 
@@ -160,7 +160,7 @@ Electron main rejects non-Codex sessions, missing provider thread IDs, inactive 
 - `thread/start`, `thread/resume`, `thread/read`, `turn/start`, `turn/steer` observation, and `turn/interrupt` normalization.
 - Notification routing by `threadId` and `turnId`.
 - Acceptance of the Runtime-owned turn's final structured message and rejection of a different turn's result.
-- Private temporary-directory creation, per-thread environment overrides, global-temp exclusions, stage-to-stage replacement, and bounded cleanup.
+- Deterministic session-private temporary-directory creation, stable per-thread environment overrides, global-temp exclusions, sandbox transitions, and bounded host-shutdown cleanup.
 - Supervisor readiness, bounded restart, shutdown, version mismatch, socket ownership, and stale-socket behavior.
 - Launch-target validation and safe macOS command construction.
 - Renderer-safe availability without disclosure of private launch fields.

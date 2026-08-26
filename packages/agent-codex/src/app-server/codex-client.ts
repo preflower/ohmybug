@@ -1,11 +1,8 @@
-import { mkdtempSync, rm, rmSync } from "node:fs";
-import { join } from "node:path";
+import { rm } from "node:fs";
 
 import { z } from "zod";
 
 import {
-  attachCleanupError,
-  cleanupMessage,
   NativeThreadUnavailableError,
   type CodexClient,
   type CodexClientEvent,
@@ -14,13 +11,9 @@ import {
   type CodexThreadOptions,
   type CodexTurnOptions,
 } from "../codex-client.js";
-import { AGENT_PRIVATE_TEMP_PREFIX, markAgentPrivateTemp } from "../private-temp.js";
+import { ensureAgentPrivateTemp } from "../private-temp.js";
 import type { JsonValue, TurnStartParams } from "./protocol.js";
 import type { AppServerConnection } from "./supervisor.js";
-
-export interface AppServerCodexClientOptions {
-  environment?: Record<string, string | undefined>;
-}
 
 interface TurnSubscription { threadId: string; turnId: string; queue: EventQueue }
 interface RoutedNotification {
@@ -33,16 +26,22 @@ interface RoutedNotification {
 
 const MAX_STARTING_NOTIFICATIONS = 256;
 
+export interface AppServerCodexClientOptions {
+  ensurePrivateTemp?: typeof ensureAgentPrivateTemp;
+}
+
 export class AppServerCodexClient implements CodexClient {
-  private readonly environment: Record<string, string | undefined>;
   private readonly subscriptions = new Map<string, TurnSubscription>();
   private readonly startingNotifications = new Map<string, RoutedNotification[]>();
+  private readonly privateTemps = new Set<string>();
+  private readonly ensurePrivateTemp: typeof ensureAgentPrivateTemp;
+  private disposed = false;
 
   constructor(
     private readonly connection: AppServerConnection,
     options: AppServerCodexClientOptions = {},
   ) {
-    this.environment = options.environment ?? { ...process.env };
+    this.ensurePrivateTemp = options.ensurePrivateTemp ?? ensureAgentPrivateTemp;
     void this.pumpNotifications();
   }
 
@@ -55,28 +54,37 @@ export class AppServerCodexClient implements CodexClient {
   }
 
   private createThread(threadId: string | undefined, options: CodexThreadOptions): CodexThread {
-    const privateTemp = options.sandboxMode === "workspace-write"
-      ? mkdtempSync(join(options.workingDirectory, AGENT_PRIVATE_TEMP_PREFIX))
-      : undefined;
-    try {
-      if (privateTemp) markAgentPrivateTemp(privateTemp);
-      return new AppServerThread(this, threadId, options, privateTemp);
-    } catch (error) {
-      if (privateTemp) rmSync(privateTemp, { recursive: true, force: true });
-      throw error;
+    if (this.disposed) throw new Error("CODEX_APP_SERVER_CLIENT_DISPOSED");
+    const privateTemp = this.ensurePrivateTemp(options.workingDirectory, options.sessionId);
+    this.privateTemps.add(privateTemp);
+    return new AppServerThread(this, threadId, options, privateTemp);
+  }
+
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    let failure: unknown;
+    for (const path of this.privateTemps) {
+      try {
+        await removePrivateTemp(path);
+      } catch (error) {
+        failure ??= error;
+      }
     }
+    this.privateTemps.clear();
+    if (failure) throw failure;
   }
 
   async startTurn(
     requestedThreadId: string | undefined,
     threadOptions: CodexThreadOptions,
-    privateTemp: string | undefined,
+    privateTemp: string,
     prompt: string,
     turnOptions: CodexTurnOptions,
   ): Promise<{ threadId: string; events: AsyncIterable<CodexClientEvent> }> {
     let threadId: string;
     try {
-      const params = threadParams(threadOptions, privateTemp, this.environment);
+      const params = threadParams(threadOptions, privateTemp);
       const response = requestedThreadId
         ? await this.connection.request("thread/resume", { threadId: requestedThreadId, ...params })
         : await this.connection.request("thread/start", params);
@@ -177,87 +185,55 @@ export class AppServerCodexClient implements CodexClient {
 
 class AppServerThread implements CodexThread {
   private threadId: string | null;
-  private cleaned = false;
 
   constructor(
     private readonly client: AppServerCodexClient,
     requestedThreadId: string | undefined,
     private readonly threadOptions: CodexThreadOptions,
-    private readonly privateTemp?: string,
+    private readonly privateTemp: string,
   ) { this.threadId = requestedThreadId ?? null; }
 
   get id(): string | null { return this.threadId; }
 
   async runStreamed(prompt: string, options: CodexTurnOptions): Promise<AsyncIterable<CodexClientEvent>> {
-    try {
-      const started = await this.client.startTurn(
-        this.threadId ?? undefined,
-        this.threadOptions,
-        this.privateTemp,
-        prompt,
-        options,
-      );
-      this.threadId = started.threadId;
-      return withCleanup(started.events, () => this.finish());
-    } catch (error) {
-      try { await this.finish(); } catch (cleanupError) { attachCleanupError(error, cleanupError); }
-      throw error;
-    }
+    const started = await this.client.startTurn(
+      this.threadId ?? undefined,
+      this.threadOptions,
+      this.privateTemp,
+      prompt,
+      options,
+    );
+    this.threadId = started.threadId;
+    return started.events;
   }
 
-  async dispose(): Promise<void> { await this.finish(); }
-
-  private async finish(): Promise<void> {
-    if (this.cleaned) return;
-    this.cleaned = true;
-    if (!this.privateTemp) return;
-    await new Promise<void>((resolvePromise, rejectPromise) => {
-      rm(this.privateTemp!, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 },
-        (error) => error ? rejectPromise(error) : resolvePromise());
-    });
-  }
-}
-
-async function* withCleanup(
-  events: AsyncIterable<CodexClientEvent>,
-  cleanup: () => Promise<void>,
-): AsyncGenerator<CodexClientEvent> {
-  let primary: unknown;
-  try { yield* events; } catch (error) { primary = error; }
-  try {
-    await cleanup();
-  } catch (error) {
-    if (primary) attachCleanupError(primary, error);
-    else yield { type: "cleanup.failed", message: cleanupMessage(error) };
-  }
-  if (primary) throw primary;
+  async dispose(): Promise<void> {}
 }
 
 function threadParams(
   options: CodexThreadOptions,
-  privateTemp: string | undefined,
-  environment: Record<string, string | undefined>,
+  privateTemp: string,
 ) {
-  const baselineTemp = Object.fromEntries(["TMPDIR", "TMP", "TEMP"].flatMap((key) => {
-    const value = environment[key];
-    return value === undefined ? [] : [[key, value]];
-  }));
   return {
     ...(options.model ? { model: options.model } : {}),
     cwd: options.workingDirectory,
     approvalPolicy: options.approvalPolicy,
     sandbox: options.sandboxMode,
     config: {
-      ...(options.skipGitRepoCheck ? { skip_git_repo_check: true } : {}),
       sandbox_workspace_write: { exclude_slash_tmp: true, exclude_tmpdir_env_var: true },
       shell_environment_policy: {
         inherit: "all",
-        set: privateTemp
-          ? { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
-          : baselineTemp,
+        set: { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp },
       },
     },
   } as const;
+}
+
+function removePrivateTemp(path: string): Promise<void> {
+  return new Promise<void>((resolvePromise, rejectPromise) => {
+    rm(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 },
+      (error) => error ? rejectPromise(error) : resolvePromise());
+  });
 }
 
 function sandboxPolicy(options: CodexThreadOptions): TurnStartParams["sandboxPolicy"] {

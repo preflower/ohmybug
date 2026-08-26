@@ -79,7 +79,7 @@ export async function verifyGeneratedProtocolContract(
   }
   const serialized = JSON.stringify(JSON.parse(await readFile(schemaPath, "utf8")));
   for (const method of REQUIRED_APP_SERVER_METHODS) {
-    if (!serialized.includes(`\"${method}\"`)) {
+    if (!serialized.includes(`"${method}"`)) {
       throw new Error(`CODEX_PROTOCOL_METHOD_MISSING:${method}`);
     }
   }

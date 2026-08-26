@@ -76,6 +76,8 @@ interface ActiveTurn {
   finish(): void;
 }
 
+type CodexStageThreadOptions = Omit<CodexThreadOptions, "sessionId">;
+
 const unavailableCodexClient: CodexClient = {
   startThread() {
     throw new Error("CODEX_APP_SERVER_UNAVAILABLE");
@@ -250,7 +252,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     session: AgentSessionRef,
     input: AssessInput | RepairInput | EvidenceCaptureInput | FinalizationRecoveryInput,
     stage: CodexActivity["stage"],
-    threadOptions: CodexThreadOptions,
+    threadOptions: CodexStageThreadOptions,
     prompt: string,
     outputSchema: unknown,
   ): Promise<unknown> {
@@ -300,7 +302,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     session: AgentSessionRef,
     input: AssessInput | RepairInput | EvidenceCaptureInput | FinalizationRecoveryInput,
     stage: CodexActivity["stage"],
-    threadOptions: CodexThreadOptions,
+    threadOptions: CodexStageThreadOptions,
     prompt: string,
     outputSchema: unknown,
   ): Promise<unknown> {
@@ -318,8 +320,11 @@ export class CodexAgentAdapter implements AgentAdapter {
       assertActive(abort.signal);
       this.assertState(state, session, input);
       thread = state.providerSessionId
-        ? this.client.resumeThread(state.providerSessionId, threadOptions)
-        : this.client.startThread(threadOptions);
+        ? this.client.resumeThread(state.providerSessionId, {
+            ...threadOptions,
+            sessionId: session.sessionId,
+          })
+        : this.client.startThread({ ...threadOptions, sessionId: session.sessionId });
       const events = await thread.runStreamed(prompt, { outputSchema, signal: abort.signal });
       let lastMessage: string | undefined;
       let ownedTurn: { threadId: string; turnId: string } | undefined;

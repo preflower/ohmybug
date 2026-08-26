@@ -6,6 +6,7 @@ declare module "ws" {
   export interface RawData { toString(): string }
   export interface ClientOptions {
     createConnection?: () => Duplex;
+    perMessageDeflate?: boolean;
   }
 
   export class WebSocket extends EventEmitter {

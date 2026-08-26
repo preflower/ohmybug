@@ -299,20 +299,20 @@ config: {
 }
 ```
 
-Also assert that a following non-`workspace-write` resume explicitly restores the supervisor's captured baseline `TMPDIR`/`TMP`/`TEMP`, and that the owned temp is removed with the existing three retries/100 ms delay.
+The real-binary gate in Task 5 proved that an existing App Server thread does not replace its environment on `thread/resume`. Revise this unit expectation to assert one deterministic, logical-session private temp across sandbox-mode changes. It remains live for shared CLI use and is removed by client/host shutdown with the existing three retries/100 ms delay.
 
 - [ ] Run the focused tests; expected FAIL.
 
 - [ ] Implement `AppServerCodexClient` behind the existing `CodexClient` boundary. `runStreamed()` must:
 
-1. Create and mark the private temp when required.
+1. Create or verify the deterministic, marked logical-session private temp before every start/resume.
 2. call `thread/start` or `thread/resume` with stage config;
 3. emit `thread.started` using the response thread ID;
 4. call `turn/start`, record its returned turn ID, and emit `turn.started`;
 5. route only matching `threadId + turnId` notifications into the owning stream;
 6. on abort, issue exactly one `turn/interrupt` after a turn ID exists;
 7. end only on matching `turn/completed`; and
-8. clean up the private temp without masking a primary failure.
+8. retain the private temp until client/host shutdown, then clean it with bounded retries after turns drain.
 
 Keep `NativeThreadUnavailableError`, provider-neutral interfaces, item normalization, and cleanup helpers in `codex-client.ts`; delete all SDK imports and `SdkCodexClient` code.
 
@@ -350,7 +350,7 @@ git commit -m "feat(agent): run Codex turns through App Server"
 
 1. Client A starts a thread and turn; client B resumes the same thread and sends `turn/steer` with the exact active turn ID; client A observes the steered user item and completion of that same turn.
 2. A later client-B-owned turn cannot complete client A's waiter.
-3. A workspace-write command observes all three temp variables inside the marked worktree temp, while a subsequent read-only turn observes the captured baseline rather than the deleted prior temp.
+3. A workspace-write command observes all three temp variables inside the marked worktree temp, while a subsequent read-only turn observes that same live session-private path and remains constrained by read-only sandbox policy.
 4. A thread created using the former SDK-compatible rollout format either resumes successfully or maps deterministically to `NATIVE_THREAD_UNAVAILABLE` without rewriting its ID.
 
 Use a deterministic prompt such as “wait until a second user message arrives, then return the two messages as JSON” and a bounded 60-second per-test timeout. Do not use production credentials in fixtures or logs.
@@ -361,7 +361,7 @@ Use a deterministic prompt such as “wait until a second user message arrives, 
 OMB_CODEX_APP_SERVER_INTEGRATION=1 pnpm test:codex-app-server
 ```
 
-Expected: PASS. If shared steer or per-thread environment replacement fails, stop the migration and revise the design; do not weaken sandboxing or emulate sharing with a second turn.
+Expected: PASS. Real-binary testing established that shared steer works and that resume retains the original thread environment. The design therefore uses a deterministic session-private path for the thread lifetime; do not weaken sandboxing or emulate sharing with a second turn.
 
 - [ ] Commit:
 

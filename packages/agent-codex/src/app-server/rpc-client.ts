@@ -1,3 +1,4 @@
+// oxlint-disable-next-line typescript/triple-slash-reference -- consuming workspace projects need this ambient ws declaration.
 /// <reference path="../ws.d.ts" />
 
 import { connect as connectSocket } from "node:net";
@@ -60,6 +61,7 @@ export class AppServerRpcClient {
       endpoint.remoteUrl !== `unix://${endpoint.socketPath}`
     ) throw new Error("CODEX_APP_SERVER_ENDPOINT_INVALID");
     const socket = new WebSocket("ws://localhost", {
+      perMessageDeflate: false,
       createConnection: () => connectSocket(endpoint.socketPath),
     });
     await new Promise<void>((resolve, reject) => {

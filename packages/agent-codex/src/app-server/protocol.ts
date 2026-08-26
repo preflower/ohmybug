@@ -9,7 +9,7 @@ export type JsonRpcRequest = { id: JsonRpcId; method: string; params: unknown };
 export type JsonRpcResponse =
   | { id: JsonRpcId; result: unknown }
   | { id: JsonRpcId; error: { code: number; message: string; data?: unknown } };
-export type JsonRpcNotification = { method: string; params: unknown };
+export type JsonRpcNotification = { method: string; params: unknown; emittedAtMs?: number };
 
 export type UnixAppServerEndpoint = Readonly<{
   transport: "unix";
@@ -75,7 +75,11 @@ const rpcEnvelopeSchema = z.union([
   z.object({ id: z.number().int(), result: z.unknown() }).strict(),
   z.object({ id: z.number().int(), error: rpcErrorSchema }).strict(),
   z.object({ id: z.number().int(), method: z.string(), params: z.unknown() }).strict(),
-  z.object({ method: z.string(), params: z.unknown() }).strict(),
+  z.object({
+    method: z.string(),
+    params: z.unknown(),
+    emittedAtMs: z.number().optional(),
+  }).strict(),
 ]);
 
 const recordSchema = z.record(z.string(), z.unknown());

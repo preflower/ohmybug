@@ -22,7 +22,7 @@ describe("App Server Codex client", () => {
     const rpc = new FixtureConnection();
     rpc.respond("thread/start", { thread: { id: "thread-1" } });
     rpc.respond("turn/start", { turn: { id: "turn-runtime" } });
-    const client = new AppServerCodexClient(rpc);
+    const client = fixtureClient(rpc);
     const thread = client.startThread(threadOptions("/repo"));
     const stream = await thread.runStreamed("Fix checkout", { outputSchema: { type: "object" } });
     const collecting = collect(stream);
@@ -96,7 +96,7 @@ describe("App Server Codex client", () => {
         },
       });
     });
-    const client = new AppServerCodexClient(rpc);
+    const client = fixtureClient(rpc);
     const thread = client.startThread(threadOptions("/repo"));
 
     const stream = await thread.runStreamed("Fix checkout", { outputSchema: {} });
@@ -118,7 +118,7 @@ describe("App Server Codex client", () => {
     rpc.respond("thread/resume", { thread: { id: "thread-1" } });
     rpc.respond("turn/start", { turn: { id: "turn-1" } });
     rpc.respond("turn/interrupt", {});
-    const client = new AppServerCodexClient(rpc);
+    const client = fixtureClient(rpc);
     const abort = new AbortController();
     const thread = client.resumeThread("thread-1", threadOptions("/repo"));
     const stream = await thread.runStreamed("Continue", { outputSchema: {}, signal: abort.signal });
@@ -136,7 +136,7 @@ describe("App Server Codex client", () => {
     }]);
   });
 
-  it("preserves private temp isolation and cleans the owned directory", async () => {
+  it("preserves a session-stable private temp and cleans it when the client stops", async () => {
     const temporary = await createTempDir("oh-my-bug-app-client-");
     cleanups.push(temporary.cleanup);
     const projectDirectory = join(temporary.path, "project");
@@ -144,9 +144,7 @@ describe("App Server Codex client", () => {
     const rpc = new FixtureConnection();
     rpc.respond("thread/start", { thread: { id: "thread-1" } });
     rpc.respond("turn/start", { turn: { id: "turn-1" } });
-    const client = new AppServerCodexClient(rpc, {
-      environment: { TMPDIR: "/baseline/tmp", TMP: "/baseline/tmp", TEMP: "/baseline/tmp" },
-    });
+    const client = new AppServerCodexClient(rpc);
     const thread = client.startThread(threadOptions(projectDirectory, "workspace-write"));
     const [privateTempName] = (await readdir(projectDirectory))
       .filter((entry) => entry.startsWith(".oh-my-bug-tmp-"));
@@ -172,10 +170,12 @@ describe("App Server Codex client", () => {
       params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
     });
     await collect(stream);
+    await expect(access(privateTemp)).resolves.toBeUndefined();
+    await client.dispose();
     await expect(access(privateTemp)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("restores baseline temp variables after a workspace-write turn", async () => {
+  it("reuses the same live private temp when a later turn changes sandbox mode", async () => {
     const temporary = await createTempDir("oh-my-bug-app-client-baseline-");
     cleanups.push(temporary.cleanup);
     const projectDirectory = join(temporary.path, "project");
@@ -184,8 +184,7 @@ describe("App Server Codex client", () => {
     rpc.respond("thread/start", { thread: { id: "thread-1" } });
     rpc.respond("thread/resume", { thread: { id: "thread-1" } });
     rpc.respond("turn/start", { turn: { id: "turn-1" } });
-    const baseline = { TMPDIR: "/baseline/tmpdir", TMP: "/baseline/tmp", TEMP: "/baseline/temp" };
-    const client = new AppServerCodexClient(rpc, { environment: baseline });
+    const client = new AppServerCodexClient(rpc);
 
     const writable = client.startThread(threadOptions(projectDirectory, "workspace-write"));
     const writableStream = await writable.runStreamed("Write", { outputSchema: {} });
@@ -194,25 +193,37 @@ describe("App Server Codex client", () => {
       params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
     });
     await collect(writableStream);
+    const start = rpc.calls.find(({ method }) => method === "thread/start")!;
+    const stableTemp = (start.params as {
+      config: { shell_environment_policy: { set: { TMPDIR: string } } };
+    }).config.shell_environment_policy.set.TMPDIR;
+    await expect(access(stableTemp)).resolves.toBeUndefined();
 
     const readonly = client.resumeThread("thread-1", threadOptions(projectDirectory));
     const readonlyStream = await readonly.runStreamed("Read", { outputSchema: {} });
     const resume = rpc.calls.find(({ method }) => method === "thread/resume")!;
     expect(resume.params).toMatchObject({
-      config: { shell_environment_policy: { inherit: "all", set: baseline } },
+      config: {
+        shell_environment_policy: {
+          inherit: "all",
+          set: { TMPDIR: stableTemp, TMP: stableTemp, TEMP: stableTemp },
+        },
+      },
     });
     rpc.emit({
       method: "turn/completed",
       params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
     });
     await collect(readonlyStream);
+    await client.dispose();
+    await expect(access(stableTemp)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("fails an owned turn when the App Server disconnects before completion", async () => {
     const rpc = new FixtureConnection();
     rpc.respond("thread/start", { thread: { id: "thread-1" } });
     rpc.respond("turn/start", { turn: { id: "turn-1" } });
-    const client = new AppServerCodexClient(rpc);
+    const client = fixtureClient(rpc);
     const thread = client.startThread(threadOptions("/repo"));
     const stream = await thread.runStreamed("Fix checkout", { outputSchema: {} });
 
@@ -226,7 +237,7 @@ describe("App Server Codex client", () => {
     rpc.reject("thread/resume", new Error(
       "CODEX_APP_SERVER_RPC_ERROR:-32600:no rollout found for thread id thread-missing",
     ));
-    const client = new AppServerCodexClient(rpc);
+    const client = fixtureClient(rpc);
     const thread = client.resumeThread("thread-missing", threadOptions("/repo"));
 
     await expect(thread.runStreamed("Continue", { outputSchema: {} })).rejects.toMatchObject({
@@ -235,6 +246,12 @@ describe("App Server Codex client", () => {
     });
   });
 });
+
+function fixtureClient(rpc: AppServerConnection): AppServerCodexClient {
+  return new AppServerCodexClient(rpc, {
+    ensurePrivateTemp: (workingDirectory) => join(workingDirectory, ".oh-my-bug-tmp-fixture"),
+  });
+}
 
 class FixtureConnection implements AppServerConnection {
   readonly calls: Array<{ method: keyof AppServerMethods; params: unknown }> = [];
@@ -311,7 +328,7 @@ function threadOptions(
     sandboxMode,
     networkAccessEnabled: false,
     approvalPolicy: "never" as const,
-    skipGitRepoCheck: true,
+    sessionId: "logical-session-1",
   };
 }
 

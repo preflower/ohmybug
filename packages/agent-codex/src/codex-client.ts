@@ -1,10 +1,10 @@
 export interface CodexThreadOptions {
+  sessionId: string;
   model?: string;
   workingDirectory: string;
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
   networkAccessEnabled: boolean;
   approvalPolicy: "never";
-  skipGitRepoCheck?: boolean;
 }
 
 export interface CodexTurnOptions { outputSchema: unknown; signal?: AbortSignal }
