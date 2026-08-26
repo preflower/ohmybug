@@ -1154,6 +1154,8 @@ describe("control center workbench", () => {
 
     render(<App />);
 
+    const deliveryReview = await screen.findByRole("region", { name: "验收 Delivery" });
+    expect(within(deliveryReview).queryByRole("radiogroup")).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", {
       name: "接受交付",
     }));

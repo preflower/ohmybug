@@ -49,6 +49,8 @@ test("automatically merges an approved Issue branch into its configured baseline
     await expect(assessment).toBeVisible();
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
     await assessment.getByRole("button", { name: "开始实现" }).click();
+    await expect(assessment.getByRole("textbox", { name: "Issue 标题" })).toBeVisible();
+    await assessment.locator(".review-composer").getByRole("button", { name: "开始实现" }).click();
     const acceptance = desktop.page.getByRole("region", { name: "验收 Delivery" });
     await expect(acceptance).toBeVisible();
 

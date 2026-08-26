@@ -41,41 +41,30 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await expect(newIssue).toBeFocused();
     await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
 
-    const processingChoices = rootApproval.getByRole("radiogroup", { name: "选择处理方式" });
-    await processingChoices.evaluate((element) => element.scrollIntoView({ block: "center" }));
-    const choicesTopBeforeSwitch = await processingChoices.evaluate(
-      (element) => element.getBoundingClientRect().top,
-    );
-    await rootApproval.getByRole("radio", { name: "要求重新分析" }).click();
-    const choicesTopAfterFieldRemoval = await processingChoices.evaluate(
-      (element) => element.getBoundingClientRect().top,
-    );
-    expect(Math.abs(choicesTopAfterFieldRemoval - choicesTopBeforeSwitch)).toBeLessThan(1);
-
-    await rootApproval.getByRole("radio", { name: "确认为重复 Issue" }).click();
-    const duplicateField = rootApproval.getByRole("textbox", { name: "重复 Issue" });
-    const duplicateFieldFollowsChoices = await duplicateField.evaluate(
-      (field, choices) => Boolean(
-        choices
-        && (choices.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING),
-      ),
-      await processingChoices.elementHandle(),
-    );
-    expect(duplicateFieldFollowsChoices).toBe(true);
+    await rootApproval.getByRole("button", { name: "要求重新分析" }).click();
+    await expect(rootApproval.getByLabel("补充说明（必填）")).toBeFocused();
+    await rootApproval.getByRole("button", { name: "返回审核操作" }).click();
 
     const artifactDir = process.env.OH_MY_BUG_EVIDENCE_DIR
       ? resolve(process.env.OH_MY_BUG_EVIDENCE_DIR)
       : resolve("test-results", "electron-acceptance");
     await mkdir(artifactDir, { recursive: true });
-    await desktop.page.screenshot({ path: resolve(artifactDir, "review-choice-scroll-stability.png") });
-    await rootApproval.getByRole("radio", { name: "开始实现" }).click();
+    await desktop.page.screenshot({ path: resolve(artifactDir, "review-action-composer.png") });
     await rootApproval.getByRole("button", { name: "开始实现" }).click();
+    await expect(rootApproval.getByRole("textbox", { name: "Issue 标题" })).toBeVisible();
+    await rootApproval.locator(".review-composer").getByRole("button", { name: "开始实现" }).click();
 
     const acceptanceApproval = desktop.page.getByRole("region", { name: "验收 Delivery" });
     await expect(acceptanceApproval).toBeVisible();
     const evidence = desktop.page.getByRole("img", { name: "Checkout acceptance" });
     await expect(evidence).toBeVisible();
     await expect(evidence).toHaveJSProperty("naturalWidth", 1280);
+    const dockBounds = await acceptanceApproval.boundingBox();
+    expect(dockBounds).not.toBeNull();
+    expect(dockBounds!.height).toBeLessThanOrEqual(72);
+    await expect(acceptanceApproval.getByText(/迭代 1 · 1 项证据/)).toBeVisible();
+    await evidence.scrollIntoViewIfNeeded();
+    await expect(evidence).toBeVisible();
     const evidenceUrl = await evidence.evaluate((image) => (image as HTMLImageElement).src);
     expect(evidenceUrl, evidenceUrl).toMatch(/^blob:/);
 
@@ -107,7 +96,7 @@ test("runs the complete two-gate workflow and renders desktop evidence bytes", a
     await desktop.page.screenshot({ path: resolve(artifactDir, "evidence-preview-close-hover.png") });
     await desktop.page.keyboard.press("Escape");
     await expect(preview).toHaveCount(0, { timeout: 120 });
-    await desktop.page.screenshot({ path: resolve(artifactDir, "acceptance-review.png"), fullPage: true });
+    await desktop.page.screenshot({ path: resolve(artifactDir, "acceptance-review.png") });
 
     await acceptanceApproval.getByRole("button", { name: "接受交付" }).click();
     await expect(desktop.page.getByRole("status")).toHaveText("结果：FIXED · 修复已验收，Issue 已完成。");

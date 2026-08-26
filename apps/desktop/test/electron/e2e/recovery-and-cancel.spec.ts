@@ -71,6 +71,8 @@ test("cancels a passive Issue only after confirmation", async () => {
     await registerProject(desktop, project.path, "CAN");
     await createIssue(desktop.page, "Cancel this reviewed Issue");
     await expect(desktop.page.getByRole("region", { name: "确认 Assessment" })).toBeVisible();
+    await desktop.page.getByRole("button", { name: "隐藏详情栏" }).click();
+    await desktop.page.getByRole("button", { name: "更多 Issue 操作" }).click();
     await desktop.page.getByRole("button", { name: "取消 Issue" }).click();
     await expect(desktop.page.getByRole("dialog", { name: "确认取消 Issue？" })).toBeVisible();
     await desktop.page.getByRole("button", { name: "确认取消" }).click();
