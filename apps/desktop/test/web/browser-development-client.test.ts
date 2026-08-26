@@ -44,6 +44,14 @@ describe("browser development Runtime client", () => {
       message: "浏览器样式预览为只读模式",
       code: "DEV_BROWSER_READ_ONLY",
     });
+    await expect(transport.agentTerminalAvailability("issue-1")).resolves.toEqual({
+      available: false,
+      reason: "APP_SERVER_UNAVAILABLE",
+    });
+    await expect(transport.openAgentTerminal("issue-1")).rejects.toMatchObject({
+      message: "浏览器样式预览为只读模式",
+      code: "DEV_BROWSER_READ_ONLY",
+    });
   });
 
   it("loads one opening snapshot and serves Projects and Issues from it", async () => {

@@ -25,6 +25,8 @@ export function createDesktopTransport(bridge: Readonly<DesktopApi>): ProductTra
       bridge.setIntegrationSecrets(id, pluginId, patch),
     issues: () => bridge.listIssues(),
     issue: (id) => bridge.getIssue(id),
+    agentTerminalAvailability: (id) => bridge.agentTerminalAvailability(id),
+    openAgentTerminal: (id) => bridge.openAgentTerminal(id),
     issueWorkspace: (id) => bridge.getIssueWorkspace(id),
     submitManual: (input) => bridge.submitManual(input),
     submitReview: (id, input) => bridge.submitReview(id, input),

@@ -27,6 +27,8 @@ const unavailableTransport: ProductTransport = {
   saveIntegrationSecrets: unavailable,
   issues: unavailable,
   issue: unavailable,
+  agentTerminalAvailability: unavailable,
+  openAgentTerminal: unavailable,
   issueWorkspace: unavailable,
   submitManual: unavailable,
   submitReview: unavailable,

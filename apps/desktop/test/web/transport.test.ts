@@ -49,6 +49,8 @@ describe("renderer product transports", () => {
         id: "issue-1",
         status: "REPAIRING",
       })),
+      agentTerminalAvailability: vi.fn(async () => ({ available: true as const })),
+      openAgentTerminal: vi.fn(async () => ({ opened: true as const })),
       testSavedIntegration: vi.fn(async () => ({
         title: "连接成功",
         details: [{ label: "Project", value: "checkout" }],
@@ -104,6 +106,18 @@ describe("renderer product transports", () => {
       requestId: "review-1",
       choiceId: "keep-base",
     });
+    await expect(transport.agentTerminalAvailability("issue-1"))
+      .resolves.toEqual({ available: true });
+    await expect(transport.openAgentTerminal("issue-1"))
+      .resolves.toEqual({ opened: true });
+    expect(bridge.agentTerminalAvailability).toHaveBeenCalledWith("issue-1");
+    expect(bridge.openAgentTerminal).toHaveBeenCalledWith("issue-1");
+    expect(bridge.openAgentTerminal).toHaveBeenCalledWith(expect.not.objectContaining({
+      executablePath: expect.anything(),
+      providerThreadId: expect.anything(),
+      remoteUrl: expect.anything(),
+      workingDirectory: expect.anything(),
+    }));
     const stop = transport.subscribeIssueEvents("issue-1", 1, listener);
     stop();
     const evidence = await transport.evidenceSource("issue-1", "evidence-1");
