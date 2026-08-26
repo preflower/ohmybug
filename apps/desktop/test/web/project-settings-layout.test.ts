@@ -7,6 +7,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 let styles = "";
 
+function cssRule(selector: string): string {
+  return styles.match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`, "s"))?.[1] ?? "";
+}
+
 beforeAll(async () => {
   styles = await readFile(resolve(process.cwd(), "src/web/styles/global.css"), "utf8");
   document.head.innerHTML = `<style>${styles}</style>`;
@@ -43,6 +47,16 @@ describe("project settings layout", () => {
     expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*width:\s*auto;/s);
     expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*border-radius:\s*0;/s);
     expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*background:\s*transparent;/s);
+  });
+
+  it("lets the Issue page own Agent activity scrolling", () => {
+    const groups = cssRule("\\.activity-groups");
+    const output = cssRule("\\.activity-log-output");
+
+    expect(groups).not.toMatch(/overflow(?:-y)?:\s*(?:auto|scroll)/);
+    expect(groups).not.toMatch(/max-height\s*:/);
+    expect(output).not.toMatch(/overflow(?:-y)?:\s*(?:auto|scroll)/);
+    expect(output).not.toMatch(/max-height\s*:/);
   });
 
   it("uses the compact product scale across project and integration settings", () => {
