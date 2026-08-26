@@ -122,6 +122,9 @@ describe("shadcn UI primitives", () => {
     expect(checked).toHaveAttribute("data-slot", "switch");
     expect(checked).toHaveClass("data-checked:bg-primary");
     expect(checked).not.toHaveClass("data-checked:bg-accent");
+    expect(checked.querySelector('[data-slot="switch-thumb"]')).toHaveClass(
+      "bg-primary-foreground",
+    );
 
     const disabled = screen.getByRole("switch", { name: "远程推送" });
     expect(disabled).not.toBeChecked();

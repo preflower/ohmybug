@@ -655,10 +655,12 @@ describe("Project configuration", () => {
       "项目", "Agent", "命令与验收", "Example source",
     ]);
     selectTab("Example source");
-    expect(screen.getByRole("checkbox", { name: "启用" })).toHaveAttribute(
+    const enabled = screen.getByRole("switch", { name: "启用" });
+    expect(enabled).toHaveAttribute(
       "data-slot",
-      "checkbox",
+      "switch",
     );
+    expect(enabled).not.toHaveClass("integration-enabled-toggle");
     expect(screen.getByLabelText("Workspace slug")).toHaveValue("acme");
     expect(screen.getByLabelText("Channels 1")).toHaveValue("alerts");
     expect(screen.getByLabelText("Batch size")).toHaveValue(50);

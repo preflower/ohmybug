@@ -2971,40 +2971,6 @@ a:focus-visible {
   gap: 12px !important;
 }
 
-.integration-enabled-toggle {
-  position: relative;
-  width: 38px !important;
-  height: 22px !important;
-  border-radius: 999px !important;
-  background: var(--border-strong) !important;
-  padding: 2px;
-}
-
-.integration-enabled-toggle[data-checked] {
-  border-color: var(--accent) !important;
-  background: var(--accent) !important;
-}
-
-.integration-enabled-toggle [data-slot="checkbox-indicator"] {
-  display: none;
-}
-
-.integration-enabled-toggle::after {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: var(--text);
-  box-shadow: 0 1px 3px var(--overlay);
-  content: "";
-  transform: translateX(0);
-  transition: transform 120ms ease;
-}
-
-.integration-enabled-toggle[data-checked]::after {
-  transform: translateX(16px);
-}
-
 .integration-health {
   display: flex;
   align-items: center;

@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { DingTalkIcon, SentryIcon } from "../components/brand-icons.js";
 import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
-import { Checkbox } from "../components/ui/checkbox.js";
 import { Input } from "../components/ui/input.js";
 import {
   Select,
@@ -16,6 +15,7 @@ import {
 } from "../components/ui/select.js";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.js";
 import { Textarea } from "../components/ui/textarea.js";
+import { Switch } from "../components/ui/switch.js";
 import type { ConfigValue, IntegrationConnectionTestResult, IntegrationHealth, IntegrationPluginManifest, ProjectDto, ProjectInspection, WorkspaceBranchDiscoveryDto, WorkspaceProviderManifest } from "../api/types.js";
 import { ConfigFields } from "./config-fields.js";
 import { isConfigFieldVisible, withConditionalConfigDefaults } from "./config-field-visibility.js";
@@ -254,7 +254,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
           const value = project.integrations[manifest.id] ?? { enabled: false, config: {}, secretConfigured: {} };
           const unavailable = initial?.integrations?.[manifest.id]?.unavailable;
           return activeTab === manifest.id ? <div className="flex-1 text-sm outline-none" key={manifest.id} role="tabpanel"><section className="project-settings-panel">
-            <div className="section-heading integration-heading"><div><h2>{manifest.name}</h2>{manifest.description ? <p>{manifest.description}</p> : null}{unavailable ? <p>{unavailable}</p> : null}<IntegrationHealthStatus enabled={value.enabled} health={project.id ? health[`${project.id}:${manifest.id}`] : undefined} /></div><div className="switch-row"><span>{value.enabled ? "已启用" : "已停用"}</span><Checkbox aria-label="启用" checked={value.enabled} className="integration-enabled-toggle" disabled={Boolean(unavailable)} onCheckedChange={(checked) => updateProject((current) => ({
+            <div className="section-heading integration-heading"><div><h2>{manifest.name}</h2>{manifest.description ? <p>{manifest.description}</p> : null}{unavailable ? <p>{unavailable}</p> : null}<IntegrationHealthStatus enabled={value.enabled} health={project.id ? health[`${project.id}:${manifest.id}`] : undefined} /></div><div className="switch-row"><span>{value.enabled ? "已启用" : "已停用"}</span><Switch aria-label="启用" checked={value.enabled} disabled={Boolean(unavailable)} onCheckedChange={(checked) => updateProject((current) => ({
               ...current,
               integrations: {
                 ...current.integrations,

@@ -65,7 +65,7 @@ test("registers a local project and renders built-in plugins from manifests", as
     expect(response).toContain('"token":true');
 
     const focusOrder = [
-      page.getByRole("checkbox", { name: "启用" }),
+      page.getByRole("switch", { name: "启用" }),
       page.getByRole("textbox", { name: /^Organization\b/ }),
       page.getByRole("textbox", { name: /^Project\b/ }),
       page.getByRole("button", { name: "替换 Auth token" }),
@@ -230,7 +230,7 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
   const fixture = await registerProject(page, String(Date.now()));
   try {
     await page.getByRole("tab", { name: "DingTalk" }).click();
-    await page.getByRole("checkbox", { name: "启用" }).click();
+    await page.getByRole("switch", { name: "启用" }).click();
     await page.getByLabel("Client ID").fill("ding-client-id");
     await page.getByLabel("Client Secret").fill("ding-client-secret");
     await page.getByRole("switch", { name: "群聊过滤" }).click();
@@ -269,6 +269,29 @@ test("renders streamlined DingTalk settings with one save action", async ({ page
       footerHeight: 54,
       footerButtonHeight: 30,
     });
+
+    const readSwitchContract = () => page.getByRole("switch").evaluateAll((switches) =>
+      switches.map((control) => {
+        const thumb = control.querySelector<HTMLElement>('[data-slot="switch-thumb"]')!;
+        const rect = control.getBoundingClientRect();
+        return {
+          slot: control.getAttribute("data-slot"),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          track: getComputedStyle(control).backgroundColor,
+          thumb: getComputedStyle(thumb).backgroundColor,
+        };
+      })
+    );
+    const expectedSwitchContract = [
+      { slot: "switch", width: 36, height: 20, track: "rgb(113, 107, 255)", thumb: "rgb(255, 255, 255)" },
+      { slot: "switch", width: 36, height: 20, track: "rgb(113, 107, 255)", thumb: "rgb(255, 255, 255)" },
+    ];
+    await expect.poll(readSwitchContract).toEqual(expectedSwitchContract);
+
+    await page.emulateMedia({ colorScheme: "light" });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect.poll(readSwitchContract).toEqual(expectedSwitchContract);
 
     const outputDir = resolve(".artifacts", "visual-diff", "dingtalk-settings");
     await mkdir(outputDir, { recursive: true });

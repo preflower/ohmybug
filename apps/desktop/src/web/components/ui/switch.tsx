@@ -11,6 +11,6 @@ export function Switch({ className, ...props }: SwitchPrimitive.Root.Props) {
     data-slot="switch"
     {...props}
   >
-    <SwitchPrimitive.Thumb className="block size-4 translate-x-px rounded-full bg-[var(--surface)] shadow-sm transition-transform data-checked:translate-x-[17px]" data-slot="switch-thumb" />
+    <SwitchPrimitive.Thumb className="block size-4 translate-x-px rounded-full bg-primary-foreground shadow-sm transition-transform data-checked:translate-x-[17px]" data-slot="switch-thumb" />
   </SwitchPrimitive.Root>;
 }
