@@ -92,6 +92,20 @@ describe("App Server JSON-RPC client", () => {
     });
   });
 
+  it("accepts the pinned turn/steer response shape", async () => {
+    const fixture = await initializedFixture();
+    const steered = fixture.client.request("turn/steer", {
+      threadId: "thread-1",
+      expectedTurnId: "turn-1",
+      input: [{ type: "text", text: "Inspect the failing test", text_elements: [] }],
+    });
+    await waitFor(() => fixture.server.received.length === 3);
+    const request = fixture.server.received[2] as { id: number };
+    fixture.server.send({ id: request.id, result: { turnId: "turn-1" } });
+
+    await expect(steered).resolves.toEqual({ turnId: "turn-1" });
+  });
+
   it("rejects an aborted request and all pending work on disconnect", async () => {
     const fixture = await initializedFixture();
     const abort = new AbortController();

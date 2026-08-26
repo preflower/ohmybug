@@ -1,3 +1,5 @@
+/// <reference path="../ws.d.ts" />
+
 import { connect as connectSocket } from "node:net";
 
 import WebSocket from "ws";

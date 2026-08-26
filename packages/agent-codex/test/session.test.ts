@@ -1,15 +1,8 @@
-import { chmod, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { CodexAgentAdapter, codexAgent } from "../src/codex-agent-adapter.js";
-import {
-  isNativeThreadUnavailableError,
-  NativeThreadUnavailableError,
-  SdkCodexClient,
-} from "../src/codex-client.js";
-import { bindSession, createTempDir, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
+import { NativeThreadUnavailableError } from "../src/codex-client.js";
+import { bindSession, FixtureClient, issue, MemorySessions, project } from "./helpers.js";
 
 const bugAssessment = {
   revision: 2,
@@ -44,7 +37,8 @@ describe("durable Codex session", () => {
     const client = new FixtureClient([{
       events: [
         { type: "thread.started", threadId: "thread-other" },
-        { type: "item.completed", item: { type: "agent_message", text: JSON.stringify({
+        { type: "turn.started", threadId: "thread-other", turnId: "turn-other" },
+        { type: "item.completed", threadId: "thread-other", turnId: "turn-other", item: { type: "agent_message", text: JSON.stringify({
           verdict: "UNCERTAIN",
           suggestedTitle: "Needs review",
           reasoning: "Insufficient context",
@@ -66,6 +60,8 @@ describe("durable Codex session", () => {
     const client = new FixtureClient([{
       events: [{
         type: "item.completed",
+        threadId: "thread-1",
+        turnId: "turn-1",
         item: { type: "agent_message", text: JSON.stringify({
           verdict: "UNCERTAIN",
           suggestedTitle: "Needs review",
@@ -88,6 +84,17 @@ describe("durable Codex session", () => {
 
     expect(plugin.id).toBe("codex");
     expect(plugin.create({ sessions })).toBeInstanceOf(CodexAgentAdapter);
+  });
+
+  it("registers without an App Server client and fails closed when a turn starts", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions);
+    const adapter = codexAgent().create({ sessions });
+
+    await expect(adapter.assess(
+      { agent: "codex", sessionId: "logical-1" },
+      { issue: issue(), project },
+    )).rejects.toThrow("CODEX_APP_SERVER_UNAVAILABLE");
   });
 
   it("uses the same native task for Assessment and Repair", async () => {
@@ -124,59 +131,3 @@ describe("durable Codex session", () => {
     expect(client.resumes.map(({ threadId }) => threadId)).toEqual(["thread-1"]);
   });
 });
-
-describe("native Codex thread error classification", () => {
-  it("normalizes the exact SDK missing-rollout failure for the resumed thread", async () => {
-    const threadId = "00000000-0000-4000-8000-000000000000";
-    const error = await sdkResumeError(
-      threadId,
-      `Error: thread/resume: thread/resume failed: no rollout found for thread id ${threadId} (code -32600)`,
-    );
-
-    expect(error).toBeInstanceOf(NativeThreadUnavailableError);
-    expect(error).toMatchObject({ code: "NATIVE_THREAD_UNAVAILABLE", threadId });
-  });
-
-  it("does not normalize a near-match SDK error", async () => {
-    const threadId = "00000000-0000-4000-8000-000000000000";
-    const error = await sdkResumeError(
-      threadId,
-      `Error: transport failed: no rollout found for thread id ${threadId} (code -32600)`,
-    );
-
-    expect(isNativeThreadUnavailableError(error)).toBe(false);
-    expect((error as Error).message).toContain("transport failed");
-  });
-});
-
-async function sdkResumeError(threadId: string, stderr: string): Promise<unknown> {
-  const temporary = await createTempDir("oh-my-bug-codex-sdk-");
-  try {
-    const executable = join(temporary.path, "codex-fixture");
-    await writeFile(executable, [
-      "#!/bin/sh",
-      `printf '%s\\n' '${stderr}' >&2`,
-      "exit 1",
-      "",
-    ].join("\n"), "utf8");
-    await chmod(executable, 0o755);
-    const thread = new SdkCodexClient({ codexPathOverride: executable }).resumeThread(threadId, {
-      workingDirectory: temporary.path,
-      sandboxMode: "read-only",
-      networkAccessEnabled: false,
-      approvalPolicy: "never",
-      skipGitRepoCheck: true,
-    });
-    try {
-      const events = await thread.runStreamed("probe", { outputSchema: {} });
-      for await (const event of events) void event;
-      throw new Error("EXPECTED_SDK_RESUME_FAILURE");
-    } catch (error) {
-      return error;
-    } finally {
-      await thread.dispose();
-    }
-  } finally {
-    await temporary.cleanup();
-  }
-}

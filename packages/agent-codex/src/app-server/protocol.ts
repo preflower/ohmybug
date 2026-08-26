@@ -50,8 +50,8 @@ export interface TurnStartParams {
 export interface TurnResponse { turn: { id: string; [key: string]: unknown } }
 export interface TurnSteerParams {
   threadId: string;
-  turnId: string;
   input: UserInputText[];
+  expectedTurnId: string;
 }
 export interface TurnInterruptParams { threadId: string; turnId: string }
 
@@ -61,7 +61,7 @@ export interface AppServerMethods {
   "thread/resume": { input: ThreadResumeParams; output: ThreadResponse };
   "thread/read": { input: ThreadReadParams; output: ThreadResponse };
   "turn/start": { input: TurnStartParams; output: TurnResponse };
-  "turn/steer": { input: TurnSteerParams; output: TurnResponse };
+  "turn/steer": { input: TurnSteerParams; output: { turnId: string } };
   "turn/interrupt": { input: TurnInterruptParams; output: Record<string, unknown> };
 }
 
@@ -85,6 +85,7 @@ const threadResponseSchema = z.object({
 const turnResponseSchema = z.object({
   turn: z.object({ id: z.string().min(1) }).passthrough(),
 }).passthrough();
+const turnSteerResponseSchema = z.object({ turnId: z.string().min(1) }).strict();
 
 export function parseRpcEnvelope(value: unknown): JsonRpcResponse | JsonRpcRequest | JsonRpcNotification {
   return rpcEnvelopeSchema.parse(value);
@@ -96,8 +97,10 @@ export function parseMethodResult<Name extends keyof AppServerMethods>(
 ): AppServerMethods[Name]["output"] {
   const schema = method === "initialize" || method === "turn/interrupt"
     ? recordSchema
-    : method.startsWith("thread/")
-      ? threadResponseSchema
-      : turnResponseSchema;
+    : method === "turn/steer"
+      ? turnSteerResponseSchema
+      : method.startsWith("thread/")
+        ? threadResponseSchema
+        : turnResponseSchema;
   return schema.parse(value) as AppServerMethods[Name]["output"];
 }

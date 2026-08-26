@@ -4,6 +4,7 @@ export * from "./codex-binary.js";
 export * from "./app-server/protocol.js";
 export * from "./app-server/rpc-client.js";
 export * from "./app-server/supervisor.js";
+export * from "./app-server/codex-client.js";
 export * from "./output-schemas.js";
 export * from "./private-temp.js";
 export * from "./prompts.js";

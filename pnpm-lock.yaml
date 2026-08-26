@@ -242,9 +242,6 @@ importers:
       '@openai/codex':
         specifier: 0.148.0
         version: 0.148.0
-      '@openai/codex-sdk':
-        specifier: ^0.148.0
-        version: 0.148.0
       ws:
         specifier: 8.21.3
         version: 8.21.3
@@ -1370,10 +1367,6 @@ packages:
     resolution: {integrity: sha512-mJd2Z5TjYWq/ttPLLGqArdtnC74J6bOzg4rMDnN+p1xTacZ2yPRCk2y0oSWQtygLR9YVQXgOcONrwtnk3JupxQ==}
     engines: {node: ^12.13.0 || ^14.15.0 || >=16.0.0}
     deprecated: This functionality has been moved to @npmcli/fs
-
-  '@openai/codex-sdk@0.148.0':
-    resolution: {integrity: sha512-NWTd6ZxuwsuNFqFTpONQCnFVCf++g7b8eafScW5Enpv6v2lCXHizpr07iK9U6RFnLEuAP2KFirVUlZnxxY0j6A==}
-    engines: {node: '>=18'}
 
   '@openai/codex@0.148.0':
     resolution: {integrity: sha512-bh5kH9+BMrFaHGmLeoSansPdfRksvr4UXzjQInns/KRO7r8VJ+6AAW+SqUsE8XcG3+OW/mI4EEy8Gpo9UDXGvQ==}
@@ -6140,10 +6133,6 @@ snapshots:
     dependencies:
       mkdirp: 1.0.4
       rimraf: 3.0.2
-
-  '@openai/codex-sdk@0.148.0':
-    dependencies:
-      '@openai/codex': 0.148.0
 
   '@openai/codex@0.148.0':
     optionalDependencies:

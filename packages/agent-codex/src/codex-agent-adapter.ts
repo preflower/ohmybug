@@ -34,7 +34,7 @@ import type {
   CodexThread,
   CodexThreadOptions,
 } from "./codex-client.js";
-import { isNativeThreadUnavailableError, SdkCodexClient } from "./codex-client.js";
+import { isNativeThreadUnavailableError } from "./codex-client.js";
 import {
   assessmentOutputSchema,
   parseAssessmentOutput,
@@ -76,13 +76,22 @@ interface ActiveTurn {
   finish(): void;
 }
 
+const unavailableCodexClient: CodexClient = {
+  startThread() {
+    throw new Error("CODEX_APP_SERVER_UNAVAILABLE");
+  },
+  resumeThread() {
+    throw new Error("CODEX_APP_SERVER_UNAVAILABLE");
+  },
+};
+
 export class CodexAgentAdapter implements AgentAdapter {
   private readonly client: CodexClient;
   private readonly now: () => Date;
   private readonly active = new Map<string, ActiveTurn>();
 
   constructor(private readonly options: CodexAgentAdapterOptions) {
-    this.client = options.client ?? new SdkCodexClient();
+    this.client = options.client ?? unavailableCodexClient;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -313,8 +322,19 @@ export class CodexAgentAdapter implements AgentAdapter {
         : this.client.startThread(threadOptions);
       const events = await thread.runStreamed(prompt, { outputSchema, signal: abort.signal });
       let lastMessage: string | undefined;
+      let ownedTurn: { threadId: string; turnId: string } | undefined;
       for await (const event of events) {
         assertActive(abort.signal);
+        if (event.type === "turn.started") {
+          if (state.providerSessionId && event.threadId !== state.providerSessionId) {
+            throw new Error("AGENT_SESSION_MISMATCH");
+          }
+          ownedTurn = { threadId: event.threadId, turnId: event.turnId };
+        } else if ("turnId" in event && (
+          !ownedTurn || event.threadId !== ownedTurn.threadId || event.turnId !== ownedTurn.turnId
+        )) {
+          continue;
+        }
         this.options.onActivity?.({ sessionId: session.sessionId, stage, event });
         await this.reportActivity(session.sessionId, stage, event);
         if (event.type === "turn.failed" || event.type === "error") failureReported = true;
@@ -326,6 +346,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       }
       assertActive(abort.signal);
       if (!state.providerSessionId) throw new Error("AGENT_SESSION_MISMATCH");
+      if (!ownedTurn) throw new Error("AGENT_SESSION_MISMATCH");
       if (!lastMessage) throw new Error("CODEX_OUTPUT_MISSING");
       try {
         return JSON.parse(lastMessage) as unknown;
