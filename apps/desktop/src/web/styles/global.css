@@ -284,6 +284,18 @@ a:focus-visible {
   letter-spacing: -0.1px;
 }
 
+.view-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.issue-list-back-action {
+  display: none;
+  flex: 0 0 auto;
+}
+
 .filters {
   display: flex;
   gap: 4px;
@@ -353,7 +365,7 @@ a:focus-visible {
 }
 
 .workspace.metadata-open {
-  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  grid-template-columns: 320px minmax(0, 1fr) 280px;
 }
 
 .issue-pane {
@@ -523,8 +535,6 @@ a:focus-visible {
     position: absolute;
     z-index: 4;
     inset: 0 0 0 auto;
-    width: min(280px, calc(100% - 48px));
-    box-shadow: -12px 0 28px rgb(0 0 0 / 24%);
   }
 
   .workspace .detail-pane {
@@ -536,7 +546,7 @@ a:focus-visible {
   }
 
   .workspace.has-selection .detail-pane {
-    display: block;
+    display: grid;
   }
 }
 
@@ -653,7 +663,7 @@ a:focus-visible {
 
 .detail-pane-scroll {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   padding: 0;
 }
@@ -664,7 +674,7 @@ a:focus-visible {
   min-height: 0;
   overflow: auto;
   background: var(--canvas);
-  padding: 16px;
+  padding: 12px;
 }
 
 .issue-metadata-card {
@@ -798,10 +808,6 @@ a:focus-visible {
   line-height: 1;
 }
 
-.mobile-detail-toolbar {
-  display: none;
-}
-
 @media (max-width: 680px) {
   .location-header,
   .view-header {
@@ -812,16 +818,19 @@ a:focus-visible {
     display: none;
   }
 
-  .mobile-detail-toolbar {
-    position: sticky;
-    z-index: 2;
-    top: 0;
-    display: flex;
-    height: 40px;
-    align-items: center;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    padding: 0 8px;
+  .issue-list-back-action {
+    display: inline-flex;
+  }
+
+  .issue-metadata-rail {
+    width: min(260px, calc(100% - 40px));
+    background: transparent;
+    padding: 10px;
+    box-shadow: none;
+  }
+
+  .issue-metadata-card {
+    box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
   }
 }
 
@@ -3906,8 +3915,14 @@ a:focus-visible {
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(320px, calc(100% - 48px));
-    box-shadow: -12px 0 28px rgb(0 0 0 / 24%);
+    width: min(280px, calc(100% - 48px));
+    background: transparent;
+    padding: 12px;
+    box-shadow: none;
+  }
+
+  .issue-metadata-card {
+    box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
   }
 
   .workspace.metadata-open .issue-actions .failure-actions {
