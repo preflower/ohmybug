@@ -512,9 +512,32 @@ function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueS
       {issues.length ? <div className="issue-list">{issues.map((issue) => <Button aria-current={issue.id === selectedId ? "true" : undefined} className="issue-row h-auto w-full" key={issue.id} type="button" variant="ghost" onClick={() => onSelect(issue.id)}><span className="issue-row-top"><code>{issue.identifier}</code><IssueStatusBadge status={issue.status} recoveryKind={issue.finalizationRecovery?.context?.recoveryKind} recoveryStep={issue.finalizationRecovery?.diagnostic?.step} reviewKind={issue.review?.kind} /></span><strong>{issue.title}</strong><small>{issue.inputs.at(-1)?.integration ?? "manual"} · {new Date(issue.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small></Button>)}</div> : <div className="empty-list"><div><CircleDot aria-hidden="true" size={18} strokeWidth={1.5} /><h2>{totalIssueCount > 0 ? "没有符合筛选条件的 Issue" : "暂无 Issue"}</h2><p>{totalIssueCount > 0 ? "调整状态过滤器以显示其他 Issue。" : "手动创建，或为项目连接 Sentry 与 DingTalk。"}</p></div></div>}
     </section>
     <section className={`detail-pane ${selected ? "detail-pane-scroll" : ""}`} aria-label={selected ? "Issue 详情" : "开始使用"}>
-      {selected ? <IssueDetail agentActive={active} agentEvents={events} agentSessionId={selected.agentSession?.sessionId} branch={selectedBranch} issue={selected} terminalAction={terminalVisible ? terminalAction : undefined} workspaceBranch={workspaceInfo?.branch} onRefresh={onRefresh} onSubmitReview={(input) => action(api.submitReview(selected.id, input))} onApproveDelivery={() => approveDelivery(selected)} onPause={() => action(api.pause(selected.id))} onResume={() => action(api.resume(selected.id))} onCancel={() => action(api.cancel(selected.id))} onRetry={() => action(api.retry(selected.id))} onRebuildSession={() => action(api.rebuildSession(selected.id, selected.revision))} onGrantCapabilities={(expectedRevision, requestId) => action(api.grantIssueCapabilities(selected.id, expectedRevision, requestId))} /> : <Welcome />}
+      {selected ? <IssueDetail
+        agentActive={active}
+        agentEvents={events}
+        agentSessionId={selected.agentSession?.sessionId}
+        branch={selectedBranch}
+        issue={selected}
+        metadataRail={metadataOpen ? <IssueMetadataRail
+          issue={selected}
+          project={selectedProject}
+          terminalAction={terminalVisible ? undefined : terminalAction}
+          workspace={workspaceInfo}
+          onClose={() => setMetadataOpen(false)}
+        /> : undefined}
+        terminalAction={terminalVisible ? terminalAction : undefined}
+        workspaceBranch={workspaceInfo?.branch}
+        onApproveDelivery={() => approveDelivery(selected)}
+        onCancel={() => action(api.cancel(selected.id))}
+        onGrantCapabilities={(expectedRevision, requestId) => action(api.grantIssueCapabilities(selected.id, expectedRevision, requestId))}
+        onPause={() => action(api.pause(selected.id))}
+        onRebuildSession={() => action(api.rebuildSession(selected.id, selected.revision))}
+        onRefresh={onRefresh}
+        onResume={() => action(api.resume(selected.id))}
+        onRetry={() => action(api.retry(selected.id))}
+        onSubmitReview={(input) => action(api.submitReview(selected.id, input))}
+      /> : <Welcome />}
     </section>
-    {selected && metadataOpen ? <IssueMetadataRail issue={selected} project={selectedProject} terminalAction={terminalVisible ? undefined : terminalAction} workspace={workspaceInfo} onClose={() => setMetadataOpen(false)} /> : null}
     </section>
   </>;
 }

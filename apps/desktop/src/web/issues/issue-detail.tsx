@@ -26,6 +26,7 @@ interface IssueDetailProps {
   agentActive?: boolean;
   agentEvents?: AgentEventDto[];
   agentSessionId?: string;
+  metadataRail?: ReactNode;
   terminalAction?: ReactNode;
   workspaceBranch?: string;
   onRefresh: () => Promise<void>;
@@ -80,6 +81,7 @@ export function IssueDetail({
   agentActive = false,
   agentEvents = [],
   agentSessionId,
+  metadataRail,
   terminalAction,
   workspaceBranch,
   onRefresh,
@@ -174,6 +176,7 @@ export function IssueDetail({
 
         </div>
       </div>
+      {metadataRail}
       <IssueActions
         issue={issue}
         onApproveDelivery={onApproveDelivery}
