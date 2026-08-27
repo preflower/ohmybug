@@ -128,6 +128,28 @@ describe("application icon", () => {
     }
   });
 
+  it("keeps the macOS tray template silhouette in sync with the application icon", async () => {
+    const sourcePath = resolve(desktopRoot, "assets/icons/oh-my-bug.png");
+    for (const [name, size] of [
+      ["oh-my-bug-trayTemplate.png", 18],
+      ["oh-my-bug-trayTemplate@2x.png", 36],
+    ] as const) {
+      const expected = await sharp(sourcePath)
+        .resize(size, size)
+        .ensureAlpha()
+        .raw()
+        .toBuffer();
+      const actual = await sharp(resolve(desktopRoot, "assets/icons", name))
+        .ensureAlpha()
+        .raw()
+        .toBuffer();
+
+      for (let offset = 3; offset < expected.length; offset += 4) {
+        expect(actual[offset]).toBe(expected[offset]);
+      }
+    }
+  });
+
   it("ships standard and Retina non-template tray status dots", async () => {
     const colors = {
       failure: [0xd6, 0x5f, 0x6b],
