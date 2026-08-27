@@ -267,6 +267,181 @@ describe("Codex activity reporting", () => {
     }));
   });
 
+  it("summarizes pure read activity without exposing the command or file contents", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions);
+    const activities: AgentActivityUpdate[] = [];
+    const skillContents = "---\nname: using-superpowers\nsecret: private-skill-detail\n---\n";
+    const client = new FixtureClient([{
+      events: [
+        { type: "thread.started", threadId: "thread-1" },
+        { type: "turn.started", threadId: "thread-1", turnId: "turn-read" },
+        {
+          type: "item.started",
+          threadId: "thread-1",
+          turnId: "turn-read",
+          item: {
+            type: "command_execution",
+            id: "read-skill",
+            command: "sed -n '1,240p' .agents/skills/using-superpowers/SKILL.md",
+            status: "in_progress",
+            output: "",
+            actions: [{
+              type: "read",
+              name: "SKILL.md",
+              path: "/repo/.agents/skills/using-superpowers/SKILL.md",
+            }],
+          },
+        },
+        {
+          type: "item.updated",
+          threadId: "thread-1",
+          turnId: "turn-read",
+          item: { type: "command_output", id: "read-skill", delta: skillContents },
+        },
+        {
+          type: "item.completed",
+          threadId: "thread-1",
+          turnId: "turn-read",
+          item: {
+            type: "command_execution",
+            id: "read-skill",
+            command: "sed -n '1,240p' .agents/skills/using-superpowers/SKILL.md",
+            status: "completed",
+            output: skillContents,
+            actions: [{
+              type: "read",
+              name: "SKILL.md",
+              path: "/repo/.agents/skills/using-superpowers/SKILL.md",
+            }],
+          },
+        },
+        {
+          type: "item.updated",
+          threadId: "thread-1",
+          turnId: "turn-read",
+          item: {
+            type: "command_output",
+            id: "read-skill",
+            delta: "late-private-skill-detail\n",
+          },
+        },
+        {
+          type: "item.completed",
+          threadId: "thread-1",
+          turnId: "turn-read",
+          item: {
+            type: "agent_message",
+            phase: "final_answer",
+            text: JSON.stringify({
+              verdict: "NOT_A_BUG",
+              suggestedTitle: "No change needed",
+              reasoning: "Expected behavior",
+              rootCause: null,
+              solution: null,
+              suspectedDuplicateOf: null,
+            }),
+          },
+        },
+        { type: "turn.completed", threadId: "thread-1", turnId: "turn-read" },
+      ],
+    }]);
+    const adapter = new CodexAgentAdapter({
+      client,
+      sessions,
+      reportActivity: (activity) => { activities.push(activity); },
+    });
+
+    await adapter.assess(
+      { agent: "codex", sessionId: "logical-1" },
+      { issue: issue(), project },
+    );
+
+    expect(activities
+      .filter((activity) => activity.correlationId === "read-skill")
+      .map(({ type, message, detail }) => ({ type, message, detail })))
+      .toEqual([
+        { type: "AGENT_STATUS", message: "Exploring", detail: "Read using-superpowers/SKILL.md" },
+        { type: "AGENT_STATUS", message: "Explored", detail: "Read using-superpowers/SKILL.md" },
+      ]);
+    expect(JSON.stringify(activities)).not.toContain("private-skill-detail");
+    expect(JSON.stringify(activities)).not.toContain("sed -n");
+  });
+
+  it("reports a failed read without exposing its command or output", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions);
+    const activities: AgentActivityUpdate[] = [];
+    const readAction = {
+      type: "read" as const,
+      name: "SKILL.md",
+      path: "/repo/.agents/skills/systematic-debugging/SKILL.md",
+    };
+    const client = new FixtureClient([{
+      events: [
+        { type: "thread.started", threadId: "thread-1" },
+        { type: "turn.started", threadId: "thread-1", turnId: "turn-read-failed" },
+        {
+          type: "item.started",
+          threadId: "thread-1",
+          turnId: "turn-read-failed",
+          item: {
+            type: "command_execution",
+            id: "read-failed",
+            command: "sed -n '1,240p' private/SKILL.md",
+            status: "in_progress",
+            output: "",
+            actions: [readAction],
+          },
+        },
+        {
+          type: "item.completed",
+          threadId: "thread-1",
+          turnId: "turn-read-failed",
+          item: {
+            type: "command_execution",
+            id: "read-failed",
+            command: "sed -n '1,240p' private/SKILL.md",
+            status: "failed",
+            output: "private-read-error-detail",
+            actions: [readAction],
+          },
+        },
+        { type: "turn.failed", threadId: "thread-1", turnId: "turn-read-failed", message: "read failed" },
+      ],
+    }]);
+    const adapter = new CodexAgentAdapter({
+      client,
+      sessions,
+      reportActivity: (activity) => { activities.push(activity); },
+    });
+
+    await expect(adapter.assess(
+      { agent: "codex", sessionId: "logical-1" },
+      { issue: issue(), project },
+    )).rejects.toThrow("read failed");
+
+    expect(activities
+      .filter((activity) => activity.correlationId === "read-failed")
+      .map(({ type, message, detail, level }) => ({ type, message, detail, level })))
+      .toEqual([
+        {
+          type: "AGENT_STATUS",
+          message: "Exploring",
+          detail: "Read systematic-debugging/SKILL.md",
+          level: "info",
+        },
+        {
+          type: "AGENT_STATUS",
+          message: "Exploring failed",
+          detail: "Read systematic-debugging/SKILL.md",
+          level: "error",
+        },
+      ]);
+    expect(JSON.stringify(activities)).not.toContain("private-read-error-detail");
+    expect(JSON.stringify(activities)).not.toContain("sed -n");
+  });
+
   it("preserves a multi-delta unterminated command line after completion", async () => {
     const sessions = new MemorySessions();
     await bindSession(sessions);

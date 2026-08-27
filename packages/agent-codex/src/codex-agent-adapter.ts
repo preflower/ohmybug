@@ -80,6 +80,8 @@ interface ActiveTurn {
 interface CommandStreamState {
   buffer: string;
   discardingUntilNewline: boolean;
+  summaryOnly: boolean;
+  summaryDetail?: string;
 }
 
 type CodexStageThreadOptions = Omit<CodexThreadOptions, "sessionId">;
@@ -608,17 +610,32 @@ function publicActivities(
   }
   if (item.type === "command_execution") {
     const exploration = explorationDetail(item.actions ?? []);
+    const streamKey = item.id
+      ? commandStreamKey(event.threadId, event.turnId, item.id)
+      : undefined;
+    const streamState = streamKey ? commandStreams.get(streamKey) : undefined;
+    const summaryOnly = isSummaryOnlyRead(item.actions ?? []) || streamState?.summaryOnly === true;
+    const summaryDetail = exploration ?? streamState?.summaryDetail;
     if (event.type === "item.started") {
       const updates = [];
-      if (exploration) {
+      if (streamKey && summaryOnly) {
+        commandStreams.set(streamKey, {
+          buffer: "",
+          discardingUntilNewline: false,
+          summaryOnly: true,
+          summaryDetail,
+        });
+      }
+      if (summaryDetail) {
         updates.push(withCorrelationId(activity(
           sessionId,
           stage,
           "AGENT_STATUS",
           "Exploring",
-          sanitizeDiagnostic(exploration),
+          sanitizeDiagnostic(summaryDetail),
         ), item.id));
       }
+      if (summaryOnly) return updates;
       updates.push(withCorrelationId(activity(
         sessionId,
         stage,
@@ -629,10 +646,10 @@ function publicActivities(
       return updates;
     }
     const failed = item.status === "failed";
-    const updates = item.id
+    const updates = streamKey
       ? flushCommandOutput(
           commandStreams,
-          commandStreamKey(event.threadId, event.turnId, item.id),
+          streamKey,
         ).map((detail) => withCorrelationId(activity(
           sessionId,
           stage,
@@ -641,15 +658,25 @@ function publicActivities(
           detail,
         ), item.id))
       : [];
-    if (exploration) {
+    if (summaryOnly && streamKey) {
+      commandStreams.set(streamKey, {
+        buffer: "",
+        discardingUntilNewline: false,
+        summaryOnly: true,
+        summaryDetail,
+      });
+    }
+    if (summaryDetail) {
       updates.push(withCorrelationId(activity(
         sessionId,
         stage,
         "AGENT_STATUS",
-        "Explored",
-        sanitizeDiagnostic(exploration),
+        failed && summaryOnly ? "Exploring failed" : "Explored",
+        sanitizeDiagnostic(summaryDetail),
+        failed && summaryOnly ? "error" : "info",
       ), item.id));
     }
+    if (summaryOnly) return updates;
     updates.push(withCorrelationId(activity(
       sessionId,
       stage,
@@ -708,7 +735,7 @@ function publicActivities(
 
 function explorationDetail(actions: Extract<CodexClientItem, { type: "command_execution" }>["actions"]): string | undefined {
   const lines = actions.flatMap((action) => {
-    if (action.type === "read") return [`Read ${action.name || action.path}`];
+    if (action.type === "read") return [`Read ${readTarget(action.name, action.path)}`];
     if (action.type === "list_files") return [`List${action.path ? ` ${action.path}` : " files"}`];
     if (action.type === "search") {
       const query = action.query ? ` ${action.query}` : "";
@@ -718,6 +745,21 @@ function explorationDetail(actions: Extract<CodexClientItem, { type: "command_ex
     return [];
   });
   return lines.length ? lines.join("\n") : undefined;
+}
+
+function isSummaryOnlyRead(
+  actions: Extract<CodexClientItem, { type: "command_execution" }>["actions"],
+): boolean {
+  return actions.length > 0 && actions.every((action) => action.type === "read");
+}
+
+function readTarget(name: string, path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const fileName = parts.at(-1);
+  if (fileName?.toLowerCase() === "skill.md" && parts.length > 1) {
+    return `${parts.at(-2)}/SKILL.md`;
+  }
+  return name || fileName || path;
 }
 
 function formatPlan(item: Extract<CodexClientItem, { type: "plan" }>): string {
@@ -841,9 +883,14 @@ function consumeCommandOutput(
   key: string,
   delta: string,
 ): string[] {
-  const state = streams.get(key) ?? { buffer: "", discardingUntilNewline: false };
+  const state = streams.get(key) ?? {
+    buffer: "",
+    discardingUntilNewline: false,
+    summaryOnly: false,
+  };
   streams.set(key, state);
   const output: string[] = [];
+  if (state.summaryOnly) return output;
   let remaining = delta;
 
   if (state.discardingUntilNewline) {
@@ -875,8 +922,9 @@ function flushCommandOutput(
   key: string,
 ): string[] {
   const state = streams.get(key);
-  streams.delete(key);
   if (!state) return [];
+  if (state.summaryOnly) return [];
+  streams.delete(key);
   if (state.discardingUntilNewline) return ["\n"];
   return sanitizeStreamChunks(state.buffer);
 }
