@@ -49,7 +49,7 @@ describe("project settings layout", () => {
   it("locks the inset Issue metadata card rules", () => {
     const detail = cssRule("\\.issue-detail");
     const detailDocument = cssRule("\\.issue-detail-document");
-    const actions = cssRule("\\.issue-actions");
+    const actions = cssRuleAfter(".failure-actions {", "\\.issue-actions");
     const rail = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-rail");
     const card = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-card");
     const metadataRow = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-list > div");
@@ -83,7 +83,7 @@ describe("project settings layout", () => {
     expect(actions).toMatch(/grid-row:\s*2;/);
 
     const overlay = mediaBlock("@media (max-width: 1200px) and (min-width: 681px)", "@media (max-width: 900px)");
-    expect(overlay).toMatch(/\.workspace\.metadata-open \.issue-detail\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+    expect(overlay).toMatch(/\.workspace\.metadata-open \.issue-detail,\s*\.workspace\.metadata-open \.issue-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
     expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;[^}]*justify-self:\s*end;/s);
     expect(overlay).not.toMatch(/\.issue-metadata-rail\s*\{[^}]*position:\s*absolute;/s);
     expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*width:\s*min\(280px,\s*calc\(100% - 48px\)\);/s);
