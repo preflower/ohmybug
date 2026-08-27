@@ -562,6 +562,42 @@ describe("control center workbench", () => {
     expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
   });
 
+  it("groups every Issue metadata field and action inside a finite card surface", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue({
+      providerId: "git",
+      status: "READY",
+      branch: "ohmybug/chk-1",
+    });
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "agentTerminalAvailability").mockResolvedValue({ available: true });
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+
+    const rail = await screen.findByTestId("issue-metadata-rail");
+    const detail = document.querySelector<HTMLElement>(".issue-detail");
+    const actions = screen.getByRole("region", { name: "Issue 操作" });
+    const card = await within(rail).findByTestId("issue-metadata-card");
+    expect(detail).not.toBeNull();
+    expect(rail.parentElement).toBe(detail);
+    expect(actions.parentElement).toBe(detail);
+    expect(detail?.querySelector(":scope > .issue-detail-document")).not.toBeNull();
+    expect(card.querySelector(":scope > .metadata-rail-header")).not.toBeNull();
+    expect(card.querySelector(":scope > .issue-metadata-list")).not.toBeNull();
+    expect(within(card).getByText("详情")).toBeVisible();
+    for (const label of ["项目", "分支", "来源", "Agent 会话", "创建时间", "更新时间"]) {
+      expect(within(card).getByText(label)).toBeVisible();
+    }
+    expect(within(card).getByText("Worktree")).toBeVisible();
+    expect(within(card).getByRole("button", { name: "隐藏详情栏" })).toBeVisible();
+    expect(await within(card).findByRole("button", { name: "在 Terminal 中打开" })).toBeEnabled();
+  });
+
   it.each([
     ["UNSUPPORTED_AGENT", "当前 Agent 不支持 Terminal"],
     ["SESSION_NOT_READY", "Agent 会话尚未就绪"],
@@ -1244,7 +1280,12 @@ describe("control center workbench", () => {
     const issueRow = screen.getByRole("button", { name: /Checkout returns 500/ });
     expect(issueRow).toHaveAttribute("data-slot", "button");
 
-    fireEvent.click(screen.getByRole("button", { name: "返回 Issue 列表" }));
+    const returnAction = screen.getByRole("button", { name: "返回 Issue 列表" });
+    expect(returnAction.closest(".view-header")).toBe(issuesHeader);
+    expect(returnAction.closest(".detail-pane")).toBeNull();
+    expect(document.querySelector(".mobile-detail-toolbar")).toBeNull();
+
+    fireEvent.click(returnAction);
     expect(screen.queryByRole("region", { name: "Issue 详情" })).not.toBeInTheDocument();
     fireEvent.click(issueRow);
     expect(await screen.findByText("Cart hydration returns null.")).toBeVisible();

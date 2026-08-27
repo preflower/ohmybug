@@ -147,8 +147,10 @@ export function IssueActions({
   }
 
   return <section aria-label="Issue 操作" className="issue-actions">
-    {error ? <Alert className="form-error" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
-    {content}
+    <div className="issue-actions-track">
+      {error ? <Alert className="form-error" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
+      {content}
+    </div>
   </section>;
 }
 

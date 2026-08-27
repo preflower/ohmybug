@@ -11,6 +11,16 @@ function cssRule(selector: string): string {
   return styles.match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`, "s"))?.[1] ?? "";
 }
 
+function cssRuleAfter(marker: string, selector: string): string {
+  return styles.slice(styles.indexOf(marker)).match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`, "s"))?.[1] ?? "";
+}
+
+function mediaBlock(startMarker: string, endMarker?: string): string {
+  const start = styles.lastIndexOf(startMarker);
+  const end = endMarker ? styles.indexOf(endMarker, start) : styles.length;
+  return styles.slice(start, end < 0 ? styles.length : end);
+}
+
 beforeAll(async () => {
   styles = await readFile(resolve(process.cwd(), "src/web/styles/global.css"), "utf8");
   document.head.innerHTML = `<style>${styles}</style>`;
@@ -36,9 +46,51 @@ describe("project settings layout", () => {
     expect(settings.backgroundColor).toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("locks sticky metadata rules", () => {
-    expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*position:\s*sticky;/s);
-    expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*top:\s*0;/s);
+  it("locks the inset Issue metadata card rules", () => {
+    const detail = cssRule("\\.issue-detail");
+    const detailDocument = cssRule("\\.issue-detail-document");
+    const actions = cssRuleAfter(".failure-actions {", "\\.issue-actions");
+    const rail = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-rail");
+    const card = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-card");
+    const metadataRow = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-list > div");
+
+    expect(cssRule("\\.workspace")).toMatch(/grid-template-columns:\s*320px minmax\(0,\s*1fr\);/);
+    expect(cssRule("\\.workspace\\.metadata-open")).toMatch(/grid-template-columns:\s*320px minmax\(0,\s*1fr\);/);
+    expect(cssRule("\\.detail-pane-scroll")).toMatch(/grid-template-rows:\s*minmax\(0,\s*1fr\);/);
+    expect(detail).toMatch(/position:\s*relative;/);
+    expect(detail).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+    expect(detail).toMatch(/grid-template-rows:\s*minmax\(0,\s*1fr\) auto;/);
+    expect(cssRule("\\.workspace\\.metadata-open \\.issue-detail")).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\) 280px;/);
+    expect(detailDocument).toMatch(/grid-column:\s*1;/);
+    expect(detailDocument).toMatch(/grid-row:\s*1;/);
+    expect(rail).toMatch(/overflow:\s*visible;/);
+    expect(rail).toMatch(/background:\s*transparent;/);
+    expect(rail).toMatch(/padding:\s*12px;/);
+    expect(rail).toMatch(/box-shadow:\s*none;/);
+    expect(rail).toMatch(/grid-column:\s*2;/);
+    expect(rail).toMatch(/grid-row:\s*1;/);
+    expect(card).toMatch(/max-height:\s*100%;/);
+    expect(card).toMatch(/overflow:\s*auto;/);
+    expect(card).toMatch(/border:\s*1px solid var\(--border\);/);
+    expect(card).toMatch(/border-radius:\s*10px;/);
+    expect(card).toMatch(/background:\s*var\(--surface\);/);
+    expect(card).toMatch(/box-shadow:\s*0 1px 3px rgb\(0 0 0 \/ 8%\),\s*0 10px 28px rgb\(0 0 0 \/ 10%\);/);
+    expect(metadataRow).toMatch(/gap:\s*6px;/);
+    expect(metadataRow).toMatch(/padding:\s*16px 0;/);
+    expect(cssRule("\\.metadata-rail-header")).toMatch(/height:\s*56px;/);
+    expect(cssRule("\\.metadata-rail-header")).not.toMatch(/position:\s*sticky;/);
+    expect(actions).toMatch(/grid-column:\s*1 \/ -1;/);
+    expect(actions).toMatch(/grid-row:\s*2;/);
+
+    const overlay = mediaBlock("@media (max-width: 1200px) and (min-width: 681px)", "@media (max-width: 900px)");
+    expect(overlay).toMatch(/\.workspace\.metadata-open \.issue-detail,\s*\.workspace\.metadata-open \.issue-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+    expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;[^}]*justify-self:\s*end;/s);
+    expect(overlay).not.toMatch(/\.issue-metadata-rail\s*\{[^}]*position:\s*absolute;/s);
+    expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*width:\s*min\(280px,\s*calc\(100% - 48px\)\);/s);
+
+    const phone = mediaBlock("@media (max-width: 680px)");
+    expect(phone).toMatch(/\.issue-metadata-rail\s*\{[^}]*width:\s*min\(260px,\s*calc\(100% - 40px\)\);/s);
+    expect(phone).toMatch(/\.issue-list-back-action\s*\{[^}]*display:\s*inline-flex;/s);
   });
 
   it("keeps Agent activity turns full width and flattens terminal output", () => {

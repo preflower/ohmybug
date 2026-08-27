@@ -284,6 +284,18 @@ a:focus-visible {
   letter-spacing: -0.1px;
 }
 
+.view-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.issue-list-back-action {
+  display: none;
+  flex: 0 0 auto;
+}
+
 .filters {
   display: flex;
   gap: 4px;
@@ -353,7 +365,7 @@ a:focus-visible {
 }
 
 .workspace.metadata-open {
-  grid-template-columns: 320px minmax(0, 1fr) 280px;
+  grid-template-columns: 320px minmax(0, 1fr);
 }
 
 .issue-pane {
@@ -520,11 +532,9 @@ a:focus-visible {
   }
 
   .issue-metadata-rail {
-    position: absolute;
-    z-index: 4;
-    inset: 0 0 0 auto;
-    width: min(280px, calc(100% - 48px));
-    box-shadow: -12px 0 28px rgb(0 0 0 / 24%);
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
   }
 
   .workspace .detail-pane {
@@ -536,7 +546,7 @@ a:focus-visible {
   }
 
   .workspace.has-selection .detail-pane {
-    display: block;
+    display: grid;
   }
 }
 
@@ -653,33 +663,44 @@ a:focus-visible {
 
 .detail-pane-scroll {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   padding: 0;
 }
 
 .issue-metadata-rail {
+  box-sizing: border-box;
   min-width: 0;
   min-height: 0;
+  grid-column: 2;
+  grid-row: 1;
+  overflow: visible;
+  background: transparent;
+  padding: 12px;
+  box-shadow: none;
+}
+
+.issue-metadata-card {
+  max-height: 100%;
+  min-width: 0;
   overflow: auto;
-  border-left: 1px solid var(--border);
-  background: var(--sidebar);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%), 0 10px 28px rgb(0 0 0 / 10%);
 }
 
 .metadata-rail-header {
-  position: sticky;
-  z-index: 2;
-  top: 0;
   display: flex;
-  height: 44px;
+  height: 56px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
-  background: var(--sidebar);
+  background: transparent;
   padding: 0 12px 0 20px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 540;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .metadata-rail-toggle {
@@ -688,14 +709,18 @@ a:focus-visible {
 
 .issue-metadata-list {
   margin: 0;
-  padding: 0 22px;
+  padding: 0 20px;
 }
 
 .issue-metadata-list > div {
   display: grid;
-  gap: 7px;
+  gap: 6px;
   border-bottom: 1px solid var(--border);
-  padding: 14px 0;
+  padding: 16px 0;
+}
+
+.issue-metadata-list > div:last-child {
+  border-bottom: 0;
 }
 
 .issue-metadata-list dt,
@@ -741,13 +766,22 @@ a:focus-visible {
   gap: 8px;
   color: var(--text-secondary);
   font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .issue-metadata-list code,
 .issue-metadata-list time {
-  overflow: hidden;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.agent-session-row dd code {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -756,17 +790,17 @@ a:focus-visible {
   display: flex;
   min-width: 0;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
 }
 
 .issue-workspace-row code {
   min-width: 0;
-  overflow: hidden;
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .workspace-kind-tag {
@@ -779,10 +813,6 @@ a:focus-visible {
   line-height: 1;
 }
 
-.mobile-detail-toolbar {
-  display: none;
-}
-
 @media (max-width: 680px) {
   .location-header,
   .view-header {
@@ -793,29 +823,44 @@ a:focus-visible {
     display: none;
   }
 
-  .mobile-detail-toolbar {
-    position: sticky;
-    z-index: 2;
-    top: 0;
-    display: flex;
-    height: 40px;
-    align-items: center;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    padding: 0 8px;
+  .issue-list-back-action {
+    display: inline-flex;
+  }
+
+  .workspace.metadata-open .issue-detail,
+  .workspace.metadata-open .issue-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .issue-metadata-rail {
+    z-index: 4;
+    width: min(260px, calc(100% - 40px));
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
+    padding: 10px;
   }
 }
 
 .issue-detail {
+  position: relative;
   display: grid;
   width: 100%;
   height: 100%;
   min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
+.workspace.metadata-open .issue-detail {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
 .issue-detail-document {
+  min-width: 0;
   min-height: 0;
+  grid-column: 1;
+  grid-row: 1;
   overflow: auto;
 }
 
@@ -1750,20 +1795,29 @@ a:focus-visible {
   z-index: 2;
   display: grid;
   max-height: min(58vh, 620px);
+  grid-column: 1 / -1;
+  grid-row: 2;
+  grid-template-columns: minmax(0, 1fr);
   overflow: auto;
   border-top: 1px solid var(--border);
   background: var(--surface-raised);
+}
+
+.workspace.metadata-open .issue-actions {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+.issue-actions-track {
+  box-sizing: border-box;
+  width: min(760px, 100%);
+  grid-column: 1;
+  margin: 0 auto;
   padding: 0 clamp(20px, 3.5vw, 36px);
 }
 
-.issue-actions > * {
-  width: min(760px, 100%);
-  margin: 0 auto;
-}
-
-.issue-actions > .failure-actions,
-.issue-actions > .capability-request-panel {
-  margin: 12px auto;
+.issue-actions-track > .failure-actions,
+.issue-actions-track > .capability-request-panel {
+  margin: 12px 0;
 }
 
 .issue-action-row {
@@ -3881,14 +3935,18 @@ a:focus-visible {
     grid-template-columns: 320px minmax(0, 1fr);
   }
 
+  .workspace.metadata-open .issue-detail,
+  .workspace.metadata-open .issue-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .issue-metadata-rail {
-    position: absolute;
     z-index: 4;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 280px;
-    box-shadow: -12px 0 28px rgb(0 0 0 / 24%);
+    width: min(280px, calc(100% - 48px));
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
+    padding: 12px;
   }
 
   .workspace.metadata-open .issue-actions .failure-actions {
