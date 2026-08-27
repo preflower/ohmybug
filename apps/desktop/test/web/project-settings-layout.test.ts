@@ -36,9 +36,13 @@ describe("project settings layout", () => {
     expect(settings.backgroundColor).toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("locks sticky metadata rules", () => {
-    expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*position:\s*sticky;/s);
-    expect(styles).toMatch(/\.metadata-rail-header\s*\{[^}]*top:\s*0;/s);
+  it("locks the inset Issue metadata card rules", () => {
+    expect(styles).toMatch(/\.issue-metadata-rail\s*\{[^}]*padding:\s*16px;/s);
+    expect(cssRule("\\.issue-metadata-card")).toMatch(/border:\s*1px solid var\(--border\);/);
+    expect(cssRule("\\.issue-metadata-card")).toMatch(/border-radius:\s*10px;/);
+    expect(cssRule("\\.issue-metadata-card")).toMatch(/background:\s*var\(--surface\);/);
+    expect(cssRule("\\.metadata-rail-header")).toMatch(/height:\s*56px;/);
+    expect(cssRule("\\.metadata-rail-header")).not.toMatch(/position:\s*sticky;/);
   });
 
   it("keeps Agent activity turns full width and flattens terminal output", () => {
