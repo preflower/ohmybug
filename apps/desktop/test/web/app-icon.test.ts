@@ -123,8 +123,8 @@ describe("application icon", () => {
       expect(minY).toBeGreaterThanOrEqual(padding);
       expect(maxX).toBeLessThan(size - padding);
       expect(maxY).toBeLessThan(size - padding);
-      expect(maxX - minX + 1).toBeGreaterThanOrEqual(Math.floor(size * 0.7));
-      expect(maxY - minY + 1).toBeGreaterThanOrEqual(Math.floor(size * 0.7));
+      expect(maxX - minX + 1).toBeGreaterThanOrEqual(size === 18 ? 15 : 29);
+      expect(maxY - minY + 1).toBeGreaterThanOrEqual((size / 18) * 16);
     }
   });
 
@@ -134,11 +134,36 @@ describe("application icon", () => {
       ["oh-my-bug-trayTemplate.png", 18],
       ["oh-my-bug-trayTemplate@2x.png", 36],
     ] as const) {
-      const expected = await sharp(sourcePath)
-        .resize(size, size)
+      const padding = size / 18;
+      const source = await sharp(sourcePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      let minX = source.info.width;
+      let minY = source.info.height;
+      let maxX = -1;
+      let maxY = -1;
+      for (let y = 0; y < source.info.height; y += 1) {
+        for (let x = 0; x < source.info.width; x += 1) {
+          if (source.data[(y * source.info.width + x) * source.info.channels + 3]! <= 32) continue;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+      const alpha = await sharp(sourcePath)
+        .extract({ left: minX, top: minY, width: maxX - minX + 1, height: maxY - minY + 1 })
         .ensureAlpha()
+        .extractChannel(3)
+        .resize(size - padding * 2, size - padding * 2, { fit: "inside" })
         .raw()
-        .toBuffer();
+        .toBuffer({ resolveWithObject: true });
+      const expected = Buffer.alloc(size * size * 4);
+      const left = Math.floor((size - alpha.info.width) / 2);
+      const top = Math.floor((size - alpha.info.height) / 2);
+      for (let y = 0; y < alpha.info.height; y += 1) {
+        for (let x = 0; x < alpha.info.width; x += 1) {
+          expected[((top + y) * size + left + x) * 4 + 3] = alpha.data[y * alpha.info.width + x]!;
+        }
+      }
       const actual = await sharp(resolve(desktopRoot, "assets/icons", name))
         .ensureAlpha()
         .raw()
