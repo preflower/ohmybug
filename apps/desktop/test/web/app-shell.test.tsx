@@ -21,6 +21,32 @@ function stubEmptyControlCenter() {
 }
 
 describe("application shell", () => {
+  it("identifies projects by their initial when the sidebar collapses", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([{
+      id: "project-more-core",
+      name: "More Core",
+      key: "MORE",
+      path: "/work/more-core",
+      agent: { plugin: "codex" },
+      commands: {},
+      integrations: {},
+      workspace: { provider: "local", config: {} },
+      revision: 1,
+      createdAt: "2026-08-27T08:00:00.000Z",
+      updatedAt: "2026-08-27T08:00:00.000Z",
+    }]);
+    vi.spyOn(api, "issues").mockResolvedValue([]);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    render(<App />);
+
+    const shortcut = await screen.findByRole("button", { name: "More Core" });
+
+    expect(shortcut).toHaveAttribute("title", "More Core");
+    expect(shortcut.querySelector(".project-initial")).toHaveTextContent("M");
+    expect(shortcut.querySelector(".project-name")).toHaveTextContent("More Core");
+  });
+
   it("routes first launch to project onboarding and hides issue creation", async () => {
     stubEmptyControlCenter();
     const { container } = render(<App />);
