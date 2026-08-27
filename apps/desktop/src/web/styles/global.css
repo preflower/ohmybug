@@ -3413,7 +3413,7 @@ a:focus-visible {
 .integration-section-collapsed > summary {
   display: grid;
   min-height: 64px;
-  grid-template-columns: 7px minmax(0, 1fr);
+  grid-template-columns: 7px minmax(0, 1fr) auto;
   align-items: start;
   gap: 12px;
   cursor: pointer;
@@ -3452,12 +3452,19 @@ a:focus-visible {
 
 .integration-section-collapsed .integration-section-summary-inline {
   min-width: 0;
+  max-width: min(40vw, 360px);
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
   margin-left: auto;
+  overflow: hidden;
   overflow-wrap: anywhere;
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 400;
   text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .integration-connection-test {
@@ -3908,6 +3915,21 @@ a:focus-visible {
 }
 
 @media (max-width: 520px) {
+  .integration-section-collapsed > summary {
+    grid-template-columns: 7px minmax(0, 1fr);
+  }
+
+  .integration-section-collapsed .integration-section-summary-inline {
+    max-width: none;
+    grid-column: 2;
+    grid-row: 2;
+    margin-left: 0;
+    overflow: visible;
+    text-align: left;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   .credential-row,
   .integration-section-fields > label:not(.secret-field),
   .integration-section-fields > fieldset,
