@@ -235,7 +235,7 @@ a:focus-visible {
   place-items: center;
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1;
   text-align: center;

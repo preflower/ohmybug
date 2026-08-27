@@ -56,6 +56,7 @@ describe("project settings layout", () => {
 
     expect(collapsed).toMatch(/\.sidebar-section \.nav-item\s*\{[^}]*justify-content:\s*center;/s);
     expect(initial).toMatch(/place-items:\s*center;/);
+    expect(initial).toMatch(/font-size:\s*13px;/);
     expect(initial).toMatch(/line-height:\s*1;/);
   });
 
