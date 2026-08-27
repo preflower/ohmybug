@@ -169,9 +169,7 @@ describe("application icon", () => {
         .raw()
         .toBuffer();
 
-      for (let offset = 3; offset < expected.length; offset += 4) {
-        expect(actual[offset]).toBe(expected[offset]);
-      }
+      expect(actual).toEqual(expected);
     }
   });
 
