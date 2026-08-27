@@ -12,7 +12,7 @@ import {
   Sparkles,
   SquareTerminal,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode, type SetStateAction } from "react";
 import { toast } from "sonner";
 
 import appIconUrl from "../../assets/icons/oh-my-bug.png";
@@ -52,6 +52,8 @@ import { ThemeProvider } from "./theme/theme-provider.js";
 
 type View = "issues" | "projects" | "settings";
 
+const MOBILE_ISSUE_LAYOUT_MAX_WIDTH = 680;
+
 function viewFromPath(pathname: string): View {
   if (pathname.startsWith("/projects")) return "projects";
   if (pathname.startsWith("/settings")) return "settings";
@@ -69,6 +71,10 @@ function currentRoute(): string {
 
 function routeHref(view: View): string {
   return isDesktopRenderer() ? `#/${view}` : `/${view}`;
+}
+
+function isMobileIssueLayout(): boolean {
+  return window.innerWidth <= MOBILE_ISSUE_LAYOUT_MAX_WIDTH;
 }
 
 function projectNavigationLabel(project: ProjectDto): string {
@@ -110,7 +116,20 @@ function AppContent() {
   const [workspaceProviders, setWorkspaceProviders] = useState<WorkspaceProviderManifest[]>([]);
   const [issues, setIssues] = useState<IssueDto[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string>();
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedIdState] = useState<string>();
+  const selectedIdRef = useRef<string | undefined>(undefined);
+  const setSelectedId = useCallback((next: SetStateAction<string | undefined>) => {
+    if (typeof next === "function") {
+      setSelectedIdState((current) => {
+        const resolved = next(current);
+        selectedIdRef.current = resolved;
+        return resolved;
+      });
+      return;
+    }
+    selectedIdRef.current = next;
+    setSelectedIdState(next);
+  }, []);
   const [selectedIssue, setSelectedIssue] = useState<IssueDto>();
   const [projectEditor, setProjectEditor] = useState<ProjectDto | "new">();
   const [projectInspection, setProjectInspection] = useState<ProjectInspection>();
@@ -211,7 +230,7 @@ function AppContent() {
     if (currentRevision !== undefined && issue.revision < currentRevision) return;
     issueRevisions.current.set(issue.id, issue.revision);
     setSelectedIssue((current) =>
-      issue.id === selectedId
+      issue.id === selectedIdRef.current
         && (current?.id !== issue.id || issue.revision >= current.revision)
         ? issue
         : current
@@ -219,7 +238,7 @@ function AppContent() {
     setIssues((current) => newestIssuesFirst(current.map((entry) =>
       entry.id === issue.id && issue.revision >= entry.revision ? issue : entry
     )));
-  }, [selectedId]);
+  }, []);
 
   const refreshIssue = useCallback(async () => {
     if (!selectedId) return;
@@ -308,9 +327,11 @@ function AppContent() {
   const goToProjectIssues = (projectId: string) => {
     goTo("issues");
     setActiveProjectId(projectId);
-    const nextIssue = issues.find((issue) =>
-      issue.projectId === projectId && visibleIssueStatuses.has(issue.status)
-    );
+    const nextIssue = isMobileIssueLayout()
+      ? undefined
+      : issues.find((issue) =>
+        issue.projectId === projectId && visibleIssueStatuses.has(issue.status)
+      );
     setSelectedId(nextIssue?.id);
     setSelectedIssue((current) => current?.id === nextIssue?.id ? current : undefined);
   };

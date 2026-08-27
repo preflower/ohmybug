@@ -176,8 +176,20 @@ describe("project settings layout", () => {
   });
 
   it("aligns the advanced disclosure indicator with the title line", () => {
-    expect(styles).toMatch(/\.integration-section-collapsed > summary\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*7px minmax\(0,\s*1fr\);/s);
+    expect(styles).toMatch(/\.integration-section-collapsed > summary\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*7px minmax\(0,\s*1fr\) auto;/s);
     expect(styles).toMatch(/\.integration-section-collapsed > summary::before\s*\{[^}]*margin-top:\s*8px;/s);
+    expect(styles).toMatch(/\.integration-section-collapsed \.integration-section-summary-inline\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*1;/s);
+    expect(styles).toMatch(/\.integration-section-collapsed \.integration-section-summary-inline\s*\{[^}]*max-width:\s*min\(40vw,\s*360px\);[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/s);
+  });
+
+  it("stacks the advanced disclosure summary in the content column on phones", () => {
+    const phoneStart = styles.lastIndexOf("@media (max-width: 520px)");
+    const phoneEnd = styles.indexOf("@media (max-width: 1200px)", phoneStart);
+    const phone = styles.slice(phoneStart, phoneEnd);
+
+    expect(phone).toMatch(/\.integration-section-collapsed > summary\s*\{[^}]*grid-template-columns:\s*7px minmax\(0,\s*1fr\);/s);
+    expect(phone).toMatch(/\.integration-section-collapsed \.integration-section-summary-inline\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*2;/s);
+    expect(phone).toMatch(/\.integration-section-collapsed \.integration-section-summary-inline\s*\{[^}]*max-width:\s*none;[^}]*overflow:\s*visible;[^}]*text-overflow:\s*clip;/s);
   });
 
   it("keeps the narrow settings workspace full-height until the phone breakpoint", () => {
