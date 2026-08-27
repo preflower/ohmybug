@@ -43,6 +43,12 @@ function ReviewPanelContent({
     () => review.choices.filter((choice) => choice.id !== "duplicate" || Boolean(duplicateCandidate)),
     [duplicateCandidate, review.choices],
   );
+  const dockChoices = useMemo(
+    () => [...choices].sort((left, right) =>
+      Number(isPrimaryChoice(left.id)) - Number(isPrimaryChoice(right.id))
+    ),
+    [choices],
+  );
   const [mode, setMode] = useState<ReviewMode>("collapsed");
   const [choiceId, setChoiceId] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -193,7 +199,7 @@ function ReviewPanelContent({
                 setMode("expanded");
               }}
             >选择处理方式</Button>
-          ) : choices.map((choice) => (
+          ) : dockChoices.map((choice) => (
             <Button
               disabled={busy}
               key={choice.id}

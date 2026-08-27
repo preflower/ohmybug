@@ -133,7 +133,7 @@ export function IssueActions({
     if (retryLabel && onRetry) {
       content = <ActionRow>
         {cancel ? <CancelIssueButton disabled={Boolean(busy)} onCancel={cancel} /> : null}
-        <Button disabled={Boolean(busy)} type="button" variant="secondary" onClick={() => void run("retry", onRetry, "重试失败")}>
+        <Button disabled={Boolean(busy)} type="button" onClick={() => void run("retry", onRetry, "重试失败")}>
           <RotateCcw aria-hidden="true" size={13} />{busy === "retry" ? "重试中…" : retryLabel}
         </Button>
       </ActionRow>;

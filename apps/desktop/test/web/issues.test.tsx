@@ -318,7 +318,9 @@ describe("Issue detail", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("测试未通过");
     expect(screen.queryByText("Issue 上下文和已确认内容会保留，并从可恢复阶段继续。")).not.toBeInTheDocument();
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "重试实现" })); });
+    const retry = screen.getByRole("button", { name: "重试实现" });
+    expect(retry).toHaveAttribute("data-variant", "default");
+    await act(async () => { fireEvent.click(retry); });
     expect(onRetry).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "重建 Agent 会话" })).not.toBeInTheDocument();
   });
