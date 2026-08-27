@@ -43,6 +43,22 @@ describe("project settings layout", () => {
     expect(collapsed).toMatch(/\.sidebar-section \.project-initial\s*\{[^}]*display:\s*grid;/s);
   });
 
+  it("keeps the collapsed project initial unframed", () => {
+    const initial = cssRule("\\.project-initial");
+
+    expect(initial).not.toMatch(/background:/);
+    expect(initial).not.toMatch(/box-shadow:/);
+  });
+
+  it("centers project shortcuts in the collapsed sidebar", () => {
+    const collapsed = mediaBlock("@media (max-width: 980px)", "@media (max-width: 680px)");
+    const initial = cssRule("\\.project-initial");
+
+    expect(collapsed).toMatch(/\.sidebar-section \.nav-item\s*\{[^}]*justify-content:\s*center;/s);
+    expect(initial).toMatch(/place-items:\s*center;/);
+    expect(initial).toMatch(/line-height:\s*1;/);
+  });
+
   it("uses the full workspace without a card surface", () => {
     const column = getComputedStyle(document.querySelector<HTMLElement>(".settings-column")!);
     const settings = getComputedStyle(document.querySelector<HTMLElement>(".project-settings-tabs")!);
