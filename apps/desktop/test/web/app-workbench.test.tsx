@@ -562,6 +562,36 @@ describe("control center workbench", () => {
     expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
   });
 
+  it("groups every Issue metadata field and action inside a finite card surface", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue({
+      providerId: "git",
+      status: "READY",
+      branch: "ohmybug/chk-1",
+    });
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "agentTerminalAvailability").mockResolvedValue({ available: true });
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+
+    const rail = await screen.findByTestId("issue-metadata-rail");
+    const card = await within(rail).findByTestId("issue-metadata-card");
+    expect(card.querySelector(":scope > .metadata-rail-header")).not.toBeNull();
+    expect(card.querySelector(":scope > .issue-metadata-list")).not.toBeNull();
+    expect(within(card).getByText("详情")).toBeVisible();
+    for (const label of ["项目", "分支", "来源", "Agent 会话", "创建时间", "更新时间"]) {
+      expect(within(card).getByText(label)).toBeVisible();
+    }
+    expect(within(card).getByText("Worktree")).toBeVisible();
+    expect(within(card).getByRole("button", { name: "隐藏详情栏" })).toBeVisible();
+    expect(await within(card).findByRole("button", { name: "在 Terminal 中打开" })).toBeEnabled();
+  });
+
   it.each([
     ["UNSUPPORTED_AGENT", "当前 Agent 不支持 Terminal"],
     ["SESSION_NOT_READY", "Agent 会话尚未就绪"],
