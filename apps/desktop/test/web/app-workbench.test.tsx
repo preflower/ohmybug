@@ -71,6 +71,7 @@ const issue: IssueDto = {
 afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   delete window.ohMyBug;
   history.replaceState({}, "", "/");
 });
@@ -883,6 +884,7 @@ describe("control center workbench", () => {
     const filteredList = screen.getByRole("region", { name: "Issue 列表" });
     expect(within(filteredList).getByText("Storefront search is stale")).toBeVisible();
     expect(within(filteredList).queryByText("Checkout returns 500")).not.toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Issue 详情" })).toBeVisible();
     expect(screen.getByText("Storefront", { selector: ".breadcrumb span:last-child" })).toBeVisible();
     expect(storefrontShortcut).toHaveAttribute("aria-current", "page");
 
@@ -891,6 +893,51 @@ describe("control center workbench", () => {
     expect(within(filteredList).getByText("Storefront search is stale")).toBeVisible();
     expect(within(filteredList).getByText("Checkout returns 500")).toBeVisible();
     expect(screen.getByText("全部", { selector: ".breadcrumb span:last-child" })).toBeVisible();
+  });
+
+  it("opens a project at its Issue list on mobile", async () => {
+    let resolveReview: ((value: IssueDto) => void) | undefined;
+    const storefront: ProjectDto = {
+      ...project,
+      id: "project-2",
+      name: "Storefront",
+      key: "STO",
+      path: "/work/storefront",
+    };
+    const storefrontIssue: IssueDto = {
+      ...issue,
+      id: "issue-2",
+      projectId: storefront.id,
+      identifier: "STO-1",
+      title: "Storefront search is stale",
+      updatedAt: "2026-08-18T09:01:00.000Z",
+    };
+    vi.stubGlobal("innerWidth", 680);
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project, storefront]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue, storefrontIssue]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) => id === storefrontIssue.id ? storefrontIssue : issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    vi.spyOn(api, "submitReview").mockReturnValue(new Promise<IssueDto>((resolve) => {
+      resolveReview = resolve;
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole("region", { name: "Issue 详情" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "开始实现" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "开始实现" })[0]!);
+    expect(api.submitReview).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Storefront" }));
+
+    const filteredList = screen.getByRole("region", { name: "Issue 列表" });
+    expect(within(filteredList).getByText("Storefront search is stale")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Issue 详情" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "开始使用" })).toBeVisible();
+
+    await act(async () => resolveReview?.(issue));
+    expect(screen.queryByRole("region", { name: "Issue 详情" })).not.toBeInTheDocument();
   });
 
   it("keeps the sidebar project filter after Electron applies the hash route", async () => {
