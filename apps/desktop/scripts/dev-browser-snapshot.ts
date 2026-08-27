@@ -1,5 +1,9 @@
 import type { DesktopRuntimeSnapshot } from "@oh-my-bug/runtime";
 
+interface DevelopmentBrowserSnapshot extends DesktopRuntimeSnapshot {
+  evidenceSources?: Record<string, string>;
+}
+
 interface DevelopmentSnapshotLoaderOptions {
   dataRoot: string;
   inspect(options: { dataRoot: string }): Promise<DesktopRuntimeSnapshot>;
@@ -8,7 +12,7 @@ interface DevelopmentSnapshotLoaderOptions {
 
 export function createDevelopmentSnapshotLoader(
   options: DevelopmentSnapshotLoaderOptions,
-): () => Promise<DesktopRuntimeSnapshot> {
+): () => Promise<DevelopmentBrowserSnapshot> {
   return async () => {
     const snapshot = await options.inspect({ dataRoot: options.dataRoot });
     return snapshot.projects.length > 0
@@ -21,9 +25,29 @@ function fallbackSnapshot(
   snapshot: DesktopRuntimeSnapshot,
   _dataRoot: string,
   timestamp: string,
-): DesktopRuntimeSnapshot {
+): DevelopmentBrowserSnapshot {
   const projectId = "dev-style-ohmybug";
   const timestampMs = Date.parse(timestamp);
+  const evidenceId = `sha256-${"a".repeat(64)}`;
+  const evidencePreview = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675">
+      <rect width="1200" height="675" fill="#f7f7f9"/>
+      <rect x="28" y="28" width="1144" height="619" rx="18" fill="#ffffff" stroke="#dedee7"/>
+      <rect x="28" y="28" width="220" height="619" rx="18" fill="#f0f0f5"/>
+      <rect x="276" y="62" width="420" height="24" rx="8" fill="#20202a"/>
+      <rect x="276" y="112" width="850" height="14" rx="7" fill="#d8d8e1"/>
+      <rect x="276" y="158" width="850" height="182" rx="14" fill="#f7f7fa" stroke="#dedee7"/>
+      <rect x="304" y="188" width="300" height="18" rx="7" fill="#68687a"/>
+      <rect x="304" y="226" width="760" height="12" rx="6" fill="#c9c9d4"/>
+      <rect x="304" y="254" width="690" height="12" rx="6" fill="#c9c9d4"/>
+      <rect x="276" y="370" width="850" height="230" rx="14" fill="#171922"/>
+      <rect x="304" y="402" width="430" height="12" rx="6" fill="#a8a8b8"/>
+      <rect x="304" y="432" width="680" height="12" rx="6" fill="#77798b"/>
+      <rect x="304" y="462" width="590" height="12" rx="6" fill="#77798b"/>
+      <circle cx="84" cy="82" r="16" fill="#665cff"/>
+      <rect x="116" y="72" width="98" height="20" rx="7" fill="#85859a"/>
+    </svg>
+  `)}`;
   const eighteenMinutesAgo = new Date(timestampMs - 18 * 60_000).toISOString();
   const yesterday = new Date(timestampMs - 24 * 60 * 60_000).toISOString();
   const assessment = {
@@ -151,11 +175,24 @@ function fallbackSnapshot(
       },
       repair: {
         iteration: 1,
+        deliveryDraft: {
+          summary: "项目设置工作区现在会占满剩余视口。",
+          repairIteration: 1,
+          implementationCompletedAt: timestamp,
+          integration: {
+            baseBranch: "main",
+            baseCommit: "a".repeat(40),
+            issueBranch: "ohmybug/ohmybug-2",
+            issueCommit: "d34db33f1234567890abcdef1234567890abcdef",
+            conflicts: [],
+            verification: [],
+          },
+        },
         delivery: {
           summary: "项目设置工作区现在会占满剩余视口。",
           evidence: [{
             type: "screenshot",
-            evidenceId: `sha256-${"a".repeat(64)}`,
+            evidenceId,
             label: "项目设置页桌面视口",
           }],
         },
@@ -180,7 +217,32 @@ function fallbackSnapshot(
       revision: 6,
       createdAt: timestamp,
       updatedAt: timestamp,
+    }, {
+      id: "dev-style-issue-terminal",
+      projectId,
+      identifier: "OHMYBUG-3",
+      title: "Issue 详情底部操作栏没有贴底",
+      titleSource: "assessment",
+      status: "REPAIRING",
+      inputs: [input("dev-style-input-3", "内容较少时，Issue 详情底部操作栏浮在页面中间。")],
+      agentSession: { agent: "codex", sessionId: "dev-style-session-terminal" },
+      assessment: {
+        ...assessment,
+        suggestedTitle: "Issue 详情底部操作栏没有贴底",
+        reasoning: "详情内容不足一屏时，操作栏没有占据容器底部位置。",
+        rootCause: "详情滚动区域没有撑满工作区剩余高度。",
+        solution: "让内容区占据剩余空间，并将操作栏保持在详情容器底部。",
+      },
+      repair: { iteration: 1 },
+      revision: 5,
+      createdAt: timestamp,
+      updatedAt: timestamp,
     }],
+    issueWorkspaces: {
+      "dev-style-issue-assessment": { providerId: "git", status: "READY", branch: "ohmybug/ohmybug-1" },
+      "dev-style-issue-acceptance": { providerId: "git", status: "READY", branch: "ohmybug/ohmybug-2" },
+      "dev-style-issue-terminal": { providerId: "git", status: "READY", branch: "ohmybug/ohmybug-3" },
+    },
     issueEvents: {
       "dev-style-issue-assessment": [{
         id: "dev-style-issue-assessment:1",
@@ -200,6 +262,45 @@ function fallbackSnapshot(
         occurredAt: timestamp,
         data: { message: "Delivery 已准备验收。" },
       }],
+      "dev-style-issue-terminal": [{
+        id: "dev-style-issue-terminal:1",
+        issueId: "dev-style-issue-terminal",
+        sequence: 1,
+        type: "AGENT_TURN_STARTED",
+        actor: "AGENT",
+        occurredAt: timestamp,
+        data: { logicalSessionId: "dev-style-session-terminal", message: "Codex 开始实现" },
+      }, {
+        id: "dev-style-issue-terminal:2",
+        issueId: "dev-style-issue-terminal",
+        sequence: 2,
+        type: "AGENT_FILES_CHANGED",
+        actor: "AGENT",
+        occurredAt: timestamp,
+        data: { logicalSessionId: "dev-style-session-terminal", message: "正在检查详情页布局与现有样式" },
+      }, {
+        id: "dev-style-issue-terminal:3",
+        issueId: "dev-style-issue-terminal",
+        sequence: 3,
+        type: "AGENT_COMMAND_STARTED",
+        actor: "AGENT",
+        occurredAt: timestamp,
+        data: {
+          logicalSessionId: "dev-style-session-terminal",
+          correlationId: "dev-style-command-1",
+          message: "运行目标测试",
+          detail: "$ pnpm --filter @oh-my-bug/desktop test\nTest Files 41 passed\nTests 298 passed",
+        },
+      }, {
+        id: "dev-style-issue-terminal:4",
+        issueId: "dev-style-issue-terminal",
+        sequence: 4,
+        type: "AGENT_FILES_CHANGED",
+        actor: "AGENT",
+        occurredAt: timestamp,
+        data: { logicalSessionId: "dev-style-session-terminal", message: "已更新 Issue 详情布局，正在验证页面" },
+      }],
     },
+    evidenceSources: { [evidenceId]: evidencePreview },
   };
 }

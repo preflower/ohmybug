@@ -373,6 +373,7 @@ function createRuntimeComposition(options: InternalCompositionOptions): RuntimeC
         actor: "AGENT",
         occurredAt: now(),
         data: {
+          logicalSessionId: activity.sessionId,
           message: activity.message,
           stage: activity.stage,
           level: activity.level,

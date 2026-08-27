@@ -18,6 +18,7 @@ export interface DevelopmentSnapshot {
   issues: IssueDto[];
   issueWorkspaces?: Record<string, Exclude<IssueWorkspaceInfoDto, null>>;
   issueEvents: Record<string, AgentEventDto[]>;
+  evidenceSources?: Record<string, string>;
   integrationHealth: Record<string, IntegrationHealth>;
 }
 
@@ -138,6 +139,10 @@ export function createBrowserDevelopmentTransport(
       }).catch(() => undefined);
       return () => { active = false; };
     },
-    evidenceSource: readOnly,
+    evidenceSource: async (_issueId, evidenceId) => {
+      const url = (await snapshot()).evidenceSources?.[evidenceId];
+      if (!url) throw new Error("EVIDENCE_NOT_FOUND");
+      return { url };
+    },
   };
 }

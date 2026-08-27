@@ -1,9 +1,10 @@
 import { Activity, ChevronDown, CircleAlert, CircleCheck, Clock3, FilePenLine, Terminal } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { AgentEventDto } from "../api/types.js";
 import { Button } from "../components/ui/button.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip.js";
+import { hasExecutionEvents, useCurrentExecutionEvents } from "./terminal-execution.js";
 
 const activityPageSize = 80;
 
@@ -426,6 +427,69 @@ function ActivityTurn({
       />)
         : <p className="activity-turn-empty">等待活动…</p>}
     </div> : null}
+  </section>;
+}
+
+export function CodexTerminal({
+  active,
+  events,
+  sessionId,
+  terminalAction,
+}: {
+  active: boolean;
+  events: AgentEventDto[];
+  sessionId?: string;
+  terminalAction?: ReactNode;
+}) {
+  const issueId = events.at(-1)?.issueId;
+  const visibleEvents = useCurrentExecutionEvents(events, issueId, sessionId);
+  const terminalKey = `${issueId ?? ""}\0${sessionId ?? ""}`;
+  const logRef = useRef<HTMLDivElement>(null);
+  const [followState, setFollowState] = useState({ key: terminalKey, following: true });
+  const followingLatest = followState.key === terminalKey ? followState.following : true;
+  const visible = hasExecutionEvents(visibleEvents, active);
+  const lines = visible ? groupEvents(visibleEvents, active).flatMap((group) => group.lines) : [];
+
+  useEffect(() => {
+    const log = logRef.current;
+    if (!log || !followingLatest) return;
+    log.scrollTop = log.scrollHeight;
+  }, [followingLatest, visibleEvents.length]);
+
+  if (!visible) return null;
+
+  const returnToLatest = () => {
+    const log = logRef.current;
+    if (log) log.scrollTop = log.scrollHeight;
+    setFollowState({ key: terminalKey, following: true });
+  };
+
+  return <section aria-label="Codex Terminal" className="codex-terminal">
+    <header className="codex-terminal-header">
+      <span>Codex Terminal</span>
+      {terminalAction}
+    </header>
+    <div
+      aria-label="Codex Terminal 输出"
+      aria-live="off"
+      className="codex-terminal-log"
+      onScroll={(event) => {
+        const log = event.currentTarget;
+        setFollowState({
+          key: terminalKey,
+          following: log.scrollHeight - log.scrollTop - log.clientHeight <= 8,
+        });
+      }}
+      ref={logRef}
+      role="log"
+      tabIndex={0}
+    >
+      {lines.length ? lines.map((line) => <ActivityLogLine
+        key={line.kind === "command" ? line.id : line.event.id}
+        line={line}
+      />) : <p className="codex-terminal-empty">等待 Codex 输出…</p>}
+    </div>
+    {!followingLatest ? <Button className="codex-terminal-latest" size="xs" type="button" variant="secondary" onClick={returnToLatest}>回到最新</Button> : null}
   </section>;
 }
 

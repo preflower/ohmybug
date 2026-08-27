@@ -126,6 +126,9 @@ describe("browser development Runtime client", () => {
           data: { message: "Issue created" },
         }],
       },
+      evidenceSources: {
+        "evidence-1": "data:image/png;base64,fixture",
+      },
       integrationHealth: {},
     };
     let loads = 0;
@@ -154,6 +157,7 @@ describe("browser development Runtime client", () => {
           issues(): Promise<unknown>;
           issue(id: string): Promise<unknown>;
           issueWorkspace(id: string): Promise<unknown>;
+          evidenceSource(issueId: string, evidenceId: string): Promise<unknown>;
           integrationHealth(): Promise<unknown>;
           testSavedIntegration(projectId: string, integrationId: string): Promise<unknown>;
           subscribeIssueEvents(
@@ -195,6 +199,12 @@ describe("browser development Runtime client", () => {
       snapshot.issueWorkspaces["issue-1"],
     );
     expect(await transport?.issueWorkspace("missing-issue")).toBeNull();
+    await expect(transport?.evidenceSource("issue-1", "evidence-1")).resolves.toEqual({
+      url: "data:image/png;base64,fixture",
+    });
+    await expect(transport?.evidenceSource("issue-1", "missing-evidence")).rejects.toThrow(
+      "EVIDENCE_NOT_FOUND",
+    );
     await expect(transport?.testSavedIntegration("project-1", "sentry")).resolves.toEqual({
       title: "连接成功",
       details: [

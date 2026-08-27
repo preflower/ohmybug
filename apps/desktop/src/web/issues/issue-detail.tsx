@@ -1,9 +1,10 @@
 import { CircleAlert, Image as ImageIcon, Maximize2, Minus, Play, Plus, RotateCcw, Search, Wrench, X } from "lucide-react";
-import { type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from "react";
 
 import { api } from "../api/client.js";
 import type {
   BranchInfoDto,
+  AgentEventDto,
   IssueDto,
   ReviewSubmissionInput,
 } from "../api/types.js";
@@ -16,11 +17,17 @@ import {
   DialogTrigger,
 } from "../components/ui/dialog.js";
 import { IssueActions } from "./issue-actions.js";
-import { IssueStatusBadge } from "./issue-status.js";
+import { CodexTerminal } from "./agent-activity.js";
+import { hasExecutionEvents, useCurrentExecutionEvents } from "./terminal-execution.js";
 
 interface IssueDetailProps {
   issue: IssueDto;
   branch?: BranchInfoDto;
+  agentActive?: boolean;
+  agentEvents?: AgentEventDto[];
+  agentSessionId?: string;
+  terminalAction?: ReactNode;
+  workspaceBranch?: string;
   onRefresh: () => Promise<void>;
   onApproveDelivery?: () => Promise<void>;
   onSubmitReview?: (input: ReviewSubmissionInput) => Promise<void>;
@@ -70,6 +77,11 @@ function failureMessage(failure: NonNullable<IssueDto["lastFailure"]>): string {
 export function IssueDetail({
   issue,
   branch,
+  agentActive = false,
+  agentEvents = [],
+  agentSessionId,
+  terminalAction,
+  workspaceBranch,
   onRefresh,
   onApproveDelivery,
   onSubmitReview,
@@ -83,10 +95,11 @@ export function IssueDetail({
   const assessment = issue.assessment;
   const delivery = issue.repair?.delivery;
   const latestInput = issue.inputs.at(-1);
-  const mergeRecovery = issue.finalizationRecovery?.context?.recoveryKind === "MERGE_CONFLICT"
-    || issue.finalizationRecovery?.context?.recoveryKind === "MERGE_ENVIRONMENT"
-    || issue.finalizationRecovery?.diagnostic?.step === "merge";
-
+  const deliveryIntegration = issue.repair?.deliveryDraft?.integration;
+  const deliveryBranch = deliveryIntegration?.issueBranch ?? workspaceBranch ?? branch?.name;
+  const deliveryCommit = deliveryIntegration?.issueCommit ?? branch?.commit;
+  const currentExecutionEvents = useCurrentExecutionEvents(agentEvents, issue.id, agentSessionId);
+  const terminalVisible = hasExecutionEvents(currentExecutionEvents, agentActive);
   return (
     <article className="issue-detail">
       <div className="issue-detail-document">
@@ -94,42 +107,18 @@ export function IssueDetail({
       <header className="issue-title-block">
         <div className="issue-title-meta">
           <span className="eyebrow">{issue.identifier}</span>
-          <div className="issue-title-actions">
-            <IssueStatusBadge
-              status={issue.status}
-              recoveryKind={issue.finalizationRecovery?.context?.recoveryKind}
-              recoveryStep={issue.finalizationRecovery?.diagnostic?.step}
-              reviewKind={issue.review?.kind}
-            />
-          </div>
         </div>
         <h2>{issue.title}</h2>
         {latestInput?.data.content ? <p>{latestInput.data.content}</p> : null}
-        {issue.inputs.length > 1 ? <span className="occurrence-summary">已收到 {issue.inputs.length} 次输入 · 最近 {new Date(latestInput!.receivedAt).toLocaleString("zh-CN")}</span> : null}
-        {issue.resolution ? <p className="resolution-summary" role="status">结果：{issue.resolution}{issue.duplicateOf ? ` · ${issue.duplicateOf}` : ""}{issue.status === "COMPLETED" && issue.resolution === "FIXED" ? " · 修复已验收，Issue 已完成。" : issue.status === "COMPLETED" && issue.resolution === "IMPLEMENTED" ? " · 特性已验收，Issue 已完成。" : ""}</p> : null}
-        {issue.status === "EVIDENCE_FAILED" ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />证据采集失败；实现改动和工作目录已保留。</div> : issue.lastFailure ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />{failureMessage(issue.lastFailure)}</div> : null}
       </header>
+
+      {issue.status === "EVIDENCE_FAILED" ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />证据采集失败；实现改动和工作目录已保留。</div> : issue.lastFailure ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />{failureMessage(issue.lastFailure)}</div> : null}
 
       {issue.status === "FINALIZATION_RECOVERY" && issue.finalizationRecovery ? (
         <section
-          aria-label="自动交付恢复"
-          aria-live="polite"
-          className="finalization-recovery-status"
-          role="status"
+          aria-label="交付恢复诊断"
+          className="finalization-recovery-diagnostic-card"
         >
-          <div className="finalization-recovery-heading">
-            <Wrench aria-hidden="true" size={15} />
-            <div>
-              <strong>{issue.finalizationRecovery.context?.recoveryKind === "MERGE_CONFLICT"
-                ? "AI 正在解析合并问题"
-                : issue.finalizationRecovery.context?.recoveryKind === "MERGE_ENVIRONMENT"
-                  ? "AI 正在诊断合并环境"
-                  : mergeRecovery
-                    ? "AI 正在解析合并问题"
-                    : "AI 正在修复交付阻塞"}</strong>
-              <span>第 {issue.finalizationRecovery.automaticAttempts}/1 次自动恢复</span>
-            </div>
-          </div>
           {issue.finalizationRecovery.context?.merge ? (
             <div className="finalization-recovery-diagnostic">
               <p>基线分支：{issue.finalizationRecovery.context.merge.baseBranch}</p>
@@ -150,10 +139,6 @@ export function IssueDetail({
           ) : null}
         </section>
       ) : null}
-
-
-      {branch ? <section aria-label="交付分支" className="review-section"><div className="review-heading"><span>交付分支</span></div><dl><div><dt>分支</dt><dd><code>{branch.name}</code></dd></div><div><dt>Commit</dt><dd><code>{branch.commit.slice(0, 7)}</code></dd></div>{branch.remote ? <div><dt>Remote</dt><dd><code>{branch.remote}</code></dd></div> : null}</dl></section> : null}
-
       {assessment ? (
         <section className="review-section assessment-review" data-testid="assessment-review">
           <div className="review-heading"><span>评估结果 · Assessment</span></div>
@@ -164,12 +149,28 @@ export function IssueDetail({
         </section>
       ) : null}
 
-      {delivery ? (
-        <section className="review-section">
-          <div className="review-heading"><div><span className="eyebrow">Delivery · 迭代 {issue.repair?.iteration ?? 1}</span><p className="delivery-summary">{delivery.summary}</p></div></div>
+      <CodexTerminal
+        active={agentActive}
+        events={agentEvents}
+        sessionId={agentSessionId}
+        terminalAction={terminalAction}
+      />
+
+      {delivery && !terminalVisible ? <>
+        {delivery.evidence.length ? <section aria-label="证据" className="review-section issue-evidence-section">
+          <div className="review-heading"><span>证据</span></div>
+          <p className="evidence-conclusion">{delivery.summary}</p>
           <div className="evidence-gallery">{delivery.evidence.map((evidence, index) => <EvidenceFigure evidence={evidence} issueId={issue.id} key={`${issue.id}-${evidence.evidenceId}-${index}`} />)}</div>
+        </section> : null}
+        <section aria-label="交付" className="review-section issue-delivery-section">
+          <div className="review-heading"><span>交付</span></div>
+          <p className="delivery-summary">{issue.repair?.deliveryDraft?.summary ?? delivery.summary}</p>
+          {deliveryBranch || deliveryCommit ? <dl className="delivery-metadata">
+            {deliveryBranch ? <div><dt>目标分支</dt><dd><code>{deliveryBranch}</code></dd></div> : null}
+            {deliveryCommit ? <div><dt>Issue 提交</dt><dd><code>{deliveryCommit.slice(0, 7)}</code></dd></div> : null}
+          </dl> : null}
         </section>
-      ) : null}
+      </> : null}
 
         </div>
       </div>

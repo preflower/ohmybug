@@ -779,13 +779,6 @@ a:focus-visible {
   line-height: 1;
 }
 
-.issue-metadata-rail .agent-activity {
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-}
-
 .mobile-detail-toolbar {
   display: none;
 }
@@ -1122,8 +1115,166 @@ a:focus-visible {
 
 .evidence-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
+}
+
+.issue-evidence-section,
+.issue-delivery-section {
+  padding: 16px 18px;
+}
+
+.issue-evidence-section .review-heading,
+.issue-delivery-section .review-heading {
+  margin-bottom: 7px;
+}
+
+.issue-evidence-section .review-heading > span,
+.issue-delivery-section .review-heading > span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.evidence-conclusion {
+  margin-bottom: 12px !important;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.delivery-metadata {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 0;
+}
+
+.delivery-metadata > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+
+.delivery-metadata dt,
+.delivery-metadata dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 11px;
+}
+
+.delivery-metadata dt {
+  color: var(--text-muted);
+}
+
+.delivery-metadata dd code {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.codex-terminal {
+  position: relative;
+  overflow: hidden;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.codex-terminal-header {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px 0 14px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.codex-terminal-log {
+  max-height: 340px;
+  min-height: 218px;
+  overflow: auto;
+  margin: 0 8px 8px;
+  border-radius: 6px;
+  background: #171a20;
+  padding: 8px 6px;
+  color: #e7e9ed;
+  outline: none;
+  scrollbar-color: #68707e transparent;
+}
+
+.codex-terminal-log:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--ring) 70%, transparent);
+}
+
+.codex-terminal .activity-log-entry + .activity-log-entry {
+  border-top-color: rgb(255 255 255 / 6%);
+}
+
+.codex-terminal .activity-log-entry {
+  width: max-content;
+  min-width: 100%;
+}
+
+.codex-terminal .activity-log-entry-heading > svg,
+.codex-terminal .activity-terminal-prompt,
+.codex-terminal .activity-log-entry time,
+.codex-terminal .activity-log-actor,
+.codex-terminal .activity-command-status {
+  color: #8d96a5;
+}
+
+.codex-terminal .activity-terminal-prompt,
+.codex-terminal .activity-log-running .activity-command-status {
+  color: #a9a1ff;
+}
+
+.codex-terminal .activity-log-entry code {
+  color: #f1f2f4;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+
+.codex-terminal .activity-log-entry-heading > p,
+.codex-terminal .activity-log-output {
+  color: #c9ced6;
+  overflow-wrap: normal;
+  white-space: pre;
+  word-break: normal;
+}
+
+.codex-terminal .activity-log-entry-heading > p {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.codex-terminal .activity-log-failed .activity-command-status,
+.codex-terminal .activity-log-error .activity-log-entry-heading,
+.codex-terminal .activity-log-error .activity-log-entry-heading > svg {
+  color: #ff8e98;
+}
+
+.codex-terminal-empty {
+  margin: 0;
+  padding: 16px 10px;
+  color: #8d96a5;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.codex-terminal-latest {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  border-color: rgb(255 255 255 / 16%);
+  background: #22262e;
+  color: #f1f2f4;
+}
+
+.codex-terminal-latest:hover {
+  background: #2b3039;
 }
 
 .visual-scenarios {
@@ -1413,41 +1564,10 @@ a:focus-visible {
 }
 
 .review-dock-row {
-  display: grid;
+  display: flex;
   min-height: 58px;
-  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 16px;
-}
-
-.review-dock-summary {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: auto auto;
-  align-items: baseline;
-  justify-content: start;
-  gap: 3px 9px;
-}
-
-.review-dock-summary .approval-kicker {
-  grid-column: 1 / -1;
-}
-
-.review-dock-summary strong {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.review-dock-summary > span:last-child {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  justify-content: flex-end;
 }
 
 .review-dock-actions,
@@ -1634,7 +1754,6 @@ a:focus-visible {
   border-top: 1px solid var(--border);
   background: var(--surface-raised);
   padding: 0 clamp(20px, 3.5vw, 36px);
-  box-shadow: 0 -8px 20px rgb(0 0 0 / 8%);
 }
 
 .issue-actions > * {
@@ -1647,14 +1766,17 @@ a:focus-visible {
   margin: 12px auto;
 }
 
-.issue-actions .issue-action-row:not(.issue-action-row-failure) {
-  border-color: var(--border-strong);
+.issue-action-row {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  padding: 10px 0;
 }
 
 .issue-action-buttons {
   display: flex !important;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px !important;
 }
 
@@ -1676,42 +1798,19 @@ a:focus-visible {
   grid-column: 1 / -1;
 }
 
-.finalization-recovery-status {
+.finalization-recovery-diagnostic-card {
   display: grid;
   gap: 10px;
   margin-bottom: 12px;
-  border: 1px solid color-mix(in oklch, var(--accent) 28%, var(--border));
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--accent-soft);
+  background: var(--surface);
   padding: 12px 14px;
-}
-
-.finalization-recovery-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--accent-hover);
-}
-
-.finalization-recovery-heading > div {
-  display: grid;
-  gap: 2px;
-}
-
-.finalization-recovery-heading strong {
-  color: var(--text);
-  font-size: 12px;
-}
-
-.finalization-recovery-heading span {
-  color: var(--text-secondary);
-  font-size: 10px;
 }
 
 .finalization-recovery-diagnostic {
   display: grid;
   gap: 5px;
-  padding-left: 23px;
 }
 
 .finalization-recovery-diagnostic p {
@@ -3805,8 +3904,6 @@ a:focus-visible {
 
 @media (max-width: 900px) {
   .review-dock-row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
     padding: 10px 0;
   }
 

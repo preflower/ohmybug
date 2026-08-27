@@ -12,7 +12,7 @@ import {
   Sparkles,
   SquareTerminal,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import appIconUrl from "../../assets/icons/oh-my-bug.png";
@@ -33,7 +33,7 @@ import {
   isIssueStatusVisibleByDefault,
 } from "./issues/issue-status-filter-model.js";
 import { IssueStatusFilter } from "./issues/issue-status-filter.js";
-import { AgentActivity } from "./issues/agent-activity.js";
+import { hasExecutionEvents, useCurrentExecutionEvents } from "./issues/terminal-execution.js";
 import { completedBranchFromEvents } from "./issues/completed-branch.js";
 import { newestIssuesFirst } from "./issues/issue-order.js";
 import { useIssueEvents } from "./issues/use-issue-events.js";
@@ -464,6 +464,18 @@ function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueS
     "EVIDENCE_CHECK",
     "FINALIZATION_RECOVERY",
   ].includes(selected.status) : false;
+  const currentExecutionEvents = useCurrentExecutionEvents(
+    events,
+    selected?.id,
+    selected?.agentSession?.sessionId,
+  );
+  const terminalVisible = hasExecutionEvents(currentExecutionEvents, active);
+  const terminalControl = useAgentTerminal(selected);
+  const terminalAction = selected ? <AgentTerminalAction
+    availability={terminalControl.availability}
+    opening={terminalControl.opening}
+    onOpen={() => void terminalControl.open()}
+  /> : undefined;
   const [metadataOpen, setMetadataOpen] = useState(true);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -497,62 +509,68 @@ function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueS
       {issues.length ? <div className="issue-list">{issues.map((issue) => <Button aria-current={issue.id === selectedId ? "true" : undefined} className="issue-row h-auto w-full" key={issue.id} type="button" variant="ghost" onClick={() => onSelect(issue.id)}><span className="issue-row-top"><code>{issue.identifier}</code><IssueStatusBadge status={issue.status} recoveryKind={issue.finalizationRecovery?.context?.recoveryKind} recoveryStep={issue.finalizationRecovery?.diagnostic?.step} reviewKind={issue.review?.kind} /></span><strong>{issue.title}</strong><small>{issue.inputs.at(-1)?.integration ?? "manual"} · {new Date(issue.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small></Button>)}</div> : <div className="empty-list"><div><CircleDot aria-hidden="true" size={18} strokeWidth={1.5} /><h2>{totalIssueCount > 0 ? "没有符合筛选条件的 Issue" : "暂无 Issue"}</h2><p>{totalIssueCount > 0 ? "调整状态过滤器以显示其他 Issue。" : "手动创建，或为项目连接 Sentry 与 DingTalk。"}</p></div></div>}
     </section>
     <section className={`detail-pane ${selected ? "detail-pane-scroll" : ""}`} aria-label={selected ? "Issue 详情" : "开始使用"}>
-      {selected ? <><div className="mobile-detail-toolbar"><Button type="button" variant="ghost" onClick={onDeselect}><ChevronLeft aria-hidden="true" size={15} />返回 Issue 列表</Button></div><IssueDetail branch={selectedBranch} issue={selected} onRefresh={onRefresh} onSubmitReview={(input) => action(api.submitReview(selected.id, input))} onApproveDelivery={() => approveDelivery(selected)} onPause={() => action(api.pause(selected.id))} onResume={() => action(api.resume(selected.id))} onCancel={() => action(api.cancel(selected.id))} onRetry={() => action(api.retry(selected.id))} onRebuildSession={() => action(api.rebuildSession(selected.id, selected.revision))} onGrantCapabilities={(expectedRevision, requestId) => action(api.grantIssueCapabilities(selected.id, expectedRevision, requestId))} /></> : <Welcome />}
+      {selected ? <><div className="mobile-detail-toolbar"><Button type="button" variant="ghost" onClick={onDeselect}><ChevronLeft aria-hidden="true" size={15} />返回 Issue 列表</Button></div><IssueDetail agentActive={active} agentEvents={events} agentSessionId={selected.agentSession?.sessionId} branch={selectedBranch} issue={selected} terminalAction={terminalVisible ? terminalAction : undefined} workspaceBranch={workspaceInfo?.branch} onRefresh={onRefresh} onSubmitReview={(input) => action(api.submitReview(selected.id, input))} onApproveDelivery={() => approveDelivery(selected)} onPause={() => action(api.pause(selected.id))} onResume={() => action(api.resume(selected.id))} onCancel={() => action(api.cancel(selected.id))} onRetry={() => action(api.retry(selected.id))} onRebuildSession={() => action(api.rebuildSession(selected.id, selected.revision))} onGrantCapabilities={(expectedRevision, requestId) => action(api.grantIssueCapabilities(selected.id, expectedRevision, requestId))} /></> : <Welcome />}
     </section>
-    {selected && metadataOpen ? <IssueMetadataRail active={active} events={events} issue={selected} project={selectedProject} workspace={workspaceInfo} onClose={() => setMetadataOpen(false)} /> : null}
+    {selected && metadataOpen ? <IssueMetadataRail issue={selected} project={selectedProject} terminalAction={terminalVisible ? undefined : terminalAction} workspace={workspaceInfo} onClose={() => setMetadataOpen(false)} /> : null}
     </section>
   </>;
 }
 
-function IssueMetadataRail({ active, events, issue, project, workspace, onClose }: {
-  active: boolean;
-  events: Parameters<typeof AgentActivity>[0]["events"];
+function useAgentTerminal(issue?: IssueDto): {
+  availability?: AgentTerminalAvailability;
+  opening: boolean;
+  open: () => Promise<void>;
+} {
+  const issueId = issue?.id;
+  const agentSessionId = issue?.agentSession?.sessionId;
+  const terminalSessionKey = issueId ? `${issueId}\0${agentSessionId ?? ""}` : undefined;
+  const [availabilityBySession, setAvailabilityBySession] = useState<Record<string, AgentTerminalAvailability>>({});
+  const availability = terminalSessionKey ? availabilityBySession[terminalSessionKey] : undefined;
+  const openingKeysRef = useRef(new Set<string>());
+  const [openingKeys, setOpeningKeys] = useState<Set<string>>(() => new Set());
+  const opening = terminalSessionKey ? openingKeys.has(terminalSessionKey) : false;
+
+  useEffect(() => {
+    let current = true;
+    if (!issueId || !terminalSessionKey) return () => { current = false; };
+    void api.agentTerminalAvailability(issueId).then((nextAvailability) => {
+      if (current) setAvailabilityBySession((known) => ({ ...known, [terminalSessionKey]: nextAvailability }));
+    }).catch(() => {
+      if (current) setAvailabilityBySession((known) => ({
+        ...known,
+        [terminalSessionKey]: { available: false, reason: "APP_SERVER_UNAVAILABLE" },
+      }));
+    });
+    return () => { current = false; };
+  }, [issueId, agentSessionId, terminalSessionKey]);
+
+  const open = async () => {
+    if (!issueId || !terminalSessionKey || openingKeysRef.current.has(terminalSessionKey) || availability?.available !== true) return;
+    openingKeysRef.current.add(terminalSessionKey);
+    setOpeningKeys(new Set(openingKeysRef.current));
+    try {
+      await api.openAgentTerminal(issueId);
+      toast.success("已在 Terminal 中打开");
+    } catch {
+      toast.error("无法打开 Terminal");
+    } finally {
+      openingKeysRef.current.delete(terminalSessionKey);
+      setOpeningKeys(new Set(openingKeysRef.current));
+    }
+  };
+
+  return { availability, opening, open };
+}
+
+function IssueMetadataRail({ issue, project, terminalAction, workspace, onClose }: {
   issue: IssueDto;
   project?: ProjectDto;
+  terminalAction?: ReactNode;
   workspace: IssueWorkspaceInfoDto;
   onClose: () => void;
 }) {
   const latestInput = issue.inputs.at(-1);
   const agentSessionId = issue.agentSession?.sessionId;
-  const terminalSessionKey = `${issue.id}\0${agentSessionId ?? ""}`;
-  const [terminalAvailabilityResult, setTerminalAvailabilityResult] = useState<{
-    key: string;
-    availability: AgentTerminalAvailability;
-  }>();
-  const terminalAvailability = terminalAvailabilityResult?.key === terminalSessionKey
-    ? terminalAvailabilityResult.availability
-    : undefined;
-  const [openingTerminal, setOpeningTerminal] = useState(false);
-  const openingTerminalRef = useRef(false);
-  useEffect(() => {
-    let current = true;
-    void api.agentTerminalAvailability(issue.id).then((availability) => {
-      if (current) setTerminalAvailabilityResult({ key: terminalSessionKey, availability });
-    }).catch(() => {
-      if (current) setTerminalAvailabilityResult({
-        key: terminalSessionKey,
-        availability: {
-          available: false,
-          reason: "APP_SERVER_UNAVAILABLE",
-        },
-      });
-    });
-    return () => { current = false; };
-  }, [issue.id, agentSessionId, terminalSessionKey]);
-  const openTerminal = async () => {
-    if (openingTerminalRef.current || terminalAvailability?.available !== true) return;
-    openingTerminalRef.current = true;
-    setOpeningTerminal(true);
-    try {
-      await api.openAgentTerminal(issue.id);
-      toast.success("已在 Terminal 中打开");
-    } catch {
-      toast.error("无法打开 Terminal");
-    } finally {
-      openingTerminalRef.current = false;
-      setOpeningTerminal(false);
-    }
-  };
   const timestamp = (value: string) => new Date(value).toLocaleString("zh-CN", {
     year: "numeric",
     month: "2-digit",
@@ -571,12 +589,10 @@ function IssueMetadataRail({ active, events, issue, project, workspace, onClose 
       <div><dt>项目</dt><dd><span className="project-dot" />{project?.name ?? project?.key ?? issue.projectId}</dd></div>
       {workspace?.branch ? <div className="issue-workspace-row"><dt>分支</dt><dd><code title={workspace.branch}>{workspace.branch}</code>{workspace.providerId === "git" ? <span className="workspace-kind-tag">Worktree</span> : null}</dd></div> : null}
       <div><dt>来源</dt><dd>{latestInput?.integration ?? "manual"}</dd></div>
-      <div><dt>状态</dt><dd><IssueStatusBadge status={issue.status} recoveryKind={issue.finalizationRecovery?.context?.recoveryKind} recoveryStep={issue.finalizationRecovery?.diagnostic?.step} reviewKind={issue.review?.kind} /></dd></div>
-      <div className="agent-session-row"><dt><span>Agent 会话</span><AgentTerminalAction availability={terminalAvailability} opening={openingTerminal} onOpen={() => void openTerminal()} /></dt><dd><code>{agentSessionId ?? "尚未创建"}</code></dd></div>
+      <div className="agent-session-row"><dt><span>Agent 会话</span>{terminalAction}</dt><dd><code>{agentSessionId ?? "尚未创建"}</code></dd></div>
       <div><dt>创建时间</dt><dd><time>{timestamp(issue.createdAt)}</time></dd></div>
       <div><dt>更新时间</dt><dd><time>{timestamp(issue.updatedAt)}</time></dd></div>
     </dl>
-    <AgentActivity active={active} events={events} />
   </aside>;
 }
 

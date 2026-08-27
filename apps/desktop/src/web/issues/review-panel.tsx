@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popove
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group.js";
 import { Textarea } from "../components/ui/textarea.js";
 import { CancelIssueButton } from "./cancel-issue-button.js";
-import { ReviewCompactContext, ReviewRenderer, ReviewResponseFields } from "./review-renderers.js";
+import { ReviewRenderer, ReviewResponseFields } from "./review-renderers.js";
 
 interface ReviewPanelProps {
   issue: IssueDto;
@@ -181,10 +181,6 @@ function ReviewPanelContent({
       {error ? <Alert className="form-error" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
 
       <div className="review-dock-row">
-        <div className="review-dock-summary">
-          <span className="approval-kicker">等待人工决定</span>
-          <ReviewCompactContext issue={issue} />
-        </div>
         <div className="review-dock-actions">
           {isComplexReview(review.kind) ? (
             <Button

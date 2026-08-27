@@ -108,8 +108,9 @@ describe("unified review panel", () => {
 
     const dock = screen.getByRole("region", { name: "验收 Delivery" });
     expect(dock).toHaveAttribute("data-review-mode", "collapsed");
-    expect(within(dock).getByText("迭代 2 · 1 项证据")).toBeVisible();
-    expect(within(dock).getByText("接受后发布已验证 commit")).toBeVisible();
+    expect(within(dock).queryByText("等待人工决定")).not.toBeInTheDocument();
+    expect(within(dock).queryByText("迭代 2 · 1 项证据")).not.toBeInTheDocument();
+    expect(within(dock).queryByText("接受后发布已验证 commit")).not.toBeInTheDocument();
     expect(within(dock).queryByRole("radiogroup")).not.toBeInTheDocument();
     expect(within(dock).queryByLabelText(/补充说明/)).not.toBeInTheDocument();
 
