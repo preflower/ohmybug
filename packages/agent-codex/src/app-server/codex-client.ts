@@ -7,6 +7,7 @@ import {
   type CodexClient,
   type CodexClientEvent,
   type CodexClientItem,
+  type CodexCommandAction,
   type CodexThread,
   type CodexThreadOptions,
   type CodexTurnOptions,
@@ -280,6 +281,17 @@ const turnSchema = z.object({
 }).passthrough();
 const correlatedSchema = z.object({ threadId: z.string().min(1), turnId: z.string().min(1) }).passthrough();
 const itemSchema = z.object({ type: z.string(), id: z.string().optional() }).passthrough();
+const commandOutputSchema = correlatedSchema.extend({
+  itemId: z.string().min(1),
+  delta: z.string(),
+});
+const planUpdatedSchema = correlatedSchema.extend({
+  explanation: z.string().nullable().optional(),
+  plan: z.array(z.object({
+    step: z.string(),
+    status: z.enum(["pending", "inProgress", "completed"]),
+  }).passthrough()),
+});
 
 function parseRoutedNotification(
   notification: { method: string; params: unknown },
@@ -294,6 +306,39 @@ function parseRoutedNotification(
         threadId: params.threadId,
         turnId: params.turnId,
         item: normalizeItem(params.item),
+      },
+    };
+  }
+  if (notification.method === "item/commandExecution/outputDelta") {
+    const params = commandOutputSchema.parse(notification.params);
+    return {
+      threadId: params.threadId,
+      turnId: params.turnId,
+      event: {
+        type: "item.updated",
+        threadId: params.threadId,
+        turnId: params.turnId,
+        item: { type: "command_output", id: params.itemId, delta: params.delta },
+      },
+    };
+  }
+  if (notification.method === "turn/plan/updated") {
+    const params = planUpdatedSchema.parse(notification.params);
+    return {
+      threadId: params.threadId,
+      turnId: params.turnId,
+      event: {
+        type: "item.updated",
+        threadId: params.threadId,
+        turnId: params.turnId,
+        item: {
+          type: "plan",
+          ...(params.explanation ? { explanation: params.explanation } : {}),
+          steps: params.plan.map(({ step, status }) => ({
+            step,
+            status: status === "inProgress" ? "in_progress" : status,
+          })),
+        },
       },
     };
   }
@@ -343,12 +388,21 @@ function parseRoutedNotification(
 
 function normalizeItem(item: z.infer<typeof itemSchema>): CodexClientItem {
   if (item.type === "agentMessage" && typeof item.text === "string") {
-    return { type: "agent_message", text: item.text };
+    const phase = item.phase === "commentary" || item.phase === "final_answer" ? item.phase : undefined;
+    return {
+      type: "agent_message",
+      ...(item.id ? { id: item.id } : {}),
+      text: item.text,
+      ...(phase ? { phase } : {}),
+    };
   }
   if (item.type === "reasoning") {
     const summary = Array.isArray(item.summary) ? item.summary.filter(isString) : [];
-    const content = Array.isArray(item.content) ? item.content.filter(isString) : [];
-    return { type: "reasoning", text: [...summary, ...content].join("\n") };
+    return {
+      type: "reasoning",
+      ...(item.id ? { id: item.id } : {}),
+      summary: summary.join("\n"),
+    };
   }
   if (item.type === "commandExecution" && typeof item.command === "string") {
     const status = item.status === "inProgress" ? "in_progress"
@@ -359,6 +413,24 @@ function normalizeItem(item: z.infer<typeof itemSchema>): CodexClientItem {
       command: item.command,
       status,
       output: typeof item.aggregatedOutput === "string" ? item.aggregatedOutput : "",
+      actions: Array.isArray(item.commandActions)
+        ? item.commandActions.flatMap(normalizeCommandAction)
+        : [],
+    };
+  }
+  if (
+    item.type === "collabAgentToolCall"
+    && typeof item.tool === "string"
+    && typeof item.status === "string"
+  ) {
+    const status = item.status === "inProgress"
+      ? "in_progress"
+      : item.status === "completed" ? "completed" : "failed";
+    return {
+      type: "collaboration",
+      ...(item.id ? { id: item.id } : {}),
+      tool: item.tool,
+      status,
     };
   }
   if (item.type === "fileChange") {
@@ -373,7 +445,26 @@ function normalizeItem(item: z.infer<typeof itemSchema>): CodexClientItem {
       )),
     };
   }
-  return { type: "other", name: item.type };
+  return { type: "other", ...(item.id ? { id: item.id } : {}), name: item.type };
+}
+
+function normalizeCommandAction(value: unknown): CodexCommandAction[] {
+  if (!value || typeof value !== "object" || !("type" in value)) return [];
+  const action = value as Record<string, unknown>;
+  if (action.type === "read" && typeof action.name === "string" && typeof action.path === "string") {
+    return [{ type: "read", name: action.name, path: action.path }];
+  }
+  if (action.type === "listFiles") {
+    return [{ type: "list_files", ...(typeof action.path === "string" ? { path: action.path } : {}) }];
+  }
+  if (action.type === "search") {
+    return [{
+      type: "search",
+      ...(typeof action.query === "string" ? { query: action.query } : {}),
+      ...(typeof action.path === "string" ? { path: action.path } : {}),
+    }];
+  }
+  return action.type === "unknown" ? [{ type: "unknown" }] : [];
 }
 
 class EventQueue implements AsyncIterable<CodexClientEvent> {

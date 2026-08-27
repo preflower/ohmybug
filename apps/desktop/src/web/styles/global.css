@@ -1317,6 +1317,23 @@ a:focus-visible {
   text-overflow: clip;
 }
 
+.codex-terminal .activity-log-status .activity-log-entry-heading > p {
+  color: #f1f2f4;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.codex-terminal .activity-log-status .activity-log-entry-heading > svg {
+  color: #a9a1ff;
+}
+
+.codex-terminal .activity-log-message .activity-log-entry-heading > p {
+  color: #e7e9ed;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .codex-terminal .activity-log-failed .activity-command-status,
 .codex-terminal .activity-log-error .activity-log-entry-heading,
 .codex-terminal .activity-log-error .activity-log-entry-heading > svg {

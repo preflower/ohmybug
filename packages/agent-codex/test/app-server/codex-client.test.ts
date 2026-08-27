@@ -18,6 +18,169 @@ afterEach(async () => {
 });
 
 describe("App Server Codex client", () => {
+  it("normalizes public CLI activity from the owned turn", async () => {
+    const rpc = new FixtureConnection();
+    rpc.respond("thread/start", { thread: { id: "thread-1" } });
+    rpc.respond("turn/start", { turn: { id: "turn-1" } });
+    const client = fixtureClient(rpc);
+    const thread = client.startThread(threadOptions("/repo"));
+    const stream = await thread.runStreamed("Inspect checkout", { outputSchema: {} });
+    const collecting = collect(stream);
+
+    rpc.emit({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        completedAtMs: 1,
+        item: {
+          type: "agentMessage",
+          id: "commentary-1",
+          text: "I’ll inspect the checkout path first.",
+          phase: "commentary",
+          memoryCitation: null,
+        },
+      },
+    });
+    rpc.emit({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        completedAtMs: 2,
+        item: {
+          type: "reasoning",
+          id: "reasoning-1",
+          summary: ["Tracing checkout hydration"],
+          content: ["private chain of thought"],
+        },
+      },
+    });
+    rpc.emit({
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        startedAtMs: 3,
+        item: {
+          type: "commandExecution",
+          id: "command-1",
+          command: "rg -n checkout src",
+          commandActions: [{ type: "search", command: "rg -n checkout src", query: "checkout", path: "src" }],
+          cwd: "/repo",
+          status: "inProgress",
+          aggregatedOutput: null,
+        },
+      },
+    });
+    rpc.emit({
+      method: "item/commandExecution/outputDelta",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "command-1",
+        delta: "src/checkout.ts:42\n",
+      },
+    });
+    rpc.emit({
+      method: "turn/plan/updated",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        explanation: "Checkout path located",
+        plan: [
+          { step: "Trace checkout", status: "completed" },
+          { step: "Fix hydration", status: "inProgress" },
+        ],
+      },
+    });
+    rpc.emit({
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        startedAtMs: 4,
+        item: {
+          type: "collabAgentToolCall",
+          id: "wait-1",
+          tool: "wait",
+          status: "inProgress",
+          senderThreadId: "thread-1",
+          receiverThreadIds: ["thread-child"],
+          agentsStates: {},
+          model: null,
+          reasoningEffort: null,
+          prompt: null,
+        },
+      },
+    });
+    rpc.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+
+    await expect(collecting).resolves.toEqual([
+      { type: "thread.started", threadId: "thread-1" },
+      { type: "turn.started", threadId: "thread-1", turnId: "turn-1" },
+      {
+        type: "item.completed",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "agent_message",
+          id: "commentary-1",
+          text: "I’ll inspect the checkout path first.",
+          phase: "commentary",
+        },
+      },
+      {
+        type: "item.completed",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "reasoning", id: "reasoning-1", summary: "Tracing checkout hydration" },
+      },
+      {
+        type: "item.started",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "command_execution",
+          id: "command-1",
+          command: "rg -n checkout src",
+          status: "in_progress",
+          output: "",
+          actions: [{ type: "search", query: "checkout", path: "src" }],
+        },
+      },
+      {
+        type: "item.updated",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "command_output", id: "command-1", delta: "src/checkout.ts:42\n" },
+      },
+      {
+        type: "item.updated",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "plan",
+          explanation: "Checkout path located",
+          steps: [
+            { step: "Trace checkout", status: "completed" },
+            { step: "Fix hydration", status: "in_progress" },
+          ],
+        },
+      },
+      {
+        type: "item.started",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "collaboration", id: "wait-1", tool: "wait", status: "in_progress" },
+      },
+      { type: "turn.completed", threadId: "thread-1", turnId: "turn-1" },
+    ]);
+  });
+
   it("starts a thread and normalizes only its owned turn", async () => {
     const rpc = new FixtureConnection();
     rpc.respond("thread/start", { thread: { id: "thread-1" } });
@@ -64,7 +227,7 @@ describe("App Server Codex client", () => {
         type: "item.completed",
         threadId: "thread-1",
         turnId: "turn-runtime",
-        item: { type: "agent_message", text: "{\"ok\":true}" },
+        item: { type: "agent_message", id: "answer", text: "{\"ok\":true}" },
       },
       { type: "turn.completed", threadId: "thread-1", turnId: "turn-runtime" },
     ]);
@@ -109,7 +272,7 @@ describe("App Server Codex client", () => {
       type: "item.completed",
       threadId: "thread-1",
       turnId: "turn-early",
-      item: { type: "agent_message", text: "early answer" },
+      item: { type: "agent_message", id: "early", text: "early answer" },
     });
   });
 

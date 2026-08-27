@@ -14,6 +14,33 @@ function openActivity(label: string | RegExp): HTMLElement {
 }
 
 describe("Agent activity", () => {
+  it("renders CLI-equivalent statuses, messages, and correlated live command output", () => {
+    const streamedOutput = "x".repeat(2_100);
+    render(<CodexTerminal active events={[
+      { id: "issue-1:1", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { logicalSessionId: "session-1", message: "Codex 开始实现" } },
+      { id: "issue-1:2", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "AGENT_STATUS", occurredAt: "2026-08-24T09:00:01Z", data: { logicalSessionId: "session-1", message: "Started" } },
+      { id: "issue-1:3", issueId: "issue-1", sequence: 3, actor: "AGENT", type: "AGENT_STATUS", occurredAt: "2026-08-24T09:00:02Z", data: { logicalSessionId: "session-1", message: "Working" } },
+      { id: "issue-1:4", issueId: "issue-1", sequence: 4, actor: "AGENT", type: "AGENT_MESSAGE", occurredAt: "2026-08-24T09:00:03Z", data: { logicalSessionId: "session-1", message: "I’ll inspect the checkout path first." } },
+      { id: "issue-1:5", issueId: "issue-1", sequence: 5, actor: "AGENT", type: "AGENT_STATUS", occurredAt: "2026-08-24T09:00:04Z", data: { logicalSessionId: "session-1", message: "Explored", detail: "Search checkout in src" } },
+      { id: "issue-1:6", issueId: "issue-1", sequence: 6, actor: "AGENT", type: "AGENT_COMMAND_STARTED", occurredAt: "2026-08-24T09:00:05Z", data: { logicalSessionId: "session-1", correlationId: "command-1", message: "正在执行项目命令", detail: "$ pnpm test" } },
+      { id: "issue-1:7", issueId: "issue-1", sequence: 7, actor: "AGENT", type: "AGENT_COMMAND_OUTPUT", occurredAt: "2026-08-24T09:00:06Z", data: { logicalSessionId: "session-1", correlationId: "command-1", message: "命令输出", detail: streamedOutput.slice(0, 1_050) } },
+      { id: "issue-1:8", issueId: "issue-1", sequence: 8, actor: "AGENT", type: "AGENT_COMMAND_OUTPUT", occurredAt: "2026-08-24T09:00:07Z", data: { logicalSessionId: "session-1", correlationId: "command-1", message: "命令输出", detail: streamedOutput.slice(1_050) } },
+      { id: "issue-1:9", issueId: "issue-1", sequence: 9, actor: "AGENT", type: "AGENT_STATUS", occurredAt: "2026-08-24T09:00:08Z", data: { logicalSessionId: "session-1", message: "Waiting", detail: "等待子 Agent" } },
+      { id: "issue-1:10", issueId: "issue-1", sequence: 10, actor: "AGENT", type: "AGENT_COMMAND_COMPLETED", occurredAt: "2026-08-24T09:00:09Z", data: { logicalSessionId: "session-1", correlationId: "command-1", message: "项目命令执行完成", detail: `$ pnpm test\n${"x".repeat(1_997)}...` } },
+    ]} sessionId="session-1" />);
+
+    const terminal = screen.getByRole("region", { name: "Codex Terminal" });
+    for (const status of ["Started", "Working", "Explored", "Waiting"]) {
+      expect(within(terminal).getByText(status).closest(".activity-log-status")).not.toBeNull();
+    }
+    expect(within(terminal).getByText("I’ll inspect the checkout path first.").closest(".activity-log-message"))
+      .not.toBeNull();
+    expect(within(terminal).getByText("Search checkout in src")).toBeVisible();
+    expect(within(terminal).getByText("等待子 Agent")).toBeVisible();
+    expect(within(terminal).queryByText("命令输出")).not.toBeInTheDocument();
+    expect(within(terminal).getByLabelText("命令输出：$ pnpm test")).toHaveTextContent(streamedOutput);
+  });
+
   it("shows a read-only Codex Terminal only after current execution output arrives", () => {
     const events: AgentEventDto[] = [
       { id: "issue-1:1", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始实现" } },

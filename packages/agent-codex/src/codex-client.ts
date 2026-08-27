@@ -9,13 +9,22 @@ export interface CodexThreadOptions {
 
 export interface CodexTurnOptions { outputSchema: unknown; signal?: AbortSignal }
 
+export type CodexCommandAction =
+  | { type: "read"; name: string; path: string }
+  | { type: "list_files"; path?: string }
+  | { type: "search"; query?: string; path?: string }
+  | { type: "unknown" };
+
 export type CodexClientItem =
-  | { type: "agent_message"; text: string }
-  | { type: "reasoning"; text: string }
-  | { type: "command_execution"; id?: string; command: string; status: "in_progress" | "completed" | "failed"; output: string }
+  | { type: "agent_message"; id?: string; text: string; phase?: "commentary" | "final_answer" }
+  | { type: "reasoning"; id?: string; summary: string }
+  | { type: "command_execution"; id?: string; command: string; status: "in_progress" | "completed" | "failed"; output: string; actions: CodexCommandAction[] }
+  | { type: "command_output"; id: string; delta: string }
+  | { type: "plan"; explanation?: string; steps: Array<{ step: string; status: "pending" | "in_progress" | "completed" }> }
+  | { type: "collaboration"; id?: string; tool: string; status: "in_progress" | "completed" | "failed" }
   | { type: "file_change"; status: "completed" | "failed"; paths: string[] }
   | { type: "error"; message: string }
-  | { type: "other"; name: string };
+  | { type: "other"; id?: string; name: string };
 
 export type CodexClientEvent =
   | { type: "thread.started"; threadId: string }

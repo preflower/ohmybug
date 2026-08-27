@@ -31,6 +31,7 @@ import {
 import type {
   CodexClient,
   CodexClientEvent,
+  CodexClientItem,
   CodexThread,
   CodexThreadOptions,
 } from "./codex-client.js";
@@ -76,12 +77,18 @@ interface ActiveTurn {
   finish(): void;
 }
 
+interface CommandStreamState {
+  buffer: string;
+  discardingUntilNewline: boolean;
+}
+
 type CodexStageThreadOptions = Omit<CodexThreadOptions, "sessionId">;
 
 export class CodexAgentAdapter implements AgentAdapter {
   private readonly client: CodexClient;
   private readonly now: () => Date;
   private readonly active = new Map<string, ActiveTurn>();
+  private readonly commandStreams = new Map<string, CommandStreamState>();
 
   constructor(private readonly options: CodexAgentAdapterOptions) {
     this.client = options.client;
@@ -305,6 +312,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     const active: ActiveTurn = { abort, done, finish };
     this.active.set(session.sessionId, active);
     let thread: CodexThread | undefined;
+    let ownedTurn: { threadId: string; turnId: string } | undefined;
     let failureReported = false;
     try {
       const state = await this.options.sessions.get(session.sessionId);
@@ -318,7 +326,6 @@ export class CodexAgentAdapter implements AgentAdapter {
         : this.client.startThread({ ...threadOptions, sessionId: session.sessionId });
       const events = await thread.runStreamed(prompt, { outputSchema, signal: abort.signal });
       let lastMessage: string | undefined;
-      let ownedTurn: { threadId: string; turnId: string } | undefined;
       for await (const event of events) {
         assertActive(abort.signal);
         if (event.type === "turn.started") {
@@ -357,6 +364,9 @@ export class CodexAgentAdapter implements AgentAdapter {
       }
       throw error;
     } finally {
+      if (ownedTurn) {
+        clearCommandStreams(this.commandStreams, ownedTurn.threadId, ownedTurn.turnId);
+      }
       try {
         await thread?.dispose();
       } catch (error) {
@@ -411,12 +421,13 @@ export class CodexAgentAdapter implements AgentAdapter {
     stage: CodexActivity["stage"],
     event: CodexClientEvent,
   ): Promise<void> {
-    const update = publicActivity(sessionId, stage, event);
-    if (!update || !this.options.reportActivity) return;
-    try {
-      await this.options.reportActivity(update);
-    } catch {
-      // Activity reporting is observational and must never fail the Agent turn.
+    if (!this.options.reportActivity) return;
+    for (const update of publicActivities(sessionId, stage, event, this.commandStreams)) {
+      try {
+        await this.options.reportActivity(update);
+      } catch {
+        // Activity reporting is observational and must never fail the Agent turn.
+      }
     }
   }
 
@@ -513,11 +524,12 @@ function assertActive(signal: AbortSignal): void {
   if (signal.aborted) throw canceledError(signal.reason);
 }
 
-function publicActivity(
+function publicActivities(
   sessionId: string,
   stage: CodexActivity["stage"],
   event: CodexClientEvent,
-): AgentActivityUpdate | undefined {
+  commandStreams: Map<string, CommandStreamState>,
+): AgentActivityUpdate[] {
   const stageName = stage === "ASSESSMENT"
     ? "分析"
     : stage === "REPAIR"
@@ -526,78 +538,217 @@ function publicActivity(
         ? "采集证据"
         : "交付恢复";
   if (event.type === "thread.started") {
-    return activity(sessionId, stage, "AGENT_SESSION_CONNECTED", "Codex 会话已连接");
+    return [activity(sessionId, stage, "AGENT_SESSION_CONNECTED", "Codex 会话已连接")];
   }
   if (event.type === "turn.started") {
-    return activity(sessionId, stage, "AGENT_TURN_STARTED", `Codex 开始${stageName}`);
+    return [
+      activity(sessionId, stage, "AGENT_TURN_STARTED", `Codex 开始${stageName}`),
+      activity(sessionId, stage, "AGENT_STATUS", "Started"),
+      activity(sessionId, stage, "AGENT_STATUS", "Working"),
+    ];
   }
   if (event.type === "turn.completed") {
-    return activity(sessionId, stage, "AGENT_TURN_COMPLETED", `Codex 已完成${stageName}`);
+    clearCommandStreams(commandStreams, event.threadId, event.turnId);
+    return [activity(sessionId, stage, "AGENT_TURN_COMPLETED", `Codex 已完成${stageName}`)];
   }
   if (event.type === "turn.failed" || event.type === "error") {
-    return activity(
+    if (event.threadId && event.turnId) {
+      clearCommandStreams(commandStreams, event.threadId, event.turnId);
+    }
+    return [activity(
       sessionId,
       stage,
       "AGENT_ERROR",
       publicErrorSummary(event.message),
       sanitizeDiagnostic(event.message),
       "error",
-    );
+    )];
   }
   if (event.type === "cleanup.failed") {
-    return activity(
+    return [activity(
       sessionId,
       stage,
       "AGENT_TEMP_CLEANUP_FAILED",
       "Agent 临时目录清理失败",
       sanitizeDiagnostic(event.message),
       "error",
-    );
+    )];
   }
-  if (event.type === "item.updated") return undefined;
   const item = event.item;
+  if (item.type === "command_output") {
+    return consumeCommandOutput(
+      commandStreams,
+      commandStreamKey(event.threadId, event.turnId, item.id),
+      item.delta,
+    ).map((detail) => withCorrelationId(activity(
+          sessionId,
+          stage,
+          "AGENT_COMMAND_OUTPUT",
+          "命令输出",
+          detail,
+        ), item.id));
+  }
+  if (item.type === "plan") {
+    const detail = sanitizeDiagnostic(formatPlan(item));
+    return [activity(sessionId, stage, "AGENT_STATUS", "Working", detail)];
+  }
+  if (item.type === "agent_message") {
+    if (
+      event.type !== "item.completed"
+      || item.phase !== "commentary"
+      || isStructuredResultPayload(item.text)
+    ) return [];
+    const message = sanitizeDiagnostic(item.text);
+    return message ? [activity(sessionId, stage, "AGENT_MESSAGE", message)] : [];
+  }
+  if (item.type === "reasoning") {
+    if (event.type !== "item.completed") return [];
+    const message = sanitizeDiagnostic(item.summary);
+    return message ? [activity(sessionId, stage, "AGENT_MESSAGE", message)] : [];
+  }
   if (item.type === "command_execution") {
+    const exploration = explorationDetail(item.actions ?? []);
     if (event.type === "item.started") {
-      return withCorrelationId(activity(
+      const updates = [];
+      if (exploration) {
+        updates.push(withCorrelationId(activity(
+          sessionId,
+          stage,
+          "AGENT_STATUS",
+          "Exploring",
+          sanitizeDiagnostic(exploration),
+        ), item.id));
+      }
+      updates.push(withCorrelationId(activity(
         sessionId,
         stage,
         "AGENT_COMMAND_STARTED",
         "正在执行项目命令",
         sanitizeDiagnostic(`$ ${item.command}`),
-      ), item.id);
+      ), item.id));
+      return updates;
     }
     const failed = item.status === "failed";
-    return withCorrelationId(activity(
+    const updates = item.id
+      ? flushCommandOutput(
+          commandStreams,
+          commandStreamKey(event.threadId, event.turnId, item.id),
+        ).map((detail) => withCorrelationId(activity(
+          sessionId,
+          stage,
+          "AGENT_COMMAND_OUTPUT",
+          "命令输出",
+          detail,
+        ), item.id))
+      : [];
+    if (exploration) {
+      updates.push(withCorrelationId(activity(
+        sessionId,
+        stage,
+        "AGENT_STATUS",
+        "Explored",
+        sanitizeDiagnostic(exploration),
+      ), item.id));
+    }
+    updates.push(withCorrelationId(activity(
       sessionId,
       stage,
       failed ? "AGENT_COMMAND_FAILED" : "AGENT_COMMAND_COMPLETED",
       failed ? "项目命令执行失败" : "项目命令执行完成",
       sanitizeDiagnostic([`$ ${item.command}`, item.output].filter(Boolean).join("\n")),
       failed ? "error" : "info",
-    ), item.id);
+    ), item.id));
+    return updates;
+  }
+  if (item.type === "collaboration") {
+    if (item.tool === "wait") {
+      const waiting = event.type === "item.started" || item.status === "in_progress";
+      const failed = item.status === "failed";
+      return [withCorrelationId(activity(
+        sessionId,
+        stage,
+        "AGENT_STATUS",
+        waiting ? "Waiting" : failed ? "Waiting failed" : "Working",
+        waiting ? "等待子 Agent" : failed ? "等待子 Agent 失败" : "子 Agent 已返回",
+        failed ? "error" : "info",
+      ), item.id)];
+    }
+    return [withCorrelationId(activity(
+      sessionId,
+      stage,
+      "AGENT_STATUS",
+      "Working",
+      collaborationDetail(item.tool),
+      item.status === "failed" ? "error" : "info",
+    ), item.id)];
   }
   if (event.type === "item.completed" && item.type === "file_change") {
     const count = item.paths.length;
-    return activity(
+    return [activity(
       sessionId,
       stage,
       item.status === "failed" ? "AGENT_FILES_CHANGE_FAILED" : "AGENT_FILES_CHANGED",
       item.status === "failed" ? "文件更新失败" : `已更新 ${count} 个文件`,
       sanitizeDiagnostic(item.paths.join("\n")),
       item.status === "failed" ? "error" : "info",
-    );
+    )];
   }
   if (item.type === "error") {
-    return activity(
+    return [activity(
       sessionId,
       stage,
       "AGENT_ERROR",
       publicErrorSummary(item.message),
       sanitizeDiagnostic(item.message),
       "error",
-    );
+    )];
   }
-  return undefined;
+  return [];
+}
+
+function explorationDetail(actions: Extract<CodexClientItem, { type: "command_execution" }>["actions"]): string | undefined {
+  const lines = actions.flatMap((action) => {
+    if (action.type === "read") return [`Read ${action.name || action.path}`];
+    if (action.type === "list_files") return [`List${action.path ? ` ${action.path}` : " files"}`];
+    if (action.type === "search") {
+      const query = action.query ? ` ${action.query}` : "";
+      const path = action.path ? ` in ${action.path}` : "";
+      return [`Search${query}${path}`];
+    }
+    return [];
+  });
+  return lines.length ? lines.join("\n") : undefined;
+}
+
+function formatPlan(item: Extract<CodexClientItem, { type: "plan" }>): string {
+  const steps = item.steps.map(({ status, step }) => (
+    `${status === "completed" ? "✓" : status === "in_progress" ? "›" : "□"} ${step}`
+  ));
+  return [item.explanation, ...steps].filter(Boolean).join("\n");
+}
+
+function collaborationDetail(tool: string): string {
+  if (tool === "spawnAgent") return "正在启动子 Agent";
+  if (tool === "sendInput") return "正在向子 Agent 发送消息";
+  if (tool === "resumeAgent") return "正在恢复子 Agent";
+  if (tool === "closeAgent") return "正在关闭子 Agent";
+  return `子 Agent 操作：${tool}`;
+}
+
+function isStructuredResultPayload(value: string): boolean {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    const payload = parsed as Record<string, unknown>;
+    return (
+      typeof payload.outcome === "string"
+      && ("result" in payload || "capabilityRequest" in payload)
+    ) || typeof payload.verdict === "string"
+      || payload.kind === "DELIVERY_READY"
+      || payload.kind === "BUSINESS_DECISION_REQUIRED";
+  } catch {
+    return false;
+  }
 }
 
 function activity(
@@ -649,13 +800,94 @@ function publicErrorSummary(message: string): string {
 const secretAssignment = /((?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)\s*[=:]\s*)([^\s"']+)/gi;
 const bearerToken = /(bearer\s+)([^\s"']+)/gi;
 const secretQuery = /([?&](?:api[_-]?key|access[_-]?token|token|password|secret)=)([^&\s]+)/gi;
+const quotedSecretAssignment = /((?:["']?(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|password|secret)["']?)\s*[=:]\s*)(["'])(.*?)\2/gi;
+const MAX_UNTERMINATED_STREAM_OUTPUT = 64_000;
 
 function sanitizeDiagnostic(value: string): string | undefined {
-  const sanitized = value
-    .replace(secretAssignment, "$1[REDACTED]")
-    .replace(bearerToken, "$1[REDACTED]")
-    .replace(secretQuery, "$1[REDACTED]")
+  const sanitized = redactSecrets(value)
     .trim();
   if (!sanitized) return undefined;
   return sanitized.length > 2_000 ? `${sanitized.slice(0, 1_997)}...` : sanitized;
+}
+
+function sanitizeStreamChunks(value: string): string[] {
+  const sanitized = redactSecrets(value);
+  if (!sanitized) return [];
+  const chunks: string[] = [];
+  for (let offset = 0; offset < sanitized.length; offset += 2_000) {
+    chunks.push(sanitized.slice(offset, offset + 2_000));
+  }
+  return chunks;
+}
+
+function redactSecrets(value: string): string {
+  return value
+    .replace(quotedSecretAssignment, "$1$2[REDACTED]$2")
+    .replace(secretAssignment, "$1[REDACTED]")
+    .replace(bearerToken, "$1[REDACTED]")
+    .replace(secretQuery, "$1[REDACTED]");
+}
+
+function commandStreamKey(threadId: string, turnId: string, itemId: string): string {
+  return `${threadId}\0${turnId}\0${itemId}`;
+}
+
+function commandTurnPrefix(threadId: string, turnId: string): string {
+  return `${threadId}\0${turnId}\0`;
+}
+
+function consumeCommandOutput(
+  streams: Map<string, CommandStreamState>,
+  key: string,
+  delta: string,
+): string[] {
+  const state = streams.get(key) ?? { buffer: "", discardingUntilNewline: false };
+  streams.set(key, state);
+  const output: string[] = [];
+  let remaining = delta;
+
+  if (state.discardingUntilNewline) {
+    const newline = remaining.indexOf("\n");
+    if (newline === -1) return output;
+    output.push("\n");
+    state.discardingUntilNewline = false;
+    remaining = remaining.slice(newline + 1);
+  }
+
+  state.buffer += remaining;
+  let newline = state.buffer.indexOf("\n");
+  while (newline !== -1) {
+    output.push(...sanitizeStreamChunks(state.buffer.slice(0, newline + 1)));
+    state.buffer = state.buffer.slice(newline + 1);
+    newline = state.buffer.indexOf("\n");
+  }
+
+  if (state.buffer.length > MAX_UNTERMINATED_STREAM_OUTPUT) {
+    state.buffer = "";
+    state.discardingUntilNewline = true;
+    output.push("[OUTPUT REDACTED]");
+  }
+  return output;
+}
+
+function flushCommandOutput(
+  streams: Map<string, CommandStreamState>,
+  key: string,
+): string[] {
+  const state = streams.get(key);
+  streams.delete(key);
+  if (!state) return [];
+  if (state.discardingUntilNewline) return ["\n"];
+  return sanitizeStreamChunks(state.buffer);
+}
+
+function clearCommandStreams(
+  streams: Map<string, CommandStreamState>,
+  threadId: string,
+  turnId: string,
+): void {
+  const prefix = commandTurnPrefix(threadId, turnId);
+  for (const key of streams.keys()) {
+    if (key.startsWith(prefix)) streams.delete(key);
+  }
 }

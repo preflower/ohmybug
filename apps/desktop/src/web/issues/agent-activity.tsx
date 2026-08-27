@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, CircleAlert, CircleCheck, Clock3, FilePenLine, Terminal } from "lucide-react";
+import { Activity, ChevronDown, CircleAlert, CircleCheck, Clock3, FilePenLine, MessageSquareText, Terminal } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { AgentEventDto } from "../api/types.js";
@@ -150,6 +150,21 @@ function appendLine(
     return;
   }
 
+  if (event.type === "AGENT_COMMAND_OUTPUT") {
+    const correlationId = typeof event.data.correlationId === "string"
+      ? event.data.correlationId
+      : undefined;
+    const detail = typeof event.data.detail === "string" ? event.data.detail : "";
+    const pending = correlationId
+      ? pendingCommands.get(`id:${correlationId}`)?.at(-1)
+      : undefined;
+    if (pending && detail) {
+      pending.output = `${pending.output ?? ""}${detail}`;
+      pending.occurredAt = event.occurredAt;
+      return;
+    }
+  }
+
   if (event.type === "AGENT_COMMAND_COMPLETED" || event.type === "AGENT_COMMAND_FAILED") {
     const content = commandContent(event);
     const key = commandKey(event, content.command);
@@ -160,7 +175,7 @@ function appendLine(
     if (pending) {
       pending.status = status;
       pending.occurredAt = event.occurredAt;
-      pending.output = content.output;
+      if (pending.output === undefined && content.output !== undefined) pending.output = content.output;
     } else {
       group.lines.push({
         kind: "command",
@@ -332,16 +347,20 @@ function CommandLogLine({ line }: { line: CommandLine }) {
 function EventLogLine({ line }: { line: EventLine }) {
   const [detailExpanded, setDetailExpanded] = useState(false);
   const level = line.event.data.level === "error" ? "error" : "info";
+  const status = line.event.type === "AGENT_STATUS";
+  const message = line.event.type === "AGENT_MESSAGE";
   const reassessmentDetail = line.event.type === "REASSESSMENT_REQUESTED" && line.detail;
   const detailId = `activity-detail-${line.event.id}`;
   const Icon = level === "error"
     ? CircleAlert
+    : message
+      ? MessageSquareText
     : line.event.type.includes("FILES")
       ? FilePenLine
       : line.event.type.endsWith("COMPLETED") || line.event.type.endsWith("READY")
         ? CircleCheck
         : Activity;
-  return <div className={`activity-log-entry activity-log-event${level === "error" ? " activity-log-error" : ""}`}>
+  return <div className={`activity-log-entry activity-log-event${status ? " activity-log-status" : ""}${message ? " activity-log-message" : ""}${level === "error" ? " activity-log-error" : ""}`}>
     <div className="activity-log-entry-heading">
       <Icon aria-hidden="true" size={12} />
       <span className="activity-log-actor">{actorLabels[line.event.actor]}</span>
