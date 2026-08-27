@@ -701,7 +701,7 @@ a:focus-visible {
   display: grid;
   gap: 8px;
   border-bottom: 1px solid var(--border);
-  padding: 18px 0;
+  padding: 22px 0;
 }
 
 .issue-metadata-list > div:last-child {
@@ -763,6 +763,12 @@ a:focus-visible {
   line-height: 1.45;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.agent-session-row dd code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .issue-workspace-row dd {
