@@ -1,3 +1,5 @@
+import { CircleAlert, CircleCheck } from "lucide-react";
+
 import type { IssueDto, ReviewSubmissionInput } from "../api/types.js";
 import { Input } from "../components/ui/input.js";
 
@@ -99,30 +101,58 @@ export function ReviewCompactContext({ issue }: { issue: IssueDto }) {
     const iteration = payload.repairIteration ?? issue.repair?.iteration ?? "-";
     const evidenceCount = payload.evidenceCount ?? issue.repair?.delivery?.evidence.length ?? 0;
     return <>
-      <strong>迭代 {String(iteration)} · {String(evidenceCount)} 项证据</strong>
-      <span>接受后发布已验证 commit</span>
+      <span className="review-dock-phase"><CircleCheck aria-hidden="true" />交付验收</span>
+      <span className="review-dock-summary">
+        <strong>迭代 {String(iteration)} · {String(evidenceCount)} 项证据</strong>
+        <span>接受后发布已验证 commit</span>
+      </span>
     </>;
   }
 
   if (review.kind === "assessment") {
     const verdict = text(payload.verdict) ?? issue.assessment?.verdict ?? "待确认";
-    const revision = issue.assessment?.revision ?? "-";
+    const revision = payload.assessmentRevision ?? issue.assessment?.revision ?? "-";
+    const duplicateCandidate = issue.assessment?.suspectedDuplicateOf?.trim();
+    const visibleChoices = review.choices.filter((choice) =>
+      choice.id !== "duplicate" || Boolean(duplicateCandidate)
+    );
+    const implementChoice = visibleChoices.find((choice) => choice.id === "implement");
+    const closeChoice = visibleChoices.find((choice) =>
+      choice.continuation.resumeStatus === "CLOSED"
+    );
+    const reassessChoice = visibleChoices.find((choice) => choice.id === "reassess");
+    const consequence = implementChoice
+      ? `选择“${implementChoice.label}”后修改工作区并运行验证`
+      : closeChoice
+        ? `选择“${closeChoice.label}”后关闭 Issue`
+        : reassessChoice
+          ? "提交补充说明后重新分析"
+          : "选择操作后继续";
     return <>
-      <strong>{verdict} · Assessment {String(revision)}</strong>
-      <span>批准后允许 Agent 修改 Issue 工作区并运行验证</span>
+      <span className="review-dock-phase"><CircleAlert aria-hidden="true" />判断确认</span>
+      <span className="review-dock-summary">
+        <strong>{verdict} · Assessment {String(revision)}</strong>
+        <span>{consequence}</span>
+      </span>
     </>;
   }
 
   if (review.kind === "business-merge-conflict") {
     return <>
-      <strong>业务行为冲突</strong>
-      <span>选择最终语义后，Agent 将继续当前 Repair</span>
+      <span className="review-dock-phase"><CircleAlert aria-hidden="true" />业务决策</span>
+      <span className="review-dock-summary">
+        <strong>业务行为冲突</strong>
+        <span>选择最终语义后，Agent 将继续当前 Repair</span>
+      </span>
     </>;
   }
 
   return <>
-    <strong>扩展审核</strong>
-    <span>展开上下文后选择明确操作</span>
+    <span className="review-dock-phase"><CircleAlert aria-hidden="true" />人工审核</span>
+    <span className="review-dock-summary">
+      <strong>扩展审核</strong>
+      <span>展开上下文后选择明确操作</span>
+    </span>
   </>;
 }
 

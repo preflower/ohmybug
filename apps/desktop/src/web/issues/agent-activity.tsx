@@ -35,6 +35,7 @@ const eventLabels: Record<string, string> = {
   DELIVERY_READY: "改动完成，等待验收",
   DELIVERY_REJECTED: "验收未通过，继续实现",
   DELIVERY_APPROVED: "改动已验收",
+  BASE_INTEGRATION_STALE: "基线已更新，正在重新集成并验证",
   DELIVERY_FINALIZATION_RECOVERY_STARTED: "交付失败，已启动 AI 自动恢复",
   DELIVERY_FINALIZATION_RECOVERY_COMPLETED: "AI 交付恢复已完成",
   DELIVERY_FINALIZATION_RECOVERY_FAILED: "AI 交付恢复未能安全完成",

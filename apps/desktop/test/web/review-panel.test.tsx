@@ -108,9 +108,9 @@ describe("unified review panel", () => {
 
     const dock = screen.getByRole("region", { name: "验收 Delivery" });
     expect(dock).toHaveAttribute("data-review-mode", "collapsed");
-    expect(within(dock).queryByText("等待人工决定")).not.toBeInTheDocument();
-    expect(within(dock).queryByText("迭代 2 · 1 项证据")).not.toBeInTheDocument();
-    expect(within(dock).queryByText("接受后发布已验证 commit")).not.toBeInTheDocument();
+    expect(within(dock).getByText("交付验收")).toBeVisible();
+    expect(within(dock).getByText("迭代 2 · 1 项证据")).toBeVisible();
+    expect(within(dock).getByText("接受后发布已验证 commit")).toBeVisible();
     expect(within(dock).queryByRole("radiogroup")).not.toBeInTheDocument();
     expect(within(dock).queryByLabelText(/补充说明/)).not.toBeInTheDocument();
     expect(within(dock).getAllByRole("button").map((button) =>
@@ -200,7 +200,7 @@ describe("unified review panel", () => {
         id: "review-assessment-1",
         kind: "assessment",
         requestedFrom: "ASSESSING",
-        payload: { verdict: "BUG" },
+        payload: { verdict: "BUG", assessmentRevision: 4 },
         choices: [{
           id: "implement",
           label: "开始实现",
@@ -216,6 +216,11 @@ describe("unified review panel", () => {
     };
     render(<ReviewPanel issue={assessmentIssue} onSubmit={async () => undefined} />);
 
+    const dock = screen.getByRole("region", { name: "确认 Assessment" });
+    expect(within(dock).getByText("判断确认")).toBeVisible();
+    expect(within(dock).getByText("BUG · Assessment 4")).toBeVisible();
+    expect(within(dock).getByText("选择“开始实现”后修改工作区并运行验证")).toBeVisible();
+
     fireEvent.click(screen.getByRole("button", { name: "要求重新分析" }));
     expect(screen.getByLabelText("补充说明（必填）")).toBe(document.activeElement);
     const composer = document.querySelector<HTMLElement>(".review-composer");
@@ -230,6 +235,86 @@ describe("unified review panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "开始实现" }));
     expect(screen.getByLabelText("Issue 标题")).toHaveValue("Checkout cancellation semantics");
     expect(screen.queryByLabelText("补充说明（必填）")).not.toBeInTheDocument();
+  });
+
+  it("does not promise implementation for a no-change Assessment", () => {
+    render(<ReviewPanel issue={{
+      ...issue,
+      assessment: { ...issue.assessment!, verdict: "NOT_A_BUG" },
+      review: {
+        id: "review-assessment-no-change",
+        kind: "assessment",
+        requestedFrom: "ASSESSING",
+        payload: { verdict: "NOT_A_BUG" },
+        choices: [{
+          id: "not-a-bug",
+          label: "确认不是问题",
+          continuation: { resumeStatus: "CLOSED", resolution: "NOT_A_BUG" },
+        }, {
+          id: "reassess",
+          label: "要求重新分析",
+          feedbackRequired: true,
+          continuation: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+        }],
+        requestedAt: timestamp,
+      },
+    }} onSubmit={async () => undefined} />);
+
+    const dock = screen.getByRole("region", { name: "确认 Assessment" });
+    expect(within(dock).getByText("选择“确认不是问题”后关闭 Issue")).toBeVisible();
+    expect(within(dock).queryByText(/修改工作区/)).not.toBeInTheDocument();
+  });
+
+  it("describes a reassess-only Assessment without promising closure", () => {
+    render(<ReviewPanel issue={{
+      ...issue,
+      assessment: { ...issue.assessment!, verdict: "UNCERTAIN" },
+      review: {
+        id: "review-assessment-uncertain",
+        kind: "assessment",
+        requestedFrom: "ASSESSING",
+        payload: { verdict: "UNCERTAIN", assessmentRevision: 2 },
+        choices: [{
+          id: "reassess",
+          label: "补充信息后重试",
+          feedbackRequired: true,
+          continuation: { operation: "ASSESS", resumeStatus: "ASSESSING" },
+        }],
+        requestedAt: timestamp,
+      },
+    }} onSubmit={async () => undefined} />);
+
+    const dock = screen.getByRole("region", { name: "确认 Assessment" });
+    expect(within(dock).getByText("UNCERTAIN · Assessment 2")).toBeVisible();
+    expect(within(dock).getByText("提交补充说明后重新分析")).toBeVisible();
+    expect(within(dock).queryByText(/关闭 Issue|修改工作区/)).not.toBeInTheDocument();
+  });
+
+  it("describes the primary implementation action when duplicate is also available", () => {
+    render(<ReviewPanel issue={{
+      ...issue,
+      assessment: { ...issue.assessment!, suspectedDuplicateOf: "CHK-9" },
+      review: {
+        id: "review-assessment-mixed",
+        kind: "assessment",
+        requestedFrom: "ASSESSING",
+        payload: { verdict: "BUG", assessmentRevision: 3 },
+        choices: [{
+          id: "implement",
+          label: "实现功能",
+          continuation: { operation: "REPAIR", resumeStatus: "REPAIRING" },
+        }, {
+          id: "duplicate",
+          label: "确认为重复 Issue",
+          continuation: { resumeStatus: "CLOSED", resolution: "DUPLICATE" },
+        }],
+        requestedAt: timestamp,
+      },
+    }} onSubmit={async () => undefined} />);
+
+    const dock = screen.getByRole("region", { name: "确认 Assessment" });
+    expect(within(dock).getByText("选择“实现功能”后修改工作区并运行验证")).toBeVisible();
+    expect(within(dock).queryByText(/^确认后/)).not.toBeInTheDocument();
   });
 
   it("hides a persisted duplicate choice when Assessment did not suggest a target", () => {

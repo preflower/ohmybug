@@ -101,6 +101,51 @@ describe("Issue detail", () => {
     expect(screen.queryByText(/结果：/)).not.toBeInTheDocument();
   });
 
+  it("explains why an accepted Delivery returned to implementation", () => {
+    render(<IssueDetail
+      agentEvents={[{
+        id: "issue-1:stale-3",
+        issueId: "issue-1",
+        sequence: 3,
+        actor: "SYSTEM",
+        type: "BASE_INTEGRATION_STALE",
+        occurredAt: "2026-08-19T09:09:00.000Z",
+        data: { currentBaseCommit: "b".repeat(40), iteration: 3 },
+      }]}
+      issue={{
+        ...issue,
+        status: "REPAIRING",
+        resolution: undefined,
+        repair: {
+          iteration: 3,
+        },
+      }}
+      onPause={async () => undefined}
+      onRefresh={async () => undefined}
+    />);
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("基线已更新，正在重新集成并验证");
+    expect(status).toHaveTextContent("完成后会生成新的交付证据，需要再次验收。");
+  });
+
+  it("does not infer baseline revalidation from free-form Repair feedback", () => {
+    render(<IssueDetail
+      issue={{
+        ...issue,
+        status: "REPAIRING",
+        resolution: undefined,
+        repair: {
+          iteration: 3,
+          feedback: `The baseline advanced to ${"b".repeat(40)}. This sentence came from a reviewer.`,
+        },
+      }}
+      onRefresh={async () => undefined}
+    />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("shows concise Evidence and Delivery artifacts after execution", () => {
     vi.spyOn(api, "evidenceSource").mockResolvedValue({ url: "blob:checkout-shot" });
     render(<IssueDetail agentActive={false} agentEvents={[]} issue={issue} onRefresh={async () => undefined} />);
