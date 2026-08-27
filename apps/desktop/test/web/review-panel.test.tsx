@@ -113,6 +113,17 @@ describe("unified review panel", () => {
     expect(within(dock).queryByText("接受后发布已验证 commit")).not.toBeInTheDocument();
     expect(within(dock).queryByRole("radiogroup")).not.toBeInTheDocument();
     expect(within(dock).queryByLabelText(/补充说明/)).not.toBeInTheDocument();
+    expect(within(dock).getAllByRole("button").map((button) =>
+      button.getAttribute("aria-label") ?? button.textContent
+    )).toEqual(["要求修改", "接受交付"]);
+    expect(within(dock).getByRole("button", { name: "要求修改" })).toHaveAttribute(
+      "data-variant",
+      "secondary",
+    );
+    expect(within(dock).getByRole("button", { name: "接受交付" })).toHaveAttribute(
+      "data-variant",
+      "default",
+    );
 
     fireEvent.click(within(dock).getByRole("button", { name: "接受交付" }));
     await act(async () => undefined);
