@@ -87,6 +87,7 @@ describe("Electron source hot reload", () => {
       issues: [
         { projectId: "dev-style-ohmybug", identifier: "OHMYBUG-1", status: "REVIEW_REQUIRED" },
         { projectId: "dev-style-ohmybug", identifier: "OHMYBUG-2", status: "REVIEW_REQUIRED" },
+        { projectId: "dev-style-ohmybug", identifier: "OHMYBUG-3", status: "REPAIRING" },
       ],
       issueEvents: {
         "dev-style-issue-assessment": expect.arrayContaining([
@@ -94,6 +95,10 @@ describe("Electron source hot reload", () => {
         ]),
         "dev-style-issue-acceptance": expect.arrayContaining([
           expect.objectContaining({ type: "DELIVERY_READY", sequence: 1 }),
+        ]),
+        "dev-style-issue-terminal": expect.arrayContaining([
+          expect.objectContaining({ type: "AGENT_TURN_STARTED", sequence: 1 }),
+          expect.objectContaining({ type: "AGENT_COMMAND_STARTED", sequence: 3 }),
         ]),
       },
     });

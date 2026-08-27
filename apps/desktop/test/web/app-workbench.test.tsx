@@ -350,13 +350,13 @@ describe("control center workbench", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "更多 Issue 操作" }));
-    fireEvent.click(screen.getByRole("button", { name: "取消 Issue" }));
+    fireEvent.click(await screen.findByRole("button", { name: "取消 Issue" }));
     fireEvent.click(screen.getByRole("button", { name: "确认取消" }));
 
     await waitFor(() => expect(cancel).toHaveBeenCalledWith(issue.id));
     expect(screen.getByRole("heading", { level: 2, name: issue.title })).toBeVisible();
     expect(screen.getByRole("region", { name: "Issue 详情" })).toBeVisible();
-    expect(screen.getByTestId("issue-metadata-rail")).toHaveTextContent("已取消");
+    expect(screen.getByTestId("issue-metadata-rail")).not.toHaveTextContent("已取消");
     expect(screen.getByRole("region", { name: "Issue 列表" })).toHaveTextContent(
       "没有符合筛选条件的 Issue",
     );
@@ -594,6 +594,45 @@ describe("control center workbench", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent(label);
   });
 
+  it("moves the Terminal action into transient output and keeps the metadata rail state-free", async () => {
+    const selected = {
+      ...issue,
+      status: "REPAIRING",
+      resolution: undefined,
+      agentSession: { agent: "codex", sessionId: "session-1" },
+    } as IssueDto;
+    let listener: ((events: AgentEventDto[], cursor: number) => void) | undefined;
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([selected]);
+    vi.spyOn(api, "issue").mockResolvedValue(selected);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue({ providerId: "git", status: "READY", branch: "ohmybug/chk-1" });
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "agentTerminalAvailability").mockResolvedValue({ available: true });
+    vi.spyOn(api, "subscribeIssueEvents").mockImplementation((_id, _cursor, next) => {
+      listener = next;
+      return () => undefined;
+    });
+
+    render(<App />);
+
+    const rail = await screen.findByTestId("issue-metadata-rail");
+    await waitFor(() => expect(within(rail).getByRole("button", { name: "在 Terminal 中打开" })).toBeEnabled());
+    expect(within(rail).queryByText("状态")).not.toBeInTheDocument();
+    expect(within(rail).queryByText("Agent 活动")).not.toBeInTheDocument();
+
+    act(() => listener?.([
+      { id: "event-turn", issueId: selected.id, sequence: 1, type: "AGENT_TURN_STARTED", actor: "AGENT", data: { message: "Codex 开始实现" }, occurredAt: "2026-08-19T09:02:00.000Z" },
+      { id: "event-command", issueId: selected.id, sequence: 2, type: "AGENT_COMMAND_STARTED", actor: "AGENT", data: { message: "正在执行项目命令", detail: "$ pnpm test" }, occurredAt: "2026-08-19T09:02:01.000Z" },
+    ], 2));
+
+    const terminal = await screen.findByRole("region", { name: "Codex Terminal" });
+    expect(within(terminal).getByRole("button", { name: "在 Terminal 中打开" })).toBeVisible();
+    expect(within(rail).queryByRole("button", { name: "在 Terminal 中打开" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "在 Terminal 中打开" })).toHaveLength(1);
+  });
+
   it("opens the selected Agent session once and reports success without refreshing the Issue", async () => {
     const selected = {
       ...issue,
@@ -653,6 +692,57 @@ describe("control center workbench", () => {
     fireEvent.click(action);
     expect(await screen.findByText("无法打开 Terminal")).toBeVisible();
     expect(screen.getByRole("heading", { level: 2, name: selected.title })).toBeVisible();
+  });
+
+  it("does not carry a pending Terminal launch across selected Issues", async () => {
+    const first = {
+      ...issue,
+      id: "issue-first",
+      identifier: "CHK-1",
+      title: "First checkout issue",
+      updatedAt: "2026-08-19T10:00:00.000Z",
+      agentSession: { agent: "codex", sessionId: "session-1" },
+    } as IssueDto;
+    const second = {
+      ...issue,
+      id: "issue-second",
+      identifier: "CHK-2",
+      title: "Second checkout issue",
+      updatedAt: "2026-08-19T09:00:00.000Z",
+      agentSession: { agent: "codex", sessionId: "session-2" },
+    } as IssueDto;
+    let resolveFirst: (value: { opened: true }) => void = () => undefined;
+    const firstOpening = new Promise<{ opened: true }>((resolve) => { resolveFirst = resolve; });
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([first, second]);
+    vi.spyOn(api, "issue").mockImplementation(async (id) => id === first.id ? first : second);
+    vi.spyOn(api, "issueWorkspace").mockResolvedValue(null);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+    const terminalAvailability = vi.spyOn(api, "agentTerminalAvailability").mockResolvedValue({ available: true });
+    const open = vi.spyOn(api, "openAgentTerminal")
+      .mockImplementationOnce(() => firstOpening)
+      .mockResolvedValue({ opened: true });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /CHK-1.*First checkout issue/ }));
+    await screen.findByRole("heading", { level: 2, name: first.title });
+    await waitFor(() => expect(screen.getByRole("button", { name: "在 Terminal 中打开" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "在 Terminal 中打开" }));
+    expect(screen.getByRole("button", { name: "在 Terminal 中打开" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /CHK-2.*Second checkout issue/ }));
+    await screen.findByRole("heading", { level: 2, name: second.title });
+    await waitFor(() => expect(terminalAvailability).toHaveBeenCalledWith(second.id));
+    await waitFor(() => expect(screen.getByRole("button", { name: "在 Terminal 中打开" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "在 Terminal 中打开" }));
+
+    expect(open).toHaveBeenNthCalledWith(1, first.id);
+    expect(open).toHaveBeenNthCalledWith(2, second.id);
+    await act(async () => { resolveFirst({ opened: true }); });
   });
 
   it("rechecks Terminal availability when the selected Agent session changes", async () => {
@@ -1299,7 +1389,9 @@ describe("control center workbench", () => {
       choiceId: "accept",
     });
     expect(await screen.findAllByText("交付处理中")).not.toHaveLength(0);
-    expect(screen.queryByRole("region", { name: "交付分支" })).not.toBeInTheDocument();
+    const pendingDelivery = screen.getByRole("region", { name: "交付" });
+    expect(within(pendingDelivery).queryByText("ohmybug/chk-1")).not.toBeInTheDocument();
+    expect(within(pendingDelivery).queryByText("abcdef1")).not.toBeInTheDocument();
     expect(listener).toBeDefined();
 
     act(() => listener?.([{
@@ -1318,10 +1410,10 @@ describe("control center workbench", () => {
       occurredAt: "2026-08-24T10:01:00.000Z",
     }], 20));
 
-    const branch = await screen.findByRole("region", { name: "交付分支" });
-    expect(within(branch).getByText("ohmybug/chk-1")).toBeVisible();
-    expect(within(branch).getByText("abcdef1")).toBeVisible();
-    expect(within(branch).getByText("origin")).toBeVisible();
+    const delivery = await screen.findByRole("region", { name: "交付" });
+    expect(within(delivery).getByText("ohmybug/chk-1")).toBeVisible();
+    expect(within(delivery).getByText("abcdef1")).toBeVisible();
+    expect(within(delivery).queryByText("origin")).not.toBeInTheDocument();
   });
 
   it("hides cached workspace metadata while the same Issue revision refreshes", async () => {

@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../src/web/api/client.js";
-import type { IssueDto } from "../../src/web/api/types.js";
+import type { AgentEventDto, IssueDto } from "../../src/web/api/types.js";
 import { IssueDetail } from "../../src/web/issues/issue-detail.js";
 
 const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -37,6 +37,19 @@ const issue: IssueDto = {
   },
   repair: {
     iteration: 2,
+    deliveryDraft: {
+      summary: "Expired sessions are handled.",
+      repairIteration: 2,
+      implementationCompletedAt: "2026-08-19T09:08:00.000Z",
+      integration: {
+        baseBranch: "main",
+        baseCommit: "a".repeat(40),
+        issueBranch: "ohmybug/chk-1",
+        issueCommit: "abcdef123456",
+        conflicts: [],
+        verification: [],
+      },
+    },
     delivery: {
       summary: "Expired sessions are handled.",
       evidence: [{ type: "screenshot", evidenceId, label: "Checkout success" }],
@@ -67,6 +80,44 @@ const permissionRequiredIssue: IssueDto = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Issue detail", () => {
+  it("shows Assessment and the transient Terminal without result artifacts while executing", () => {
+    const events: AgentEventDto[] = [
+      { id: "issue-1:turn", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-19T09:05:00.000Z", data: { message: "Codex 开始实现" } },
+      { id: "issue-1:command", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "AGENT_COMMAND_STARTED", occurredAt: "2026-08-19T09:05:01.000Z", data: { message: "正在执行项目命令", detail: "$ pnpm test" } },
+    ];
+    render(<IssueDetail
+      agentActive
+      agentEvents={events}
+      agentSessionId="session-1"
+      issue={{ ...issue, status: "REPAIRING", resolution: undefined }}
+      onRefresh={async () => undefined}
+      terminalAction={<button type="button">在 Terminal 中打开</button>}
+    />);
+
+    expect(screen.getByTestId("assessment-review")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Codex Terminal" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "证据" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "交付" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/结果：/)).not.toBeInTheDocument();
+  });
+
+  it("shows concise Evidence and Delivery artifacts after execution", () => {
+    vi.spyOn(api, "evidenceSource").mockResolvedValue({ url: "blob:checkout-shot" });
+    render(<IssueDetail agentActive={false} agentEvents={[]} issue={issue} onRefresh={async () => undefined} />);
+
+    expect(screen.queryByRole("region", { name: "Codex Terminal" })).not.toBeInTheDocument();
+    const evidence = screen.getByRole("region", { name: "证据" });
+    expect(within(evidence).getByText("Expired sessions are handled.")).toBeVisible();
+    expect(within(evidence).queryByText(/项证据|验证结果|验证通过/)).not.toBeInTheDocument();
+    const delivery = screen.getByRole("region", { name: "交付" });
+    expect(within(delivery).getByText("Expired sessions are handled.")).toBeVisible();
+    expect(within(delivery).getByText("ohmybug/chk-1")).toBeVisible();
+    expect(within(delivery).getByText("abcdef1")).toBeVisible();
+    expect(screen.queryByText("Delivery · 迭代 2")).not.toBeInTheDocument();
+    expect(screen.queryByText("交付分支")).not.toBeInTheDocument();
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
+  });
+
   it("shows an inline host permission request with grant and cancel actions", async () => {
     const onGrantCapabilities = vi.fn(async () => undefined);
     const onCancel = vi.fn(async () => undefined);
@@ -125,35 +176,33 @@ describe("Issue detail", () => {
 
     expect(screen.getByRole("heading", { name: "判断：是 Feature" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "实现方案" })).toBeVisible();
-    expect(screen.getByText("已完成")).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent("特性已验收，Issue 已完成");
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("shows the Assessment, visual Delivery evidence, and direct FIXED closure", async () => {
+  it("shows the Assessment and visual Delivery evidence without duplicate closure state", async () => {
     vi.spyOn(api, "evidenceSource").mockResolvedValue({ url: "blob:checkout-shot" });
     render(<IssueDetail issue={issue} onRefresh={async () => undefined} />);
 
     expect(screen.getByRole("heading", { level: 2, name: "Checkout returns 500" })).toBeVisible();
     expect(screen.getByText("评估结果 · Assessment")).toBeVisible();
     expect(screen.getByRole("heading", { name: "判断：是 Bug" })).toBeVisible();
-    expect(screen.getByText("已完成")).toBeVisible();
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
     expect(screen.queryByText(hash.slice(0, 8))).not.toBeInTheDocument();
     expect(screen.getByText("Cart hydration returns null.")).toBeVisible();
     expect(screen.getByText("Return a recoverable result.")).toBeVisible();
     expect(await screen.findByRole("img", { name: "Checkout success" })).toHaveAttribute("src", "blob:checkout-shot");
-    expect(screen.getByRole("status")).toHaveTextContent("修复已验收，Issue 已完成");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     await act(async () => fireEvent.error(screen.getByRole("img", { name: "Checkout success" })));
     expect(screen.getByRole("alert")).toHaveTextContent("证据文件不可用");
   });
 
-  it("renders one compact FIXED result instead of duplicate success banners", () => {
+  it("does not repeat the outer FIXED state inside the detail document", () => {
     vi.spyOn(api, "evidenceSource").mockResolvedValue({ url: "blob:checkout-shot" });
     render(<IssueDetail issue={issue} onRefresh={async () => undefined} />);
 
-    const resolution = screen.getByRole("status");
-    expect(resolution).toHaveTextContent("FIXED");
-    expect(resolution).toHaveTextContent("修复已验收，Issue 已完成");
-    expect(screen.getAllByText(/FIXED/)).toHaveLength(1);
+    expect(screen.queryByText(/FIXED/)).not.toBeInTheDocument();
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
   });
 
   it("renders the Delivery summary as body copy instead of a section heading", () => {
@@ -161,7 +210,7 @@ describe("Issue detail", () => {
     render(<IssueDetail issue={issue} onRefresh={async () => undefined} />);
 
     expect(screen.queryByRole("heading", { level: 3, name: "Expired sessions are handled." })).not.toBeInTheDocument();
-    expect(screen.getByText("Expired sessions are handled.")).toHaveProperty("tagName", "P");
+    expect(within(screen.getByRole("region", { name: "证据" })).getByText("Expired sessions are handled.")).toHaveProperty("tagName", "P");
   });
 
   it("renders repeated content-addressed evidence without duplicate React keys", async () => {
@@ -268,6 +317,7 @@ describe("Issue detail", () => {
     render(<IssueDetail issue={{ ...issue, status: "REPAIR_FAILED", resolution: undefined, lastFailure: { stage: "REPAIR", code: "TEST_FAILED" } }} onRefresh={async () => undefined} onRetry={onRetry} />);
 
     expect(screen.getByRole("alert")).toHaveTextContent("测试未通过");
+    expect(screen.queryByText("Issue 上下文和已确认内容会保留，并从可恢复阶段继续。")).not.toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "重试实现" })); });
     expect(onRetry).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "重建 Agent 会话" })).not.toBeInTheDocument();
@@ -280,7 +330,7 @@ describe("Issue detail", () => {
       onRefresh={async () => undefined}
     />);
 
-    expect(screen.getByText("实现完成，正在采集证据")).toBeVisible();
+    expect(screen.queryByText("实现完成，正在采集证据")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "暂停 Agent" })).toBeEnabled();
   });
 
@@ -302,7 +352,6 @@ describe("Issue detail", () => {
     expect(alert).toHaveTextContent("证据采集失败；实现改动和工作目录已保留。");
     expect(alert.querySelector("svg")).not.toBeNull();
     expect(alert).not.toHaveAttribute("data-slot", "alert");
-    expect(screen.getByText("证据采集失败")).toBeVisible();
     expect(screen.queryByRole("button", { name: "重新实现" })).not.toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "重试证据" }));
@@ -331,22 +380,26 @@ describe("Issue detail", () => {
     const onRebuildSession = vi.fn(async () => undefined);
     render(<IssueDetail issue={{ ...issue, status: "REPAIR_FAILED", resolution: undefined, lastFailure: { stage: "REPAIR", code: "AGENT_SESSION_UNAVAILABLE" } }} onRefresh={async () => undefined} onRetry={onRetry} onRebuildSession={onRebuildSession} />);
 
-    expect(screen.getByText("Agent 会话已被删除或不可用")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("Codex 会话不可用");
+    expect(screen.queryByText("重建后会保留 Issue、Assessment、反馈和证据记录，并用新会话继续当前阶段。")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试实现" })).not.toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "重建 Agent 会话" })); });
     expect(onRebuildSession).toHaveBeenCalledOnce();
     expect(onRetry).not.toHaveBeenCalled();
   });
 
-  it("pauses an active Agent operation without canceling the Issue", async () => {
+  it("keeps pause and cancel together without duplicating workflow copy", async () => {
     const onPause = vi.fn(async () => undefined);
     const onCancel = vi.fn(async () => undefined);
     render(<IssueDetail issue={{ ...issue, status: "REPAIRING", resolution: undefined }} onRefresh={async () => undefined} onPause={onPause} onCancel={onCancel} />);
 
+    const actions = screen.getByRole("region", { name: "Issue 操作" });
+    expect(within(actions).getByRole("button", { name: "取消 Issue" })).toBeVisible();
+    expect(within(actions).queryByText("Issue 正在执行")).not.toBeInTheDocument();
+    expect(within(actions).queryByText("暂停会停止当前执行；工作目录和阶段上下文会保留，可以稍后继续。")).not.toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "暂停 Agent" })); });
     expect(onPause).toHaveBeenCalledOnce();
     expect(onCancel).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "取消 Issue" })).not.toBeInTheDocument();
   });
 
   it("continues or cancels a paused Issue from one action area", () => {
@@ -365,6 +418,7 @@ describe("Issue detail", () => {
     const actions = screen.getByRole("region", { name: "Issue 操作" });
     expect(within(actions).getByRole("button", { name: "继续执行" })).toBeVisible();
     expect(within(actions).getByRole("button", { name: "取消 Issue" })).toBeVisible();
+    expect(within(actions).queryByText("Agent 已暂停")).not.toBeInTheDocument();
   });
 
   it("keeps resume disabled until paused work has safely settled", () => {
@@ -481,12 +535,12 @@ describe("Issue detail", () => {
       onRefresh={async () => undefined}
     />);
 
-    expect(screen.getByText("交付处理中")).toBeVisible();
+    expect(screen.queryByText("交付处理中")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
     expect(screen.queryByText(/发布/)).not.toBeInTheDocument();
   });
 
-  it("shows bounded AI finalization recovery state without duplicate delivery actions", () => {
+  it("keeps finalization diagnostics without adding a second workflow state source", () => {
     render(<IssueDetail
       issue={{
         ...issue,
@@ -511,9 +565,10 @@ describe("Issue detail", () => {
       onRefresh={async () => undefined}
     />);
 
-    expect(screen.getByText("AI 正在恢复交付")).toBeVisible();
-    const recovery = screen.getByRole("status", { name: "自动交付恢复" });
-    expect(within(recovery).getByText("第 1/1 次自动恢复")).toBeVisible();
+    const recovery = screen.getByRole("region", { name: "交付恢复诊断" });
+    expect(screen.queryByRole("status", { name: "自动交付恢复" })).not.toBeInTheDocument();
+    expect(within(recovery).queryByText("第 1/1 次自动恢复")).not.toBeInTheDocument();
+    expect(within(recovery).queryByText(/AI 正在/)).not.toBeInTheDocument();
     expect(within(recovery).getByText("生成的临时目录阻塞了 Git 暂存")).toBeVisible();
     expect(within(recovery).getByText(".pnpm-store/shared/v11/tmp/_tmp_fixture")).toBeVisible();
     expect(screen.queryByRole("button", { name: "重试交付" })).not.toBeInTheDocument();
@@ -556,9 +611,8 @@ describe("Issue detail", () => {
       onRefresh={async () => undefined}
     />);
 
-    expect(screen.getByText("AI 正在修复合并")).toBeVisible();
-    const recovery = screen.getByRole("status", { name: "自动交付恢复" });
-    expect(within(recovery).getByText("AI 正在解析合并问题")).toBeVisible();
+    const recovery = screen.getByRole("region", { name: "交付恢复诊断" });
+    expect(within(recovery).queryByText("AI 正在解析合并问题")).not.toBeInTheDocument();
     expect(within(recovery).getByText("基线分支：main")).toBeVisible();
     expect(within(recovery).getByText("apps/desktop/src/web/issues/issue-detail.tsx"))
       .toBeVisible();
@@ -588,8 +642,10 @@ describe("Issue detail", () => {
       onRefresh={async () => undefined}
     />);
 
-    expect(screen.getByText("AI 正在修复合并")).toBeVisible();
-    expect(screen.getByText("AI 正在解析合并问题")).toBeVisible();
+    const recovery = screen.getByRole("region", { name: "交付恢复诊断" });
+    expect(within(recovery).queryByText("AI 正在解析合并问题")).not.toBeInTheDocument();
+    expect(within(recovery).getByText("旧版本保存的合并冲突")).toBeVisible();
+    expect(within(recovery).getByText("src/conflict.ts")).toBeVisible();
   });
 
   it("retries only a failed finalization", async () => {
@@ -617,13 +673,13 @@ describe("Issue detail", () => {
       onRefresh={async () => undefined}
     />);
 
-    const recovery = within(screen.getByRole("region", { name: "交付恢复" }));
-    expect(recovery.getByText("交付失败，待重新验证")).toBeVisible();
-    expect(recovery.getByText("代码和工作目录已保留；AI 会从 Repair 重新验证、修复后再发布。")).toBeVisible();
-    expect(recovery.getByText("自动恢复尝试 1/1 已用尽")).toBeVisible();
-    expect(recovery.getByText("自动恢复结果：未找到可安全自动修复的路径")).toBeVisible();
-    expect(recovery.getByText("commit · GIT_COMMAND_FAILED:commit")).toBeVisible();
-    expect(recovery.getByText("提交钩子拒绝了交付")).toBeVisible();
+    const recovery = within(screen.getByRole("region", { name: "Issue 操作" }));
+    expect(recovery.queryByText("交付失败，待重新验证")).not.toBeInTheDocument();
+    expect(recovery.queryByText("代码和工作目录已保留；AI 会从 Repair 重新验证、修复后再发布。")).not.toBeInTheDocument();
+    expect(recovery.queryByText("自动恢复尝试 1/1 已用尽")).not.toBeInTheDocument();
+    expect(recovery.queryByText("自动恢复结果：未找到可安全自动修复的路径")).not.toBeInTheDocument();
+    expect(recovery.queryByText("commit · GIT_COMMAND_FAILED:commit")).not.toBeInTheDocument();
+    expect(recovery.queryByText("提交钩子拒绝了交付")).not.toBeInTheDocument();
     await act(async () => {
       fireEvent.click(recovery.getByRole("button", { name: "重新验证并修复" }));
     });
@@ -642,15 +698,19 @@ describe("Issue detail", () => {
     expect(await screen.findByText("重新验证失败")).toBeVisible();
   });
 
-  it("shows the returned branch separately from the completed Issue", () => {
+  it("uses the returned branch inside the Delivery artifact", () => {
     render(<IssueDetail
       branch={{ name: "ohmybug/chk-1", commit: "abcdef123456", remote: "origin" }}
-      issue={issue}
+      issue={{
+        ...issue,
+        repair: { iteration: 2, delivery: issue.repair!.delivery },
+      }}
       onRefresh={async () => undefined}
     />);
 
-    expect(screen.getByText("ohmybug/chk-1")).toBeVisible();
-    expect(screen.getByText("abcdef1")).toBeVisible();
-    expect(screen.getByText("origin")).toBeVisible();
+    const delivery = screen.getByRole("region", { name: "交付" });
+    expect(within(delivery).getByText("ohmybug/chk-1")).toBeVisible();
+    expect(within(delivery).getByText("abcdef1")).toBeVisible();
+    expect(within(delivery).queryByText("origin")).not.toBeInTheDocument();
   });
 });

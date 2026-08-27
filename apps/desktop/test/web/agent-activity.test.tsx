@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { AgentActivity } from "../../src/web/issues/agent-activity.js";
+import type { AgentEventDto } from "../../src/web/api/types.js";
+import { AgentActivity, CodexTerminal } from "../../src/web/issues/agent-activity.js";
 
 function openActivity(label: string | RegExp): HTMLElement {
   const toggle = screen.getByRole("button", { name: label });
@@ -13,6 +14,173 @@ function openActivity(label: string | RegExp): HTMLElement {
 }
 
 describe("Agent activity", () => {
+  it("shows a read-only Codex Terminal only after current execution output arrives", () => {
+    const events: AgentEventDto[] = [
+      { id: "issue-1:1", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始实现" } },
+      { id: "issue-1:2", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "AGENT_COMMAND_STARTED", occurredAt: "2026-08-24T09:00:01Z", data: { message: "正在执行项目命令", detail: "$ pnpm test" } },
+      { id: "issue-1:3", issueId: "issue-1", sequence: 3, actor: "AGENT", type: "AGENT_COMMAND_COMPLETED", occurredAt: "2026-08-24T09:00:02Z", data: { message: "项目命令执行完成", detail: "$ pnpm test\n12 passed" } },
+    ];
+    const view = render(<CodexTerminal
+      active
+      events={[]}
+      sessionId="session-1"
+      terminalAction={<button type="button">在 Terminal 中打开</button>}
+    />);
+
+    expect(screen.queryByRole("region", { name: "Codex Terminal" })).not.toBeInTheDocument();
+
+    view.rerender(<CodexTerminal
+      active
+      events={events}
+      sessionId="session-1"
+      terminalAction={<button type="button">在 Terminal 中打开</button>}
+    />);
+
+    const terminal = screen.getByRole("region", { name: "Codex Terminal" });
+    expect(within(terminal).getByRole("button", { name: "在 Terminal 中打开" })).toBeVisible();
+    expect(within(terminal).getByText("$ pnpm test")).toBeVisible();
+    expect(within(terminal).getByText("12 passed")).toBeVisible();
+    expect(within(terminal).queryByRole("textbox")).not.toBeInTheDocument();
+
+    view.rerender(<CodexTerminal active={false} events={events} sessionId="session-1" />);
+    expect(screen.queryByRole("region", { name: "Codex Terminal" })).not.toBeInTheDocument();
+  });
+
+  it("drops previous-session output after the Agent session is rebuilt", () => {
+    render(<CodexTerminal active events={[
+      { id: "issue-1:old-turn", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "旧会话开始实现" } },
+      { id: "issue-1:old-message", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { message: "旧会话输出" } },
+      { id: "issue-1:rebuilt", issueId: "issue-1", sequence: 3, actor: "SYSTEM", type: "AGENT_SESSION_REBUILT", occurredAt: "2026-08-24T09:01:00Z", data: { oldLogicalSessionId: "session-1", newLogicalSessionId: "session-2" } },
+      { id: "issue-1:new-turn", issueId: "issue-1", sequence: 4, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:01:01Z", data: { message: "新会话开始实现" } },
+      { id: "issue-1:new-message", issueId: "issue-1", sequence: 5, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:01:02Z", data: { message: "新会话输出" } },
+    ]} sessionId="session-2" />);
+
+    const terminal = screen.getByRole("region", { name: "Codex Terminal" });
+    expect(within(terminal).getByText("新会话输出")).toBeVisible();
+    expect(within(terminal).queryByText("旧会话输出")).not.toBeInTheDocument();
+  });
+
+  it("keeps workflow transitions out of the execution terminal", () => {
+    render(<CodexTerminal active events={[
+      { id: "issue-1:created", issueId: "issue-1", sequence: 1, actor: "SYSTEM", type: "ISSUE_CREATED", occurredAt: "2026-08-24T09:00:00Z", data: {} },
+      { id: "issue-1:ready", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "IMPLEMENTATION_READY", occurredAt: "2026-08-24T09:00:01Z", data: {} },
+      { id: "issue-1:turn", issueId: "issue-1", sequence: 3, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:02Z", data: { message: "Codex 开始实现" } },
+      { id: "issue-1:message", issueId: "issue-1", sequence: 4, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:00:03Z", data: { message: "正在修改详情布局" } },
+    ]} sessionId="session-1" />);
+
+    const terminal = screen.getByRole("region", { name: "Codex Terminal" });
+    expect(within(terminal).getByText("正在修改详情布局")).toBeVisible();
+    expect(within(terminal).queryByText("Issue 已创建")).not.toBeInTheDocument();
+    expect(within(terminal).queryByText("实现完成，准备采集证据")).not.toBeInTheDocument();
+  });
+
+  it("removes the terminal at the completed execution boundary even before status refresh", () => {
+    const running: AgentEventDto[] = [
+      { id: "issue-1:turn", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始实现" } },
+      { id: "issue-1:message", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { message: "正在修改详情布局" } },
+    ];
+    const view = render(<CodexTerminal active events={running} sessionId="session-1" />);
+    expect(screen.getByRole("region", { name: "Codex Terminal" })).toBeVisible();
+
+    view.rerender(<CodexTerminal active events={[...running, {
+      id: "issue-1:completed",
+      issueId: "issue-1",
+      sequence: 3,
+      actor: "AGENT",
+      type: "AGENT_TURN_COMPLETED",
+      occurredAt: "2026-08-24T09:00:02Z",
+      data: { message: "Codex 已完成实现" },
+    }]} sessionId="session-1" />);
+
+    expect(screen.queryByRole("region", { name: "Codex Terminal" })).not.toBeInTheDocument();
+  });
+
+  it("honors an untagged pause boundary after tagged current-session output", () => {
+    render(<CodexTerminal active events={[
+      { id: "issue-1:turn", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { logicalSessionId: "session-1", message: "Codex 开始实现" } },
+      { id: "issue-1:message", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { logicalSessionId: "session-1", message: "正在修改详情布局" } },
+      { id: "issue-1:paused", issueId: "issue-1", sequence: 3, actor: "USER", type: "ISSUE_PAUSED", occurredAt: "2026-08-24T09:00:02Z", data: {} },
+    ]} sessionId="session-1" />);
+
+    expect(screen.queryByRole("region", { name: "Codex Terminal" })).not.toBeInTheDocument();
+  });
+
+  it.each(["AGENT_TURN_COMPLETED", "AGENT_ERROR"] as const)(
+    "does not reopen the terminal for cleanup diagnostics after %s",
+    (boundaryType) => {
+      render(<CodexTerminal active events={[
+        { id: "issue-1:turn", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { logicalSessionId: "session-1", message: "Codex 开始实现" } },
+        { id: "issue-1:message", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { logicalSessionId: "session-1", message: "正在修改详情布局" } },
+        { id: "issue-1:boundary", issueId: "issue-1", sequence: 3, actor: "AGENT", type: boundaryType, occurredAt: "2026-08-24T09:00:02Z", data: { logicalSessionId: "session-1", message: "Codex 已结束本轮" } },
+        { id: "issue-1:cleanup", issueId: "issue-1", sequence: 4, actor: "AGENT", type: "AGENT_TEMP_CLEANUP_FAILED", occurredAt: "2026-08-24T09:00:03Z", data: { logicalSessionId: "session-1", message: "临时目录清理失败" } },
+      ]} sessionId="session-1" />);
+
+      expect(screen.queryByRole("region", { name: "Codex Terminal" })).not.toBeInTheDocument();
+    },
+  );
+
+  it("waits for output tagged to a replacement session before showing the terminal", () => {
+    const oldEvents: AgentEventDto[] = [
+      { id: "issue-1:old-turn", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { logicalSessionId: "session-1", message: "旧会话开始实现" } },
+      { id: "issue-1:old-message", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { logicalSessionId: "session-1", message: "旧会话输出" } },
+    ];
+    const view = render(<CodexTerminal active events={oldEvents} sessionId="session-2" />);
+    expect(screen.queryByRole("region", { name: "Codex Terminal" })).not.toBeInTheDocument();
+
+    view.rerender(<CodexTerminal active events={[...oldEvents,
+      { id: "issue-1:new-turn", issueId: "issue-1", sequence: 3, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:01:00Z", data: { logicalSessionId: "session-2", message: "新会话开始实现" } },
+      { id: "issue-1:new-message", issueId: "issue-1", sequence: 4, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:01:01Z", data: { logicalSessionId: "session-2", message: "新会话输出" } },
+    ]} sessionId="session-2" />);
+
+    const terminal = screen.getByRole("region", { name: "Codex Terminal" });
+    expect(within(terminal).getByText("新会话输出")).toBeVisible();
+    expect(within(terminal).queryByText("旧会话输出")).not.toBeInTheDocument();
+  });
+
+  it("suppresses legacy output while a replacement session has no attributable events", () => {
+    const legacyEvents: AgentEventDto[] = [
+      { id: "issue-1:old-turn", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "旧会话开始实现" } },
+      { id: "issue-1:old-message", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { message: "旧会话输出" } },
+    ];
+    const view = render(<CodexTerminal active events={legacyEvents} sessionId="session-1" />);
+    expect(screen.getByRole("region", { name: "Codex Terminal" })).toBeVisible();
+
+    view.rerender(<CodexTerminal active events={legacyEvents} sessionId="session-2" />);
+    expect(screen.queryByRole("region", { name: "Codex Terminal" })).not.toBeInTheDocument();
+
+    view.rerender(<CodexTerminal active events={[...legacyEvents, {
+      id: "issue-1:new-message",
+      issueId: "issue-1",
+      sequence: 3,
+      actor: "AGENT",
+      type: "MESSAGE",
+      occurredAt: "2026-08-24T09:01:00Z",
+      data: { logicalSessionId: "session-2", message: "新会话输出" },
+    }]} sessionId="session-2" />);
+    expect(screen.getByText("新会话输出")).toBeVisible();
+    expect(screen.queryByText("旧会话输出")).not.toBeInTheDocument();
+  });
+
+  it("pauses follow-latest when scrolled up and resumes on request", () => {
+    render(<CodexTerminal active events={[
+      { id: "issue-1:turn", issueId: "issue-1", sequence: 1, actor: "AGENT", type: "AGENT_TURN_STARTED", occurredAt: "2026-08-24T09:00:00Z", data: { message: "Codex 开始实现" } },
+      { id: "issue-1:message", issueId: "issue-1", sequence: 2, actor: "AGENT", type: "MESSAGE", occurredAt: "2026-08-24T09:00:01Z", data: { message: "正在检查布局" } },
+    ]} sessionId="session-1" />);
+
+    const log = screen.getByRole("log", { name: "Codex Terminal 输出" });
+    Object.defineProperties(log, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+    });
+    fireEvent.scroll(log);
+
+    const latest = screen.getByRole("button", { name: "回到最新" });
+    fireEvent.click(latest);
+    expect(log.scrollTop).toBe(400);
+    expect(screen.queryByRole("button", { name: "回到最新" })).not.toBeInTheDocument();
+  });
+
   it("renders non-turn events directly without an activity-record disclosure", () => {
     render(<AgentActivity active={false} events={[
       {

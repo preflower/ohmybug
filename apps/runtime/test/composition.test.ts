@@ -327,7 +327,11 @@ describe("Runtime composition boundary", () => {
         expect.objectContaining({
           type: "AGENT_TURN_STARTED",
           actor: "AGENT",
-          data: expect.objectContaining({ message: "Codex 开始分析", level: "info" }),
+          data: expect.objectContaining({
+            logicalSessionId: `activity-${created.issue.id}`,
+            message: "Codex 开始分析",
+            level: "info",
+          }),
         }),
         expect.objectContaining({
           type: "AGENT_ERROR",
@@ -336,6 +340,7 @@ describe("Runtime composition boundary", () => {
             message: "Codex 网络连接中断",
             detail: "stream disconnected before completion",
             correlationId: "command-1",
+            logicalSessionId: `activity-${created.issue.id}`,
             level: "error",
           }),
         }),
