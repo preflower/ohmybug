@@ -581,18 +581,20 @@ function IssueMetadataRail({ issue, project, terminalAction, workspace, onClose 
     hour12: false,
   });
   return <aside className="issue-metadata-rail" data-testid="issue-metadata-rail" aria-label="Issue 详情栏">
-    <header className="metadata-rail-header">
-      <span>详情</span>
-      <MetadataRailToggle open onToggle={onClose} />
-    </header>
-    <dl className="issue-metadata-list">
-      <div><dt>项目</dt><dd><span className="project-dot" />{project?.name ?? project?.key ?? issue.projectId}</dd></div>
-      {workspace?.branch ? <div className="issue-workspace-row"><dt>分支</dt><dd><code title={workspace.branch}>{workspace.branch}</code>{workspace.providerId === "git" ? <span className="workspace-kind-tag">Worktree</span> : null}</dd></div> : null}
-      <div><dt>来源</dt><dd>{latestInput?.integration ?? "manual"}</dd></div>
-      <div className="agent-session-row"><dt><span>Agent 会话</span>{terminalAction}</dt><dd><code>{agentSessionId ?? "尚未创建"}</code></dd></div>
-      <div><dt>创建时间</dt><dd><time>{timestamp(issue.createdAt)}</time></dd></div>
-      <div><dt>更新时间</dt><dd><time>{timestamp(issue.updatedAt)}</time></dd></div>
-    </dl>
+    <div className="issue-metadata-card" data-testid="issue-metadata-card">
+      <header className="metadata-rail-header">
+        <span>详情</span>
+        <MetadataRailToggle open onToggle={onClose} />
+      </header>
+      <dl className="issue-metadata-list">
+        <div><dt>项目</dt><dd><span className="project-dot" />{project?.name ?? project?.key ?? issue.projectId}</dd></div>
+        {workspace?.branch ? <div className="issue-workspace-row"><dt>分支</dt><dd><code title={workspace.branch}>{workspace.branch}</code>{workspace.providerId === "git" ? <span className="workspace-kind-tag">Worktree</span> : null}</dd></div> : null}
+        <div><dt>来源</dt><dd>{latestInput?.integration ?? "manual"}</dd></div>
+        <div className="agent-session-row"><dt><span>Agent 会话</span>{terminalAction}</dt><dd><code>{agentSessionId ?? "尚未创建"}</code></dd></div>
+        <div><dt>创建时间</dt><dd><time>{timestamp(issue.createdAt)}</time></dd></div>
+        <div><dt>更新时间</dt><dd><time>{timestamp(issue.updatedAt)}</time></dd></div>
+      </dl>
+    </div>
   </aside>;
 }
 
