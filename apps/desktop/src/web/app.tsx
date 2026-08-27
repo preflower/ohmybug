@@ -71,6 +71,14 @@ function routeHref(view: View): string {
   return isDesktopRenderer() ? `#/${view}` : `/${view}`;
 }
 
+function projectNavigationLabel(project: ProjectDto): string {
+  return project.name?.trim() || project.key;
+}
+
+function projectNavigationInitial(project: ProjectDto): string {
+  return Array.from(projectNavigationLabel(project))[0]?.toLocaleUpperCase() ?? "?";
+}
+
 function writeRoute(view: View, replace = false): void {
   const path = `/${view}`;
   if (isDesktopRenderer()) {
@@ -365,7 +373,10 @@ function AppContent() {
         </nav>
         <div className="sidebar-section">
           <p className="sidebar-label">Projects</p>
-          {projects.map((project) => <Button aria-current={view === "issues" && activeProjectId === project.id ? "page" : undefined} className="nav-item" key={project.id} type="button" variant="ghost" onClick={() => goToProjectIssues(project.id)}><span className="project-dot" /><span>{project.name ?? project.key}</span></Button>)}
+          {projects.map((project) => {
+            const label = projectNavigationLabel(project);
+            return <Button aria-label={label} aria-current={view === "issues" && activeProjectId === project.id ? "page" : undefined} className="nav-item" key={project.id} title={label} type="button" variant="ghost" onClick={() => goToProjectIssues(project.id)}><span aria-hidden="true" className="project-dot" /><span aria-hidden="true" className="project-initial">{projectNavigationInitial(project)}</span><span aria-hidden="true" className="project-name">{label}</span></Button>;
+          })}
           {loaded && projects.length === 0 ? <Button className="nav-item" type="button" variant="ghost" onClick={() => goTo("projects")}><span className="project-dot" /><span>打开本机项目</span></Button> : null}
         </div>
         <div className="sidebar-footer"><div className="agent-mode"><Activity size={13} /><span>Codex</span><i /></div></div>

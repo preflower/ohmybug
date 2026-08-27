@@ -35,6 +35,14 @@ beforeAll(async () => {
 });
 
 describe("project settings layout", () => {
+  it("shows project initials only in the collapsed sidebar", () => {
+    expect(cssRule("\\.project-initial")).toMatch(/display:\s*none;/);
+
+    const collapsed = mediaBlock("@media (max-width: 980px)", "@media (max-width: 680px)");
+    expect(collapsed).toMatch(/\.sidebar-section \.project-dot,\s*\.sidebar-section \.project-name\s*\{[^}]*display:\s*none;/s);
+    expect(collapsed).toMatch(/\.sidebar-section \.project-initial\s*\{[^}]*display:\s*grid;/s);
+  });
+
   it("uses the full workspace without a card surface", () => {
     const column = getComputedStyle(document.querySelector<HTMLElement>(".settings-column")!);
     const settings = getComputedStyle(document.querySelector<HTMLElement>(".project-settings-tabs")!);
