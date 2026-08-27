@@ -1274,7 +1274,12 @@ describe("control center workbench", () => {
     const issueRow = screen.getByRole("button", { name: /Checkout returns 500/ });
     expect(issueRow).toHaveAttribute("data-slot", "button");
 
-    fireEvent.click(screen.getByRole("button", { name: "返回 Issue 列表" }));
+    const returnAction = screen.getByRole("button", { name: "返回 Issue 列表" });
+    expect(returnAction.closest(".view-header")).toBe(issuesHeader);
+    expect(returnAction.closest(".detail-pane")).toBeNull();
+    expect(document.querySelector(".mobile-detail-toolbar")).toBeNull();
+
+    fireEvent.click(returnAction);
     expect(screen.queryByRole("region", { name: "Issue 详情" })).not.toBeInTheDocument();
     fireEvent.click(issueRow);
     expect(await screen.findByText("Cart hydration returns null.")).toBeVisible();
