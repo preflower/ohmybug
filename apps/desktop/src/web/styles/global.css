@@ -353,7 +353,7 @@ a:focus-visible {
 }
 
 .workspace.metadata-open {
-  grid-template-columns: 320px minmax(0, 1fr) 280px;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
 }
 
 .issue-pane {
@@ -659,27 +659,33 @@ a:focus-visible {
 }
 
 .issue-metadata-rail {
+  box-sizing: border-box;
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border-left: 1px solid var(--border);
-  background: var(--sidebar);
+  background: var(--canvas);
+  padding: 16px;
+}
+
+.issue-metadata-card {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
 }
 
 .metadata-rail-header {
-  position: sticky;
-  z-index: 2;
-  top: 0;
   display: flex;
-  height: 44px;
+  height: 56px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
-  background: var(--sidebar);
+  background: transparent;
   padding: 0 12px 0 20px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 540;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .metadata-rail-toggle {
@@ -688,14 +694,18 @@ a:focus-visible {
 
 .issue-metadata-list {
   margin: 0;
-  padding: 0 22px;
+  padding: 0 20px;
 }
 
 .issue-metadata-list > div {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   border-bottom: 1px solid var(--border);
-  padding: 14px 0;
+  padding: 18px 0;
+}
+
+.issue-metadata-list > div:last-child {
+  border-bottom: 0;
 }
 
 .issue-metadata-list dt,
@@ -741,32 +751,35 @@ a:focus-visible {
   gap: 8px;
   color: var(--text-secondary);
   font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .issue-metadata-list code,
 .issue-metadata-list time {
-  overflow: hidden;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .issue-workspace-row dd {
   display: flex;
   min-width: 0;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
 }
 
 .issue-workspace-row code {
   min-width: 0;
-  overflow: hidden;
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .workspace-kind-tag {
@@ -3887,7 +3900,7 @@ a:focus-visible {
     top: 0;
     right: 0;
     bottom: 0;
-    width: 280px;
+    width: min(320px, calc(100% - 48px));
     box-shadow: -12px 0 28px rgb(0 0 0 / 24%);
   }
 
