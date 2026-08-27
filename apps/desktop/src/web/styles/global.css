@@ -852,10 +852,6 @@ a:focus-visible {
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
-.workspace.metadata-open .issue-detail {
-  grid-template-columns: minmax(0, 1fr) 280px;
-}
-
 .issue-detail-document {
   min-width: 0;
   min-height: 0;
@@ -1803,8 +1799,11 @@ a:focus-visible {
   background: var(--surface-raised);
 }
 
-.workspace.metadata-open .issue-actions {
-  grid-template-columns: minmax(0, 1fr) 280px;
+@media (min-width: 1201px) {
+  .workspace.metadata-open .issue-detail,
+  .workspace.metadata-open .issue-actions {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
 }
 
 .issue-actions-track {
@@ -1824,6 +1823,7 @@ a:focus-visible {
   display: flex;
   min-height: 58px;
   align-items: center;
+  justify-content: flex-end;
   padding: 10px 0;
 }
 

@@ -60,7 +60,6 @@ describe("project settings layout", () => {
     expect(detail).toMatch(/position:\s*relative;/);
     expect(detail).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\);/);
     expect(detail).toMatch(/grid-template-rows:\s*minmax\(0,\s*1fr\) auto;/);
-    expect(cssRule("\\.workspace\\.metadata-open \\.issue-detail")).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\) 280px;/);
     expect(detailDocument).toMatch(/grid-column:\s*1;/);
     expect(detailDocument).toMatch(/grid-row:\s*1;/);
     expect(rail).toMatch(/overflow:\s*visible;/);
@@ -91,6 +90,20 @@ describe("project settings layout", () => {
     const phone = mediaBlock("@media (max-width: 680px)");
     expect(phone).toMatch(/\.issue-metadata-rail\s*\{[^}]*width:\s*min\(260px,\s*calc\(100% - 40px\)\);/s);
     expect(phone).toMatch(/\.issue-list-back-action\s*\{[^}]*display:\s*inline-flex;/s);
+  });
+
+  it("reserves the metadata track only at the wide-screen breakpoint", () => {
+    expect(styles).toContain("@media (min-width: 1201px)");
+    const wide = mediaBlock("@media (min-width: 1201px)", ".issue-actions-track");
+    expect(wide).toMatch(/\.workspace\.metadata-open \.issue-detail,\s*\.workspace\.metadata-open \.issue-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) 280px;/s);
+
+    const phone = mediaBlock("@media (max-width: 680px)", ".issue-detail {");
+    expect(phone).toMatch(/\.workspace\.metadata-open \.issue-detail,\s*\.workspace\.metadata-open \.issue-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+  });
+
+  it("aligns compact Issue actions with the trailing Review actions", () => {
+    expect(cssRule("\\.issue-action-row")).toMatch(/justify-content:\s*flex-end;/);
+    expect(cssRule("\\.review-dock-row")).toMatch(/justify-content:\s*flex-end;/);
   });
 
   it("keeps Agent activity turns full width and flattens terminal output", () => {
