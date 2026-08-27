@@ -580,7 +580,13 @@ describe("control center workbench", () => {
     render(<App />);
 
     const rail = await screen.findByTestId("issue-metadata-rail");
+    const detail = document.querySelector<HTMLElement>(".issue-detail");
+    const actions = screen.getByRole("region", { name: "Issue 操作" });
     const card = await within(rail).findByTestId("issue-metadata-card");
+    expect(detail).not.toBeNull();
+    expect(rail.parentElement).toBe(detail);
+    expect(actions.parentElement).toBe(detail);
+    expect(detail?.querySelector(":scope > .issue-detail-document")).not.toBeNull();
     expect(card.querySelector(":scope > .metadata-rail-header")).not.toBeNull();
     expect(card.querySelector(":scope > .issue-metadata-list")).not.toBeNull();
     expect(within(card).getByText("详情")).toBeVisible();
