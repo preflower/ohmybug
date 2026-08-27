@@ -55,10 +55,13 @@ describe("project settings layout", () => {
     expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*width:\s*min\(280px,\s*calc\(100% - 48px\)\);/s);
     expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*background:\s*transparent;/s);
     expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*box-shadow:\s*none;/s);
-    expect(overlay).toMatch(/\.issue-metadata-card\s*\{[^}]*box-shadow:\s*0 12px 32px rgb\(0 0 0 \/ 18%\);/s);
+    expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*overflow:\s*visible;/s);
+    expect(overlay).toMatch(/\.issue-metadata-card\s*\{[^}]*box-shadow:\s*0 1px 3px rgb\(0 0 0 \/ 8%\),\s*0 10px 28px rgb\(0 0 0 \/ 10%\);/s);
 
     const phone = mediaBlock("@media (max-width: 680px)");
     expect(phone).toMatch(/\.issue-metadata-rail\s*\{[^}]*width:\s*min\(260px,\s*calc\(100% - 40px\)\);/s);
+    expect(phone).toMatch(/\.issue-metadata-rail\s*\{[^}]*overflow:\s*visible;/s);
+    expect(phone).toMatch(/\.issue-metadata-card\s*\{[^}]*box-shadow:\s*0 1px 3px rgb\(0 0 0 \/ 8%\),\s*0 10px 28px rgb\(0 0 0 \/ 10%\);/s);
     expect(phone).toMatch(/\.issue-list-back-action\s*\{[^}]*display:\s*inline-flex;/s);
   });
 
