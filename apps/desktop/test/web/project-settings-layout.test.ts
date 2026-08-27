@@ -11,6 +11,10 @@ function cssRule(selector: string): string {
   return styles.match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`, "s"))?.[1] ?? "";
 }
 
+function cssRuleAfter(marker: string, selector: string): string {
+  return styles.slice(styles.indexOf(marker)).match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`, "s"))?.[1] ?? "";
+}
+
 function mediaBlock(startMarker: string, endMarker?: string): string {
   const start = styles.lastIndexOf(startMarker);
   const end = endMarker ? styles.indexOf(endMarker, start) : styles.length;
@@ -43,25 +47,33 @@ describe("project settings layout", () => {
   });
 
   it("locks the inset Issue metadata card rules", () => {
+    const rail = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-rail");
+    const card = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-card");
+    const metadataRow = cssRuleAfter("/* Application workbench */", "\\.issue-metadata-list > div");
+
     expect(styles).toMatch(/\.workspace\.metadata-open\s*\{[^}]*grid-template-columns:\s*320px minmax\(0,\s*1fr\) 280px;/s);
     expect(cssRule("\\.detail-pane-scroll")).toMatch(/grid-template-rows:\s*minmax\(0,\s*1fr\);/);
-    expect(cssRule("\\.issue-metadata-card")).toMatch(/border:\s*1px solid var\(--border\);/);
-    expect(cssRule("\\.issue-metadata-card")).toMatch(/border-radius:\s*10px;/);
-    expect(cssRule("\\.issue-metadata-card")).toMatch(/background:\s*var\(--surface\);/);
+    expect(rail).toMatch(/overflow:\s*visible;/);
+    expect(rail).toMatch(/background:\s*transparent;/);
+    expect(rail).toMatch(/padding:\s*12px;/);
+    expect(rail).toMatch(/box-shadow:\s*none;/);
+    expect(card).toMatch(/max-height:\s*100%;/);
+    expect(card).toMatch(/overflow:\s*auto;/);
+    expect(card).toMatch(/border:\s*1px solid var\(--border\);/);
+    expect(card).toMatch(/border-radius:\s*10px;/);
+    expect(card).toMatch(/background:\s*var\(--surface\);/);
+    expect(card).toMatch(/box-shadow:\s*0 1px 3px rgb\(0 0 0 \/ 8%\),\s*0 10px 28px rgb\(0 0 0 \/ 10%\);/);
+    expect(metadataRow).toMatch(/gap:\s*6px;/);
+    expect(metadataRow).toMatch(/padding:\s*16px 0;/);
     expect(cssRule("\\.metadata-rail-header")).toMatch(/height:\s*56px;/);
     expect(cssRule("\\.metadata-rail-header")).not.toMatch(/position:\s*sticky;/);
 
     const overlay = mediaBlock("@media (max-width: 1200px) and (min-width: 681px)", "@media (max-width: 900px)");
+    expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*position:\s*absolute;/s);
     expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*width:\s*min\(280px,\s*calc\(100% - 48px\)\);/s);
-    expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*background:\s*transparent;/s);
-    expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*box-shadow:\s*none;/s);
-    expect(overlay).toMatch(/\.issue-metadata-rail\s*\{[^}]*overflow:\s*visible;/s);
-    expect(overlay).toMatch(/\.issue-metadata-card\s*\{[^}]*box-shadow:\s*0 1px 3px rgb\(0 0 0 \/ 8%\),\s*0 10px 28px rgb\(0 0 0 \/ 10%\);/s);
 
     const phone = mediaBlock("@media (max-width: 680px)");
     expect(phone).toMatch(/\.issue-metadata-rail\s*\{[^}]*width:\s*min\(260px,\s*calc\(100% - 40px\)\);/s);
-    expect(phone).toMatch(/\.issue-metadata-rail\s*\{[^}]*overflow:\s*visible;/s);
-    expect(phone).toMatch(/\.issue-metadata-card\s*\{[^}]*box-shadow:\s*0 1px 3px rgb\(0 0 0 \/ 8%\),\s*0 10px 28px rgb\(0 0 0 \/ 10%\);/s);
     expect(phone).toMatch(/\.issue-list-back-action\s*\{[^}]*display:\s*inline-flex;/s);
   });
 
