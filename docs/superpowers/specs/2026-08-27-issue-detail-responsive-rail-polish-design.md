@@ -5,7 +5,7 @@ Status: Direction approved, pending written review
 
 ## Goal
 
-Refine the approved Issue metadata card at narrow widths so the floating surface is smaller and visually self-contained, while ensuring the Issue action footer remains fully visible and the return-to-list action belongs to the outer Issues header rather than the detail document.
+Refine the approved Issue metadata card so it remains a compact floating surface at every width, while ensuring the Issue action footer remains fully visible and the return-to-list action belongs to the outer Issues header rather than the detail document.
 
 This is a focused follow-up to `2026-08-27-issue-detail-metadata-rail-card-design.md`. It does not change metadata content, Issue workflow, action availability, or desktop document design.
 
@@ -28,17 +28,29 @@ The clipping is caused by stacking a separate toolbar above a full-height Issue 
 - At `680px` and below, use `min(260px, calc(100% - 40px))`.
 - Preserve the existing open/close state, `Ctrl/Cmd+B`, toggle controls, field order, and Terminal action.
 
+### Layout behavior
+
+- Above `1200px`, reserve a dedicated `280px` grid column for the rail. This column reduces the Issue detail's available width, so the card never covers the document when there is sufficient room.
+- At `1200px` and below, remove the rail from the grid and position it over the Issue detail. The document keeps its available width and the card becomes a dismissible overlay.
+- In both modes, the outer `issue-metadata-rail` is a transparent positioning boundary; `issue-metadata-card` is the only visible floating surface.
+
 ### Floating presentation
 
-At overlay breakpoints (`1200px` and below):
-
-- The outer `issue-metadata-rail` remains the positioning, scrolling, and accessibility boundary only.
+- The outer `issue-metadata-rail` remains the positioning and accessibility boundary only.
 - Give the outer rail a transparent background and remove its shadow.
 - Use a `12px` inset at `681px`–`1200px` and a `10px` inset at `680px` and below so the card reads as floating instead of edge-attached.
-- Apply `0 12px 32px rgb(0 0 0 / 18%)` directly to `issue-metadata-card` at overlay breakpoints.
+- Apply the restrained natural shadow `0 1px 3px rgb(0 0 0 / 8%), 0 10px 28px rgb(0 0 0 / 10%)` directly to `issue-metadata-card` at every width.
+- Let the outer rail overflow remain visible so the shadow is not clipped. Constrain the card to the rail height and let the card own vertical scrolling when its metadata is taller than the viewport.
 - Do not add a second visible panel, tinted backdrop, border stripe, or scrim.
 
-At wider desktop widths, use a `12px` inset and retain the quiet card treatment without adding a shadow.
+At wider desktop widths, keep the same `12px` inset and card-owned elevation inside the dedicated rail column.
+
+### Metadata density
+
+- Keep the current field order, typography, dividers, and values.
+- Reduce each metadata row's vertical padding from `22px` to `16px`.
+- Reduce the label-to-value gap from `8px` to `6px`.
+- Do not compress the header, remove fields, or truncate values beyond the existing branch and Agent-session behavior.
 
 ## Return-to-list action
 
@@ -63,7 +75,7 @@ At wider desktop widths, use a `12px` inset and retain the quiet card treatment 
 - `IssueWorkspace` continues to own selected-Issue state and `onDeselect`.
 - The outer `view-header` receives the return button because it is stable outside the list/detail replacement area.
 - `IssueDetail` and `IssueActions` require no new props or state.
-- `IssueMetadataRail` retains its current inner card markup; this change is responsive CSS only for its size and elevation ownership.
+- `IssueMetadataRail` retains its current inner card markup; this change is CSS only for its size, density, layout mode, and elevation ownership.
 
 ## Testing
 
@@ -73,7 +85,8 @@ Add or update focused tests to prove:
 - Clicking it still deselects the Issue and returns to the list.
 - No `mobile-detail-toolbar` remains.
 - The base workspace rail column is `280px`.
-- The overlay shadow is absent from `issue-metadata-rail` and present on `issue-metadata-card`.
+- The rail stays transparent and shadowless while the card owns the same natural shadow at every width.
+- Metadata rows use `16px` vertical padding and a `6px` internal gap.
 - The phone rail rule uses `260px` with the bounded viewport calculation.
 - `detail-pane-scroll` uses a single `minmax(0, 1fr)` row.
 
@@ -87,6 +100,8 @@ Runtime validation must capture:
 
 - The right metadata area is visibly smaller at every relevant breakpoint.
 - Floating elevation belongs to the metadata card, not its outer rail.
+- The card remains visually floating at every width: it occupies a dedicated column above `1200px` and overlays the detail at `1200px` and below.
+- Metadata rows use the compact approved spacing without removing or reordering content.
 - No visible gray overlay container surrounds the floating card.
 - The mobile return action appears to the left of `Issues` and nowhere inside the Issue document.
 - The Issue action footer is fully visible and flush with the detail pane bottom.
