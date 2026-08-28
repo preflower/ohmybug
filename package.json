@@ -27,6 +27,7 @@
     "test:repository": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:electron": "playwright test -c apps/desktop/playwright.config.ts",
+    "test:e2e:electron:release": "playwright test -c apps/desktop/playwright.config.ts apps/desktop/test/electron/e2e/first-project.spec.ts apps/desktop/test/electron/e2e/lifecycle.spec.ts apps/desktop/test/electron/e2e/new-issue-enter.spec.ts apps/desktop/test/electron/e2e/theme.spec.ts",
     "test:codex-app-server": "pnpm --dir packages/agent-codex exec vitest run test/app-server/bundled-app-server.integration.test.ts",
     "doctor": "node --import tsx scripts/doctor.ts",
     "doctor:package": "node --import tsx apps/desktop/scripts/verify-packaged-runtime.ts",

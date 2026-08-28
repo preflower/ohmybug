@@ -1,0 +1,154 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Create or update release PR
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+  package-macos:
+    name: Package macOS arm64
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.22.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Verify release version
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const { version } = JSON.parse(readFileSync("package.json", "utf8"));
+            const expectedTag = `oh-my-bug-v${version}`;
+            if (process.env.TAG_NAME !== expectedTag) {
+              throw new Error(`RELEASE_TAG_VERSION_MISMATCH:${process.env.TAG_NAME}:${expectedTag}`);
+            }
+          '
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install chromium
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+
+      - name: Prepare App Store Connect API key
+        env:
+          APPLE_API_KEY: ${{ runner.temp }}/AuthKey.p8
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: |
+          test -n "$APPLE_API_KEY_P8_BASE64"
+          printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 -D > "$APPLE_API_KEY"
+          chmod 600 "$APPLE_API_KEY"
+
+      - name: Make signed desktop artifacts
+        env:
+          OMB_MACOS_SIGN: "1"
+          APPLE_API_KEY: ${{ runner.temp }}/AuthKey.p8
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: pnpm make
+
+      - name: Verify Apple signature and notarization
+        run: |
+          app="out/Oh My Bug-darwin-arm64/Oh My Bug.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+
+      - name: Verify packaged runtime
+        run: pnpm doctor:package -- "--app=out/Oh My Bug-darwin-arm64/Oh My Bug.app"
+
+      - name: Run packaged Electron release smoke tests
+        run: pnpm test:e2e:electron:release
+
+      - name: Upload release artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dmgs=()
+          while IFS= read -r -d '' artifact; do
+            dmgs+=("$artifact")
+          done < <(find out/make -type f -name "*.dmg" -print0)
+
+          zips=()
+          while IFS= read -r -d '' artifact; do
+            zips+=("$artifact")
+          done < <(find out/make -type f -name "*.zip" -print0)
+
+          if [[ ${#dmgs[@]} -lt 1 || ${#zips[@]} -lt 1 ]]; then
+            echo "Expected DMG and ZIP artifacts under out/make" >&2
+            exit 1
+          fi
+
+          release_dir="$RUNNER_TEMP/release-assets"
+          mkdir -p "$release_dir"
+          for artifact in "${dmgs[@]}" "${zips[@]}"; do
+            cp "$artifact" "$release_dir/$(basename "$artifact")"
+          done
+
+          cd "$release_dir"
+          shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
+          gh release upload "$TAG_NAME" ./*.dmg ./*.zip ./SHA256SUMS.txt --clobber

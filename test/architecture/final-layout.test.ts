@@ -63,6 +63,7 @@ describe("final monorepo layout", () => {
       "test:codex-app-server",
       "test:e2e",
       "test:e2e:electron",
+      "test:e2e:electron:release",
       "test:repository",
       "test:workspaces",
       "typecheck",
