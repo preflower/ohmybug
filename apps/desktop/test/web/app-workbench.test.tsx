@@ -563,6 +563,58 @@ describe("control center workbench", () => {
     expect(screen.getByTestId("issue-metadata-rail")).toBeVisible();
   });
 
+  it("remembers the closed Issue details rail across navigation and remounts", async () => {
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    const firstRender = render(<App />);
+
+    expect(await screen.findByTestId("issue-metadata-rail")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "隐藏详情栏" }));
+    expect(screen.queryByTestId("issue-metadata-rail")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("link", { name: "Issues" }));
+
+    expect(await screen.findByRole("button", { name: "显示详情栏" })).toBeVisible();
+    expect(screen.queryByTestId("issue-metadata-rail")).not.toBeInTheDocument();
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "显示详情栏" })).toBeVisible();
+    expect(screen.queryByTestId("issue-metadata-rail")).not.toBeInTheDocument();
+  });
+
+  it("keeps the closed Issue details rail in memory when browser storage is unavailable", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Storage is unavailable", "SecurityError");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage is unavailable", "SecurityError");
+    });
+    vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
+    vi.spyOn(api, "projects").mockResolvedValue([project]);
+    vi.spyOn(api, "issues").mockResolvedValue([issue]);
+    vi.spyOn(api, "issue").mockResolvedValue(issue);
+    vi.spyOn(api, "integrationHealth").mockResolvedValue({});
+    vi.spyOn(api, "subscribeIssueEvents").mockReturnValue(() => undefined);
+
+    render(<App />);
+
+    expect(await screen.findByTestId("issue-metadata-rail")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "隐藏详情栏" }));
+    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("link", { name: "Issues" }));
+
+    expect(await screen.findByRole("button", { name: "显示详情栏" })).toBeVisible();
+    expect(screen.queryByTestId("issue-metadata-rail")).not.toBeInTheDocument();
+  });
+
   it("groups every Issue metadata field and action inside a finite card surface", async () => {
     vi.spyOn(api, "integrationPlugins").mockResolvedValue([]);
     vi.spyOn(api, "workspaceProviders").mockResolvedValue([]);

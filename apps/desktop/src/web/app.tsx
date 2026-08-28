@@ -53,6 +53,23 @@ import { ThemeProvider } from "./theme/theme-provider.js";
 type View = "issues" | "projects" | "settings";
 
 const MOBILE_ISSUE_LAYOUT_MAX_WIDTH = 680;
+const ISSUE_METADATA_RAIL_STORAGE_KEY = "oh-my-bug:issue-metadata-rail-open";
+
+function readIssueMetadataRailOpen(): boolean {
+  try {
+    return localStorage.getItem(ISSUE_METADATA_RAIL_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function rememberIssueMetadataRailOpen(open: boolean): void {
+  try {
+    localStorage.setItem(ISSUE_METADATA_RAIL_STORAGE_KEY, String(open));
+  } catch {
+    // Keep the in-memory preference when browser storage is unavailable.
+  }
+}
 
 function viewFromPath(pathname: string): View {
   if (pathname.startsWith("/projects")) return "projects";
@@ -141,9 +158,14 @@ function AppContent() {
   const [visibleIssueStatuses, setVisibleIssueStatuses] = useState(
     createDefaultVisibleIssueStatuses,
   );
+  const [issueMetadataOpen, setIssueMetadataOpen] = useState(readIssueMetadataRailOpen);
   const issueRevisions = useRef(new Map<string, number>());
   const traySelection = useRef<string | undefined>(undefined);
   const canCreateIssue = loaded && projects.length > 0;
+
+  useEffect(() => {
+    rememberIssueMetadataRailOpen(issueMetadataOpen);
+  }, [issueMetadataOpen]);
 
   const selectProjectDirectory = useCallback(async (): Promise<DirectorySelection> => {
     setError("");
@@ -416,7 +438,7 @@ function AppContent() {
         </header> : null}
 
         {view === "issues" ? (
-          <IssueWorkspace issues={visibleIssues} observedIssues={projectIssues} totalIssueCount={projectIssues.length} visibleIssueStatuses={visibleIssueStatuses} projects={projects} selected={selectedIssue} selectedId={selectedId} onToggleIssueStatus={toggleIssueStatus} onSelect={setSelectedId} onDeselect={() => { setSelectedId(undefined); setSelectedIssue(undefined); }} onRefresh={refreshIssue} onUpdated={updateIssue} />
+          <IssueWorkspace issues={visibleIssues} observedIssues={projectIssues} totalIssueCount={projectIssues.length} visibleIssueStatuses={visibleIssueStatuses} metadataOpen={issueMetadataOpen} projects={projects} selected={selectedIssue} selectedId={selectedId} onMetadataOpenChange={setIssueMetadataOpen} onToggleIssueStatus={toggleIssueStatus} onSelect={setSelectedId} onDeselect={() => { setSelectedId(undefined); setSelectedIssue(undefined); }} onRefresh={refreshIssue} onUpdated={updateIssue} />
         ) : view === "projects" ? (
           <ProjectsWorkspace
             editor={projectEditor}
@@ -442,14 +464,16 @@ function AppContent() {
   );
 }
 
-function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueStatuses, projects, selected, selectedId, onToggleIssueStatus, onSelect, onDeselect, onRefresh, onUpdated }: {
+function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueStatuses, metadataOpen, projects, selected, selectedId, onMetadataOpenChange, onToggleIssueStatus, onSelect, onDeselect, onRefresh, onUpdated }: {
   issues: IssueDto[];
   observedIssues: IssueDto[];
   totalIssueCount: number;
   visibleIssueStatuses: ReadonlySet<IssueDto["status"]>;
+  metadataOpen: boolean;
   projects: ProjectDto[];
   selected?: IssueDto;
   selectedId?: string;
+  onMetadataOpenChange: (next: SetStateAction<boolean>) => void;
   onSelect: (id: string) => void;
   onToggleIssueStatus: (status: IssueDto["status"]) => void;
   onDeselect: () => void;
@@ -508,7 +532,6 @@ function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueS
     opening={terminalControl.opening}
     onOpen={() => void terminalControl.open()}
   /> : undefined;
-  const [metadataOpen, setMetadataOpen] = useState(true);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (
@@ -518,11 +541,11 @@ function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueS
         || !matchesShortcut(event, SHORTCUTS.toggleIssueDetails)
       ) return;
       event.preventDefault();
-      setMetadataOpen((current) => !current);
+      onMetadataOpenChange((current) => !current);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected]);
+  }, [onMetadataOpenChange, selected]);
   const selectedProject = selected ? projects.find((project) => project.id === selected.projectId) : undefined;
   return <>
     <header className="view-header">
@@ -535,7 +558,7 @@ function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueS
           onToggle={onToggleIssueStatus}
           selectedStatuses={visibleIssueStatuses}
         />
-        {selected && !metadataOpen ? <MetadataRailToggle open={false} onToggle={() => setMetadataOpen(true)} /> : null}
+        {selected && !metadataOpen ? <MetadataRailToggle open={false} onToggle={() => onMetadataOpenChange(true)} /> : null}
       </div>
     </header>
     <section className={`workspace ${selected ? "has-selection" : ""} ${metadataOpen && selected ? "metadata-open" : "metadata-closed"}`} aria-label="Issue 工作区">
@@ -555,7 +578,7 @@ function IssueWorkspace({ issues, observedIssues, totalIssueCount, visibleIssueS
           project={selectedProject}
           terminalAction={terminalVisible ? undefined : terminalAction}
           workspace={workspaceInfo}
-          onClose={() => setMetadataOpen(false)}
+          onClose={() => onMetadataOpenChange(false)}
         /> : undefined}
         terminalAction={terminalVisible ? terminalAction : undefined}
         workspaceBranch={workspaceInfo?.branch}
