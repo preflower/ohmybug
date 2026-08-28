@@ -69,6 +69,26 @@ describe("release automation", () => {
     }
   });
 
+  it("installs the Electron binary before running parallel tests", () => {
+    for (const path of [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml",
+    ]) {
+      const workflow = requiredText(path);
+      const dependencyInstall = workflow.indexOf(
+        "pnpm install --frozen-lockfile",
+      );
+      const electronInstall = workflow.indexOf("pnpm exec install-electron");
+      const test = workflow.indexOf("pnpm test");
+
+      expect(dependencyInstall, `${path} dependency install`).toBeGreaterThan(-1);
+      expect(electronInstall, `${path} Electron install`).toBeGreaterThan(
+        dependencyInstall,
+      );
+      expect(test, `${path} test`).toBeGreaterThan(electronInstall);
+    }
+  });
+
   it("packages a signed macOS arm64 release after Release Please publishes", () => {
     const manifest = JSON.parse(requiredText("package.json")) as {
       scripts?: Record<string, string>;
