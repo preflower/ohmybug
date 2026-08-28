@@ -94,14 +94,21 @@ describe("release automation", () => {
       scripts?: Record<string, string>;
     };
     const workflow = requiredText(".github/workflows/release.yml");
+    const releasePleaseJob =
+      (workflow.split("  release-please:")[1] ?? "").split(
+        "  package-macos:",
+      )[0] ?? "";
     const packageJob = workflow.split("  package-macos:")[1] ?? "";
     const packageJobEnvironment = packageJob.split("    steps:")[0] ?? "";
 
-    expect(workflow).toContain("actions/create-github-app-token@");
-    expect(workflow).toContain("RELEASE_APP_ID");
-    expect(workflow).toContain("RELEASE_APP_PRIVATE_KEY");
+    expect(releasePleaseJob).toContain("permissions:");
+    expect(releasePleaseJob).toContain("contents: write");
+    expect(releasePleaseJob).toContain("pull-requests: write");
     expect(workflow).toContain("googleapis/release-please-action@");
-    expect(workflow).toContain("token: ${{ steps.app-token.outputs.token }}");
+    expect(releasePleaseJob).toContain("token: ${{ secrets.GITHUB_TOKEN }}");
+    expect(workflow).not.toContain("actions/create-github-app-token@");
+    expect(workflow).not.toContain("RELEASE_APP_ID");
+    expect(workflow).not.toContain("RELEASE_APP_PRIVATE_KEY");
     expect(workflow).toContain("release_created");
     expect(workflow).toContain("tag_name");
     expect(workflow).toContain("runs-on: macos-15");
