@@ -89,7 +89,7 @@ describe("release automation", () => {
     }
   });
 
-  it("packages a signed macOS arm64 release after Release Please publishes", () => {
+  it("packages an unsigned macOS arm64 release after Release Please publishes", () => {
     const manifest = JSON.parse(requiredText("package.json")) as {
       scripts?: Record<string, string>;
     };
@@ -112,12 +112,22 @@ describe("release automation", () => {
     expect(workflow).toContain("release_created");
     expect(workflow).toContain("tag_name");
     expect(workflow).toContain("runs-on: macos-15");
-    expect(workflow).toContain("apple-actions/import-codesign-certs@");
-    expect(workflow).toContain("OMB_MACOS_SIGN: \"1\"");
+    expect(workflow).toContain("- name: Make unsigned desktop artifacts");
     expect(workflow).toContain("pnpm make");
-    expect(workflow).toContain("codesign --verify --deep --strict");
-    expect(workflow).toContain("spctl --assess --type execute");
-    expect(workflow).toContain("xcrun stapler validate");
+    expect(workflow).not.toContain("apple-actions/import-codesign-certs@");
+    expect(workflow).not.toContain("OMB_MACOS_SIGN");
+    expect(workflow).not.toContain("codesign --verify");
+    expect(workflow).not.toContain("spctl --assess");
+    expect(workflow).not.toContain("xcrun stapler");
+    for (const secret of [
+      "MACOS_CERTIFICATE_P12_BASE64",
+      "MACOS_CERTIFICATE_PASSWORD",
+      "APPLE_API_KEY_P8_BASE64",
+      "APPLE_API_KEY_ID",
+      "APPLE_API_ISSUER",
+    ]) {
+      expect(workflow).not.toContain(secret);
+    }
     expect(workflow).toContain("pnpm doctor:package");
     expect(workflow).toContain("pnpm test:e2e:electron:release");
     expect(workflow).toContain("SHA256SUMS.txt");
@@ -140,7 +150,7 @@ describe("release automation", () => {
     expect(packageJobEnvironment).not.toContain("GH_TOKEN");
     expect(packageJobEnvironment).not.toContain("APPLE_API_KEY_ID");
     expect(workflow.indexOf("- name: Test")).toBeLessThan(
-      workflow.indexOf("- name: Import Developer ID certificate"),
+      workflow.indexOf("- name: Make unsigned desktop artifacts"),
     );
   });
 
