@@ -8,6 +8,13 @@ const { api } = require("@electron-forge/core");
 const ELECTRON_RESTART_EVENT = "oh-my-bug:restart-electron";
 const repositoryRoot = resolve(__dirname, "../../..");
 
+function assertElectronHostPermission(environment) {
+  if (!environment.CODEX_SANDBOX) return;
+  throw new Error(
+    "ELECTRON_HOST_PERMISSION_REQUIRED: Electron 完整模式必须获得宿主权限。请在 Codex 中重新运行 pnpm dev 并允许授权；拒绝只会停止本次启动，之后可以重试。",
+  );
+}
+
 function createElectronRestartController(options) {
   const electronExecutable = options.initialChild.spawnfile;
   const electronArguments = options.initialChild.spawnargs.slice(1);
@@ -106,6 +113,7 @@ async function startDesktopDevelopment(options = {}) {
     return { dispose() {} };
   }
 
+  assertElectronHostPermission(environment);
   environment.OMB_VITE_DEV = "1";
   delete environment.npm_config__jsr_registry;
   const start = options.start ?? ((startOptions) => api.start(startOptions));

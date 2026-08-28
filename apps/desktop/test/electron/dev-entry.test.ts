@@ -104,4 +104,20 @@ describe("Desktop development entry", () => {
     expect(errorOutput.write).toHaveBeenCalledWith(expect.stringContaining("initial build failed"));
     expect(exit).toHaveBeenCalledWith(1);
   });
+
+  it("refuses to start Electron inside the Codex sandbox", async () => {
+    const start = vi.fn();
+
+    await expect(startDesktopDevelopment({
+      args: [],
+      environment: { CODEX_SANDBOX: "seatbelt" },
+      events: new EventEmitter(),
+      exit: vi.fn(),
+      output: { write: vi.fn() },
+      spawnElectron: vi.fn(),
+      start,
+    })).rejects.toThrow("ELECTRON_HOST_PERMISSION_REQUIRED");
+
+    expect(start).not.toHaveBeenCalled();
+  });
 });
