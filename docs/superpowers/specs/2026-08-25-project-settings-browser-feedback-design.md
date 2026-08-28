@@ -2,7 +2,7 @@
 
 ## Goal
 
-Resolve the six browser review comments on the project integration settings page while preserving Oh My Bug's compact, truthful settings experience.
+Resolve the six browser review comments on the project integration settings page while preserving Oh My Bug ?!'s compact, truthful settings experience.
 
 ## Scope
 

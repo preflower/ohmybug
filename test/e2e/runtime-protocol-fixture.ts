@@ -93,7 +93,7 @@ function installRuntimeProtocolFixture() {
         {
           id: "filters",
           label: "过滤规则",
-          description: "限制进入 Oh My Bug 的 Sentry Issue。",
+          description: "限制进入 Oh My Bug ?! 的 Sentry Issue。",
           summary: {
             fields: [
               { key: "environment", emptyValue: "全部环境" },

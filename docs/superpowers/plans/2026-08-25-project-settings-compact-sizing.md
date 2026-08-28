@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restore the entire project settings experience, including DingTalk, to Oh My Bug's compact desktop product scale.
+**Goal:** Restore the entire project settings experience, including DingTalk, to Oh My Bug ?!'s compact desktop product scale.
 
 **Architecture:** Keep the existing vertical-tab settings structure and responsive breakpoint. Correct the regression in the shared project-settings and integration CSS, with one sizing vocabulary for Project, Agent, Commands, Sentry, and DingTalk. Lock the contract in source-level tests and in the real browser acceptance test that already exercises DingTalk settings.
 

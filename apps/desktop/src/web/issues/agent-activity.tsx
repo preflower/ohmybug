@@ -9,7 +9,7 @@ import { hasExecutionEvents, useCurrentExecutionEvents } from "./terminal-execut
 const activityPageSize = 80;
 
 const actorLabels: Record<AgentEventDto["actor"], string> = {
-  SYSTEM: "Oh My Bug",
+  SYSTEM: "Oh My Bug ?!",
   USER: "用户",
   AGENT: "Codex",
 };

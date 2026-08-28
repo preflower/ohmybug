@@ -294,13 +294,13 @@ Expected: both commands exit 0.
 
 - [ ] **Step 1: Stop and confirm the application is not writing Runtime state**
 
-Ask the user to quit Oh My Bug, then run:
+Ask the user to quit Oh My Bug ?!, then run:
 
 ```bash
-pgrep -fl "Oh My Bug|apps/runtime/src/entry" || true
+pgrep -fl "[O]h My Bug|apps/runtime/src/entry" || true
 ```
 
-Expected: no Oh My Bug desktop or Runtime process. Do not continue while a matching process remains; this is a hard operational checkpoint.
+Expected: no Oh My Bug ?! desktop or Runtime process. Do not continue while a matching process remains; this is a hard operational checkpoint.
 
 - [ ] **Step 2: Reconfirm local-only recovery preconditions read-only**
 

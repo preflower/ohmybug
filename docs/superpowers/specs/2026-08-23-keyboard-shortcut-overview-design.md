@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make Oh My Bug's implemented keyboard shortcuts easy to discover without crowding primary controls, keep every visible shortcut synchronized with its behavior, and give icon-only tooltips a compact, consistent presentation.
+Make Oh My Bug ?!'s implemented keyboard shortcuts easy to discover without crowding primary controls, keep every visible shortcut synchronized with its behavior, and give icon-only tooltips a compact, consistent presentation.
 
 ## Scope
 

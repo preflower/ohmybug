@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Run up to three independent Oh My Bug Issues concurrently while keeping every operation for one Issue strictly serialized.
+**Goal:** Run up to three independent Oh My Bug ?! Issues concurrently while keeping every operation for one Issue strictly serialized.
 
 **Architecture:** Keep one in-process `RuntimeWorker` pump, but let it own a bounded map of active Issue operations. A scheduler wake signal lets newly queued Issues fill free slots immediately; active and failed Issue ID sets prevent duplicate selection and tight retry loops without adding SQLite leases.
 

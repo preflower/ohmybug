@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="apps/desktop/public/app-icon.png" width="128" alt="Oh My Bug mascot" />
+  <img src="apps/desktop/public/app-icon.png" width="128" alt="Oh My Bug ?! mascot" />
 
-# Oh My Bug
+# Oh My Bug ?!
 
 ### 让多渠道反馈，自动进入 AI 判断与交付流程
 
@@ -18,13 +18,13 @@
 
 </div>
 
-![Oh My Bug Issue 工作台：项目导航、Issue 队列、Assessment、Codex Terminal 与详情栏](docs/assets/oh-my-bug-overview.jpg)
+![Oh My Bug ?! Issue 工作台：项目导航、Issue 队列、Assessment、Codex Terminal 与详情栏](docs/assets/oh-my-bug-overview.jpg)
 
 <p align="center"><sub>一个界面看清 Issue 状态、AI 判断、执行过程、验收证据与交付结果。</sub></p>
 
 ## 从问题到可验收改动
 
-Oh My Bug 不是另一个聊天窗口。它把零散的软件改动请求组织成一条可追踪、可暂停、可审核的交付流程。
+Oh My Bug ?! 不是另一个聊天窗口。它把零散的软件改动请求组织成一条可追踪、可暂停、可审核的交付流程。
 
 | 收集 | 判断 | 实现 | 验收 |
 | --- | --- | --- | --- |
@@ -129,7 +129,10 @@ pnpm test:e2e
 
 ```bash
 pnpm package
-pnpm doctor:package -- "--app=out/Oh My Bug-darwin-arm64/Oh My Bug.app"
+app="$(find out -maxdepth 2 -type d -path "*-darwin-$(uname -m)/*.app" -print)" &&
+test -n "$app" &&
+test "$(printf '%s\n' "$app" | wc -l | tr -d ' ')" -eq 1 &&
+pnpm doctor:package -- "--app=$app"
 pnpm test:e2e:electron
 ```
 

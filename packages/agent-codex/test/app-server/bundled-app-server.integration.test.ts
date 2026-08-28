@@ -142,7 +142,7 @@ async function withFixture(run: (fixture: IntegrationFixture) => Promise<void>):
     const primary = await supervisor.start();
     secondary = await AppServerRpcClient.connect(supervisor.endpoint(), {
       clientName: "oh-my-bug-integration-secondary",
-      clientTitle: "Oh My Bug Integration Secondary",
+      clientTitle: "Oh My Bug ?! Integration Secondary",
     });
     await secondary.initialize();
     await run({ primary, secondary, repository });

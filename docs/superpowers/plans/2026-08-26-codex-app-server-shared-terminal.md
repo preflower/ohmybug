@@ -173,7 +173,7 @@ export interface AppServerMethods {
 }
 ```
 
-Use Zod parsers for every request result and notification consumed by Oh My Bug. Unknown notifications are ignored; malformed known notifications fail the owning turn with `CODEX_PROTOCOL_INVALID_MESSAGE`. `initialize()` sends the `initialize` request exactly once and then the required `initialized` client notification before allowing thread requests. Any server request is answered immediately with JSON-RPC `-32601` because Runtime turns use approval policy `never` and do not expose interactive App Server tools.
+Use Zod parsers for every request result and notification consumed by Oh My Bug ?!. Unknown notifications are ignored; malformed known notifications fail the owning turn with `CODEX_PROTOCOL_INVALID_MESSAGE`. `initialize()` sends the `initialize` request exactly once and then the required `initialized` client notification before allowing thread requests. Any server request is answered immediately with JSON-RPC `-32601` because Runtime turns use approval policy `never` and do not expose interactive App Server tools.
 
 - [ ] Implement the public transport API:
 
@@ -617,7 +617,7 @@ Expected: every command exits 0.
 2. Confirm the metadata action becomes enabled only after provider thread persistence.
 3. Click `在 Terminal 中打开` and confirm Terminal.app shows the same thread.
 4. Enter a steering instruction before the turn ends.
-5. Confirm Oh My Bug shows the resulting items under the same active turn and parses its matching final JSON.
+5. Confirm Oh My Bug ?! shows the resulting items under the same active turn and parses its matching final JSON.
 6. Close Terminal and confirm Issue status/revision are unchanged by closing.
 7. Start a later CLI-only turn and confirm it cannot complete a waiting Runtime stage.
 8. Quit the app and confirm the owned socket is removed and no App Server child remains.

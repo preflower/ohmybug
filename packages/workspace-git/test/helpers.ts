@@ -36,7 +36,7 @@ export async function createGitFixture(projectRelativePath = ".") {
   const worktreeRoot = join(root, "worktrees");
   await mkdir(repository);
   await git(repository, "init", "-b", "main");
-  await git(repository, "config", "user.name", "Oh My Bug Test");
+  await git(repository, "config", "user.name", "Oh My Bug ?! Test");
   await git(repository, "config", "user.email", "test@ohmybug.local");
   await writeFile(join(repository, "README.md"), "baseline\n");
   if (projectRelativePath !== ".") {

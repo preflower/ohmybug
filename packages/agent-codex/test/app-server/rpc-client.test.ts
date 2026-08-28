@@ -92,7 +92,7 @@ describe("App Server JSON-RPC client", () => {
     await waitFor(() => fixture.server.received.length === 3);
     expect(fixture.server.received[2]).toEqual({
       id: 99,
-      error: { code: -32601, message: "Method not supported by Oh My Bug" },
+      error: { code: -32601, message: "Method not supported by Oh My Bug ?!" },
     });
   });
 

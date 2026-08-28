@@ -72,7 +72,7 @@ For base-branch discovery, resolve the effective remote in this order:
 2. `origin`, when it exists.
 3. The only configured remote, when exactly one exists.
 
-If several remotes exist and none can be resolved by those rules, do not guess and do not add an editor to Oh My Bug. Keep local branches usable and explain that an upstream must first be configured with Git.
+If several remotes exist and none can be resolved by those rules, do not guess and do not add an editor to Oh My Bug ?!. Keep local branches usable and explain that an upstream must first be configured with Git.
 
 For normal repositories, a local branch usually tracks `origin/main`, so the first rule still selects `origin`. The distinction matters for fork workflows where a base branch may track an upstream repository while completed Issue branches publish to the user's fork.
 

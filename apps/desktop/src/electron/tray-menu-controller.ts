@@ -64,7 +64,7 @@ export class TrayMenuController<Menu, Icon = unknown> {
       ...taskArea,
       { type: "separator" },
       { label: "打开全部 Issues", click: this.options.openAll },
-      { label: "退出 Oh My Bug", click: this.options.quit },
+      { label: "退出 Oh My Bug ?!", click: this.options.quit },
     ]);
     this.options.popUp(menu);
   }

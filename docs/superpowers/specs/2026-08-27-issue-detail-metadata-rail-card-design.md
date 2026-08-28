@@ -5,7 +5,7 @@ Status: Direction approved, pending written review
 
 ## Goal
 
-Bring the right-side Issue metadata rail into alignment with the approved reference image while preserving the current Oh My Bug shell, all metadata fields, and every existing operation. This change applies only to the Issue detail rail labeled “详情”; it does not redesign the global navigation sidebar, Issue list, main Issue document, or bottom action area.
+Bring the right-side Issue metadata rail into alignment with the approved reference image while preserving the current Oh My Bug ?! shell, all metadata fields, and every existing operation. This change applies only to the Issue detail rail labeled “详情”; it does not redesign the global navigation sidebar, Issue list, main Issue document, or bottom action area.
 
 ## Reference contract
 

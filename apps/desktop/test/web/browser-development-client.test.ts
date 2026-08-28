@@ -58,7 +58,7 @@ describe("browser development Runtime client", () => {
     const project = {
       id: "project-1",
       key: "OMB",
-      name: "Oh My Bug",
+      name: "Oh My Bug ?!",
       path: "/work/oh-my-bug",
       integrations: {
         sentry: {

@@ -7,7 +7,7 @@ import "./styles/global.css";
 const root = document.getElementById("root");
 
 if (!root) {
-  throw new Error("Oh My Bug root element was not found");
+  throw new Error("Oh My Bug ?! root element was not found");
 }
 
 createRoot(root).render(

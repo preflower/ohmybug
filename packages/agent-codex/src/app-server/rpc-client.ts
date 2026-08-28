@@ -44,7 +44,7 @@ export class AppServerRpcClient {
     options: RpcClientOptions,
   ) {
     this.clientName = options.clientName ?? "oh-my-bug";
-    this.clientTitle = options.clientTitle ?? "Oh My Bug";
+    this.clientTitle = options.clientTitle ?? "Oh My Bug ?!";
     this.clientVersion = options.clientVersion ?? "0.1.0";
     socket.on("message", (data) => this.handleMessage(data.toString()));
     socket.on("close", () => this.disconnect());
@@ -141,7 +141,7 @@ export class AppServerRpcClient {
     if ("id" in envelope && "method" in envelope) {
       this.send({
         id: envelope.id,
-        error: { code: -32601, message: "Method not supported by Oh My Bug" },
+        error: { code: -32601, message: "Method not supported by Oh My Bug ?!" },
       });
       return;
     }

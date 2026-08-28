@@ -651,7 +651,7 @@ describe("Agent activity", () => {
     expect(screen.queryByRole("button", { name: "Agent 活动" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "活动记录" })).not.toBeInTheDocument();
     expect(screen.getByText("Issue 已创建")).toBeVisible();
-    expect(screen.getByText("Oh My Bug")).toBeVisible();
+    expect(screen.getByText("Oh My Bug ?!")).toBeVisible();
     expect(screen.queryByText("ISSUE_CREATED")).not.toBeInTheDocument();
     expect(screen.getByText("Tracing checkout")).toBeVisible();
     expect(screen.getAllByText("pnpm test")).toHaveLength(2);

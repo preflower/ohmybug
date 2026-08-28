@@ -2,7 +2,7 @@
 
 ## Context
 
-Oh My Bug creates an isolated workspace for each Issue and starts Codex through
+Oh My Bug ?! creates an isolated workspace for each Issue and starts Codex through
 `@openai/codex-sdk`. The implementation/repair stage currently uses
 `workspace-write` while explicitly setting `networkAccessEnabled: false`. As a
 result, ordinary dependency installation is treated as an Issue capability

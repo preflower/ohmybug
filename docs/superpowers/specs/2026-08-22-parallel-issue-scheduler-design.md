@@ -2,7 +2,7 @@
 
 ## Goal
 
-Allow Oh My Bug to advance up to three independent Issues concurrently. A newly accepted Issue must start as soon as a scheduler slot is available instead of waiting for an unrelated Issue's Agent turn, evidence capture, or finalization to finish.
+Allow Oh My Bug ?! to advance up to three independent Issues concurrently. A newly accepted Issue must start as soon as a scheduler slot is available instead of waiting for an unrelated Issue's Agent turn, evidence capture, or finalization to finish.
 
 The scheduler must preserve the existing state-machine and session guarantees: operations for one Issue remain strictly ordered, and only one operation for a given Issue may be in flight at a time.
 
@@ -16,7 +16,7 @@ The observed OHMYBUG-9/OHMYBUG-10 timeline demonstrates this behavior. OHMYBUG-1
 
 Replace the serial pump with one in-process, bounded scheduler. The scheduler owns a set of active Issue IDs and fills at most three slots from durable pending operations.
 
-This approach is preferred over three independent polling workers because it prevents two workers from selecting the same pending Issue before its operation claims state. It is preferred over SQLite leases because Oh My Bug currently has one Runtime process; cross-process leases, expiry, and recovery would add complexity without a current consumer.
+This approach is preferred over three independent polling workers because it prevents two workers from selecting the same pending Issue before its operation claims state. It is preferred over SQLite leases because Oh My Bug ?! currently has one Runtime process; cross-process leases, expiry, and recovery would add complexity without a current consumer.
 
 The concurrency limit defaults to three and is an internal `RuntimeWorker` option so tests can use smaller limits deterministically. This change does not add a settings UI or persistent configuration.
 

@@ -32,7 +32,7 @@ Use `apply_patch` to create a prompt record containing these exact common constr
 ```markdown
 # Issue Detail Four-stage Variants — ImageGen Prompts
 
-Reference: `docs/design/issue-detail-continuous-balanced.png` for the existing Oh My Bug visual system, continuous-document surface, metadata rail, controls, and Chinese Issue content.
+Reference: `docs/design/issue-detail-continuous-balanced.png` for the existing Oh My Bug ?! visual system, continuous-document surface, metadata rail, controls, and Chinese Issue content.
 
 ## Shared prompt
 

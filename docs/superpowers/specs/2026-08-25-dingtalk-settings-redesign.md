@@ -4,7 +4,7 @@
 
 ## 背景
 
-Oh My Bug 已通过 `@oh-my-bug/integration-dingtalk` 使用 DingTalk Stream 接收机器人消息。当前配置页直接平铺插件 Manifest 中的技术字段，并把普通项目配置与 Integration 凭证暴露为两个独立保存动作。这造成三个问题：
+Oh My Bug ?! 已通过 `@oh-my-bug/integration-dingtalk` 使用 DingTalk Stream 接收机器人消息。当前配置页直接平铺插件 Manifest 中的技术字段，并把普通项目配置与 Integration 凭证暴露为两个独立保存动作。这造成三个问题：
 
 1. 用户无法判断哪些字段是连接必需项，哪些只是过滤或归并策略。
 2. `mention`、`threadKeyField` 等实现细节占据主要表单层级。
@@ -32,7 +32,7 @@ Oh My Bug 已通过 `@oh-my-bug/integration-dingtalk` 使用 DingTalk Stream 接
 
 ## 已确认的视觉方向
 
-配置页延续 Oh My Bug 的紧凑暗色工程工具风格：克制的中性色表面、少量蓝紫色交互强调、真实状态使用语义色、无渐变和装饰性卡片。
+配置页延续 Oh My Bug ?! 的紧凑暗色工程工具风格：克制的中性色表面、少量蓝紫色交互强调、真实状态使用语义色、无渐变和装饰性卡片。
 
 页面结构如下：
 

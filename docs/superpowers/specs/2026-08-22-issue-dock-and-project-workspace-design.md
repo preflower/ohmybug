@@ -34,20 +34,20 @@ Remove the standalone `工作目录` tab. The `项目` tab contains, in order:
 
 Selecting a different directory updates the unsaved form state only. Existing project identity, Agent configuration, commands, and integrations remain unchanged until the user explicitly saves. New projects may continue to derive their initial name and identifier from directory inspection.
 
-The ambiguous `本机项目已注册` state is removed. The save footer remains the authoritative saved/unsaved indicator. A quiet note under the path states `项目路径和配置仅保存在这台电脑上。` This means Oh My Bug stores the project record in its local application database; it does not register the project with Git or a remote service.
+The ambiguous `本机项目已注册` state is removed. The save footer remains the authoritative saved/unsaved indicator. A quiet note under the path states `项目路径和配置仅保存在这台电脑上。` This means Oh My Bug ?! stores the project record in its local application database; it does not register the project with Git or a remote service.
 
 ## Git Worktree delivery
 
 Git Worktree always creates a local Issue branch. Remote publication is therefore represented as a Boolean switch named `完成后推送到远程`, disabled by default. It is not represented as a mutually exclusive `local`/`remote` text field.
 
-The switch can be enabled only when Oh My Bug can resolve a usable remote from the selected Git repository. Remote resolution is deterministic:
+The switch can be enabled only when Oh My Bug ?! can resolve a usable remote from the selected Git repository. Remote resolution is deterministic:
 
 1. Use the current branch's configured upstream remote when present.
 2. Otherwise use `origin` when present.
 3. Otherwise use the sole configured remote.
 4. If multiple remotes remain and none is preferred, treat the remote as unresolved.
 
-When resolved, the UI displays the remote URL or filesystem path, for example `git@github.com:team/repository.git` or `/srv/git/repository.git`. The remote name such as `origin` may appear only as secondary technical metadata. Both are read-only. Oh My Bug does not edit `.git/config` or provide a remote URL input.
+When resolved, the UI displays the remote URL or filesystem path, for example `git@github.com:team/repository.git` or `/srv/git/repository.git`. The remote name such as `origin` may appear only as secondary technical metadata. Both are read-only. Oh My Bug ?! does not edit `.git/config` or provide a remote URL input.
 
 When no remote is configured, or a default cannot be resolved, the switch is disabled and the UI explains that the user must configure or select an upstream remote with Git before enabling publication. Directory reselection and project loading refresh this inspection.
 

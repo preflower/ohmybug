@@ -4,7 +4,7 @@ Date: 2026-08-27
 
 ## Goal
 
-Redesign the Oh My Bug Issue detail page so its process model is immediately readable as four distinct stages: Assessment, Execution, Evidence, and Delivery. Generate three visual treatments of the same content architecture without returning to a card-first layout or departing from the existing product design system.
+Redesign the Oh My Bug ?! Issue detail page so its process model is immediately readable as four distinct stages: Assessment, Execution, Evidence, and Delivery. Generate three visual treatments of the same content architecture without returning to a card-first layout or departing from the existing product design system.
 
 ## Shared architecture
 
@@ -87,7 +87,7 @@ Cancel Issue and the relevant retry action stay directly visible. The violet pri
 
 ## Common visual system
 
-- Follow the current Oh My Bug light desktop design system exactly.
+- Follow the current Oh My Bug ?! light desktop design system exactly.
 - Use the current neutral canvas, white document, cool-gray dividers, charcoal text, muted metadata, and restrained violet accent.
 - Keep compact typography and controls: approximately 20 px title, 12–13 px body and stage labels, 10–11 px metadata, and 30–32 px controls.
 - Use no gradients, glow, glass effects, decorative shadows, oversized headings, atmospheric backgrounds, fake branding, or yellow review state.
@@ -149,4 +149,4 @@ Use the same current stage and the same content in every concept so the comparis
 - Delivery contains the final summary and acceptance outcome.
 - The right rail contains only cross-stage metadata.
 - The fixed bottom bar retains Cancel, Retry, and the context-sensitive primary action.
-- All three concepts remain immediately recognizable as the current Oh My Bug product.
+- All three concepts remain immediately recognizable as the current Oh My Bug ?! product.

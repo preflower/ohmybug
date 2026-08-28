@@ -1,6 +1,6 @@
 # Issue Detail — System-aligned ImageGen prompts
 
-Reference: the current Oh My Bug desktop interface captured on 2026-08-26. The redesign must look like the same product, not a concept from a different design system.
+Reference: the current Oh My Bug ?! desktop interface captured on 2026-08-26. The redesign must look like the same product, not a concept from a different design system.
 
 ## Shared constraints
 

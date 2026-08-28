@@ -20,5 +20,5 @@ test("hides a closed window and restores it without stopping the desktop runtime
   await expect.poll(() => desktop.app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0]?.isVisible() ?? false
   )).toBe(true);
-  await expect(desktop.page.getByText("Oh My Bug").first()).toBeVisible();
+  await expect(desktop.page.getByText("Oh My Bug ?!").first()).toBeVisible();
 });

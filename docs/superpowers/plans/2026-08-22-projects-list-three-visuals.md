@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Produce and visually verify three distinct 1536×1024 dark desktop Projects-list mockups that follow the approved Oh My Bug design specification.
+**Goal:** Produce and visually verify three distinct 1536×1024 dark desktop Projects-list mockups that follow the approved Oh My Bug ?! design specification.
 
 **Architecture:** Treat each direction as an independent `ui-mockup` generation with its own prompt file and PNG deliverable. Preserve one shared application-shell contract across all prompts, then validate every result for layout identity, exact labels, representative project data, prohibited visual patterns, and visible differences between A, B, and C.
 

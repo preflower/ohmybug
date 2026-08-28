@@ -91,7 +91,14 @@ jobs:
         run: pnpm make
 
       - name: Verify packaged runtime
-        run: pnpm doctor:package -- "--app=out/Oh My Bug-darwin-arm64/Oh My Bug.app"
+        run: |
+          apps=()
+          while IFS= read -r -d '' candidate; do
+            apps+=("$candidate")
+          done < <(find out -maxdepth 2 -type d -path '*-darwin-arm64/*.app' -print0)
+          test "${#apps[@]}" -eq 1
+          app="${apps[0]}"
+          pnpm doctor:package -- "--app=$app"
 
       - name: Run packaged Electron release smoke tests
         run: pnpm test:e2e:electron:release

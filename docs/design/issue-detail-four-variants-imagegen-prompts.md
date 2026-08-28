@@ -5,7 +5,7 @@
 ```text
 Use case: ui-mockup
 Asset type: high-fidelity desktop Issue detail page concept
-Primary request: redesign only the Oh My Bug Issue detail page for a truthful Delivery REVIEW_REQUIRED state. The image must be the interface itself, edge to edge, with no application sidebar, no Issue list, no external state atlas, no browser chrome, no physical monitor, and no marketing frame.
+Primary request: redesign only the Oh My Bug ?! Issue detail page for a truthful Delivery REVIEW_REQUIRED state. The image must be the interface itself, edge to edge, with no application sidebar, no Issue list, no external state atlas, no browser chrome, no physical monitor, and no marketing frame.
 Scenario: CHK-42, title "修复证据预览偶发空白", status "等待交付验收". The engineer must inspect Assessment reasoning and three visual evidence items before deciding whether to accept Delivery.
 Exact primary labels: "CHK-42", "修复证据预览偶发空白", "等待交付验收", "评估结果 · Assessment", "判断：是 Bug", "Bug 原因", "解决方案", "Delivery · 迭代 2", "交付分支", "3 项证据", "截图 1", "截图 2", "录屏 1", "等待人工决定", "迭代 2 · 3 项证据", "接受后发布已验证 commit", "要求修改", "接受交付", "更多 Issue 操作", "项目", "分支", "Worktree", "来源", "Agent 会话", "在 Terminal 中打开", "创建时间", "更新时间", "Agent 活动"
 Content: Issue identifier, title, status, concise input summary, occurrence context; Assessment verdict, reasoning, root cause, solution, revision; Delivery summary, branch, commit; two screenshot previews and one recording preview with play affordance; project/source/Worktree/session/Terminal/timestamps; chronological Agent activity; compact human review controls.

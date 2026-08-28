@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
@@ -10,6 +11,9 @@ import {
 interface ForgeConfigOptions {
   development?: boolean;
 }
+
+const internalProductName = "Oh My Bug";
+const displayProductName = "Oh My Bug ?!";
 
 const macSigningEnvironmentVariables = [
   "APPLE_API_KEY",
@@ -35,18 +39,44 @@ export function resolveMacSigningConfig(environment: NodeJS.ProcessEnv = process
   };
 }
 
+function applyMacDisplayName(
+  buildPath: string,
+  _electronVersion: string,
+  platform: string,
+  _arch: string,
+  callback: (error?: Error | null) => void,
+): void {
+  if (platform !== "darwin") {
+    callback();
+    return;
+  }
+
+  const infoPath = resolve(
+    buildPath,
+    `${internalProductName}.app`,
+    "Contents",
+    "Info.plist",
+  );
+  execFile("/usr/libexec/PlistBuddy", [
+    "-c",
+    `Set :CFBundleDisplayName ${displayProductName}`,
+    infoPath,
+  ], (error) => callback(error));
+}
+
 export function createForgeConfig(
   resources: RuntimeResources,
   options: ForgeConfigOptions = {}
 ): ForgeConfig {
   return {
     packagerConfig: {
-      name: "Oh My Bug",
-      executableName: "Oh My Bug",
+      name: internalProductName,
+      executableName: internalProductName,
       icon: resolve(import.meta.dirname, "assets/icons/oh-my-bug.icns"),
       appBundleId: "com.ohmybug.desktop",
       appCategoryType: "public.app-category.developer-tools",
       ...resolveMacSigningConfig(),
+      afterCopyExtraResources: [applyMacDisplayName],
       asar: {
         unpack: desktopAsarUnpackPattern
       },

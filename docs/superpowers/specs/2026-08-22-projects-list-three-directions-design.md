@@ -2,7 +2,7 @@
 
 ## Goal
 
-Create three 1536×1024 dark desktop UI mockups for the Projects list. Each mockup must preserve the current Oh My Bug application shell while offering a distinct organization for the Projects main content area.
+Create three 1536×1024 dark desktop UI mockups for the Projects list. Each mockup must preserve the current Oh My Bug ?! application shell while offering a distinct organization for the Projects main content area.
 
 The mockups are design references, not screenshots of implemented behavior.
 
