@@ -2,6 +2,13 @@
 
 All notable user-facing changes to Oh My Bug are recorded in this file.
 
+## [0.2.2](https://github.com/preflower/ohmybug/compare/oh-my-bug-v0.2.1...oh-my-bug-v0.2.2) (2026-08-28)
+
+
+### Bug Fixes
+
+* **release:** specify repository for asset uploads ([4ecce01](https://github.com/preflower/ohmybug/commit/4ecce01ed6924e185a70e33b4a893d852be6f156))
+
 ## [0.2.1](https://github.com/preflower/ohmybug/compare/oh-my-bug-v0.2.0...oh-my-bug-v0.2.1) (2026-08-28)
 
 
