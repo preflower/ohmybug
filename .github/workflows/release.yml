@@ -124,4 +124,4 @@ jobs:
 
           cd "$release_dir"
           shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
-          gh release upload "$TAG_NAME" ./*.dmg ./*.zip ./SHA256SUMS.txt --clobber
+          gh release upload "$TAG_NAME" ./*.dmg ./*.zip ./SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"

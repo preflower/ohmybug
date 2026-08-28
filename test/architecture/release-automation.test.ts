@@ -138,7 +138,9 @@ describe("release automation", () => {
     expect(workflow).toContain('release-assets');
     expect(workflow).toContain('basename "$artifact"');
     expect(workflow).toContain("shasum -a 256 *.dmg *.zip > SHA256SUMS.txt");
-    expect(workflow).toContain("gh release upload");
+    expect(workflow).toContain(
+      'gh release upload "$TAG_NAME" ./*.dmg ./*.zip ./SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"',
+    );
     expect(workflow).toContain("persist-credentials: false");
     expect(workflow).toContain('const expectedTag = `oh-my-bug-v${version}`;');
     expect(manifest.scripts?.["test:e2e:electron:release"]).toContain(
