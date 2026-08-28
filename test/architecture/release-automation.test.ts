@@ -55,6 +55,20 @@ describe("release automation", () => {
     }
   });
 
+  it("installs workflow dependencies from the npm registry", () => {
+    const lockfile = requiredText("pnpm-lock.yaml");
+
+    expect(lockfile).not.toContain("cnpmjs.org");
+    for (const path of [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml",
+    ]) {
+      expect(requiredText(path)).toContain(
+        "registry-url: https://registry.npmjs.org",
+      );
+    }
+  });
+
   it("packages a signed macOS arm64 release after Release Please publishes", () => {
     const manifest = JSON.parse(requiredText("package.json")) as {
       scripts?: Record<string, string>;
