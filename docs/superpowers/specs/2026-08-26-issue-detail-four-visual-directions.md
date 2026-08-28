@@ -5,7 +5,7 @@
 
 ## Objective
 
-Generate four independent high-fidelity Issue detail page concepts for Oh My Bug. The concepts compare two approved information architectures while holding theme, content, state, and product design rules constant.
+Generate four independent high-fidelity Issue detail page concepts for Oh My Bug ?!. The concepts compare two approved information architectures while holding theme, content, state, and product design rules constant.
 
 The images show only the Issue detail surface. They do not include the application sidebar, Issue list, marketing frame, device mockup, or an external operation-state atlas.
 

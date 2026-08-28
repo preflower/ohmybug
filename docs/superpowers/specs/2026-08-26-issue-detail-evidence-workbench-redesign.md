@@ -157,7 +157,7 @@ The atlas is documentation adjacent to the truthful main screen, not a set of si
 
 - Register: product.
 - Color strategy: restrained, with the blue-violet accent occupying less than 10% of the surface.
-- Use the current Oh My Bug semantic dark tokens as the visual reference: dark canvas, sidebar, surface, raised surface, hover surface, borders, text tiers, accent, success, warning, danger, and info.
+- Use the current Oh My Bug ?! semantic dark tokens as the visual reference: dark canvas, sidebar, surface, raised surface, hover surface, borders, text tiers, accent, success, warning, danger, and info.
 - Use Inter Variable with the system stack fallback. Technical identifiers, Git refs, commands, paths, and timestamps use a compact monospace face.
 - Use a 4px spacing base, 30–32px dense controls, 4–8px control radii, 8px review surfaces, and 14–16px line icons with consistent stroke weight.
 - Use sentence case and the existing Chinese labels. Color is never the only status signal.

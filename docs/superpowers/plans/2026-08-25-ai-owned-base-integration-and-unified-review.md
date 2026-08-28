@@ -590,7 +590,7 @@ pnpm --filter @oh-my-bug/runtime exec vitest run test/testing/demo-agent.test.ts
 
 - [ ] **Step 5: Implement strict Codex output schemas and prompt**
 
-Use a top-level `kind` discriminator; do not infer business review from missing fields or error text. Reverse the current prompt sentence that says Oh My Bug does not manage Git operations. Explicitly distinguish Issue-Worktree Git authority from forbidden base-Worktree authority.
+Use a top-level `kind` discriminator; do not infer business review from missing fields or error text. Reverse the current prompt sentence that says Oh My Bug ?! does not manage Git operations. Explicitly distinguish Issue-Worktree Git authority from forbidden base-Worktree authority.
 
 - [ ] **Step 6: Keep adapter execution rooted in the acquired Issue project path**
 

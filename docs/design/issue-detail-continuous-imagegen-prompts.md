@@ -1,6 +1,6 @@
 # Issue Detail Continuous Document — ImageGen Prompts
 
-Reference image: `docs/design/issue-detail-system-aligned-b.png` for the existing Oh My Bug visual system and content only.
+Reference image: `docs/design/issue-detail-system-aligned-b.png` for the existing Oh My Bug ?! visual system and content only.
 
 ## Shared constraints
 

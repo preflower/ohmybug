@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -12,6 +13,7 @@ import {
   desktopBuildLayout,
   resolveRuntimeResources,
 } from "../../scripts/packaged-runtime.js";
+import { createTempDir } from "../../../../test/helpers/temp-dir.js";
 
 const desktopRoot = resolve(import.meta.dirname, "../..");
 const repositoryRoot = resolve(desktopRoot, "../..");
@@ -79,6 +81,55 @@ describe("Electron packaging", () => {
     ]);
     expect(forgeConfig.packagerConfig?.asar).toEqual(asar);
   });
+
+  it("preserves internal package and executable names", () => {
+    const config = createForgeConfig(resolveRuntimeResources());
+
+    expect(config.packagerConfig?.name).toBe("Oh My Bug");
+    expect(config.packagerConfig?.executableName).toBe("Oh My Bug");
+    expect(config.packagerConfig?.afterCopyExtraResources).toHaveLength(1);
+  });
+
+  it.skipIf(process.platform !== "darwin")(
+    "sets the complete macOS display name before signing",
+    async () => {
+      const config = createForgeConfig(resolveRuntimeResources());
+      const temporary = await createTempDir("oh-my-bug-packaging-brand-");
+      const infoPath = join(temporary.path, "Oh My Bug.app", "Contents", "Info.plist");
+
+      try {
+        await mkdir(join(temporary.path, "Oh My Bug.app", "Contents"), { recursive: true });
+        await writeFile(infoPath, [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+          '<plist version="1.0"><dict>',
+          '<key>CFBundleDisplayName</key><string>Oh My Bug</string>',
+          '</dict></plist>',
+        ].join("\n"));
+
+        const hooks = config.packagerConfig?.afterCopyExtraResources;
+        if (!hooks?.[0]) return;
+
+        await new Promise<void>((resolvePromise, rejectPromise) => {
+          hooks[0]?.(
+            temporary.path,
+            "43.4.1",
+            "darwin",
+            "arm64",
+            (error) => {
+              if (error) rejectPromise(error);
+              else resolvePromise();
+            },
+          );
+        });
+        expect(await readFile(infoPath, "utf8")).toContain(
+          '<string>Oh My Bug ?!</string>',
+        );
+      } finally {
+        await temporary.cleanup();
+      }
+    },
+  );
 
   it("enables the official Vite renderer dev server only for Desktop development", () => {
     const resources = resolveRuntimeResources();

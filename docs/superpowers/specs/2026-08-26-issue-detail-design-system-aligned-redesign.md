@@ -5,7 +5,7 @@
 
 ## Objective
 
-Replace the visually divergent Issue detail concepts with three concepts that are unmistakably part of the current Oh My Bug product. The redesign may improve hierarchy and evidence access, but it must preserve the existing Issue detail skeleton, component vocabulary, density, semantic colors, and interaction ownership.
+Replace the visually divergent Issue detail concepts with three concepts that are unmistakably part of the current Oh My Bug ?! product. The redesign may improve hierarchy and evidence access, but it must preserve the existing Issue detail skeleton, component vocabulary, density, semantic colors, and interaction ownership.
 
 The deliverables are design explorations, not a new visual system.
 

@@ -66,7 +66,7 @@ describe("application icon", () => {
     );
 
     const html = readFileSync(resolve(desktopRoot, "index.html"), "utf8");
-    const parsed = document.implementation.createHTMLDocument("Oh My Bug");
+    const parsed = document.implementation.createHTMLDocument("Oh My Bug ?!");
     parsed.documentElement.innerHTML = html;
     expect(parsed.title).toBe("Oh My Bug ?!");
     expect(parsed.querySelector<HTMLLinkElement>('link[rel="icon"]')?.getAttribute("href")).toBe("/app-icon.png");

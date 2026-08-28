@@ -4,7 +4,7 @@ Date: 2026-08-27
 
 ## Goal
 
-Redesign the Oh My Bug Issue detail page with four lightweight stage cards—Assessment, Execution, Evidence, and Delivery—while removing redundant state labels, counts, explanatory headings, and nested cards. The detail page presents content only; the outer application already communicates the current Issue state.
+Redesign the Oh My Bug ?! Issue detail page with four lightweight stage cards—Assessment, Execution, Evidence, and Delivery—while removing redundant state labels, counts, explanatory headings, and nested cards. The detail page presents content only; the outer application already communicates the current Issue state.
 
 ## Core principle
 
@@ -117,7 +117,7 @@ Keep the actual currently available actions directly visible, such as Cancel Iss
 
 ## Visual system
 
-- Use the current Oh My Bug light desktop design system exactly.
+- Use the current Oh My Bug ?! light desktop design system exactly.
 - Cards use the existing white surface, subtle gray border, approximately 8 px radius, and no decorative shadow.
 - Use approximately 12 px between stage cards and 8–12 px internal spacing.
 - Card headers contain only the Chinese stage name: 评估, 执行, 证据, 交付.
@@ -148,4 +148,4 @@ The image shows only the selected Issue detail workspace, right metadata rail, a
 - Delivery contains only delivery description, branch, and commit summary.
 - The metadata rail omits the Issue status field.
 - Existing bottom actions remain visible without helper copy.
-- The result is immediately recognizable as the current Oh My Bug product.
+- The result is immediately recognizable as the current Oh My Bug ?! product.

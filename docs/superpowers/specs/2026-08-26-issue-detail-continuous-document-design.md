@@ -4,7 +4,7 @@ Date: 2026-08-26
 
 ## Goal
 
-Redesign the Oh My Bug Issue detail page as a continuous document while preserving every current information area and action. The result must remove the card-first feeling without introducing a new product architecture or visual language.
+Redesign the Oh My Bug ?! Issue detail page as a continuous document while preserving every current information area and action. The result must remove the card-first feeling without introducing a new product architecture or visual language.
 
 ## Approved direction
 
@@ -108,4 +108,4 @@ Both images must show only the Issue detail workspace, metadata rail, and bottom
 - Normal sections are distinguished without enclosing boxes or filled backgrounds.
 - The metadata rail and fixed bottom bar preserve current behavior and visual conventions.
 - Short and long content do not destabilize the bottom action area.
-- Generated visuals are immediately recognizable as the current Oh My Bug product.
+- Generated visuals are immediately recognizable as the current Oh My Bug ?! product.

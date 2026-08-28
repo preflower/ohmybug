@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Produce three Issue detail concepts that preserve the current Oh My Bug layout skeleton, tokens, component vocabulary, and density while exploring bounded hierarchy improvements.
+**Goal:** Produce three Issue detail concepts that preserve the current Oh My Bug ?! layout skeleton, tokens, component vocabulary, and density while exploring bounded hierarchy improvements.
 
 **Architecture:** The current implementation and CSS are the source of truth. A current UI reference image is captured when locally available; three separate built-in ImageGen calls then use that reference plus exact numeric constraints, and each output is rejected or corrected when it introduces new product architecture or visual language.
 

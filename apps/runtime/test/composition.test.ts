@@ -101,7 +101,7 @@ describe("Runtime composition boundary", () => {
       composition.store.registerProject({
         id: "project-1",
         key: "OMB",
-        name: "Oh My Bug",
+        name: "Oh My Bug ?!",
         path: dataRoot,
         agent: { plugin: "codex" },
         integrations: {
@@ -162,7 +162,7 @@ describe("Runtime composition boundary", () => {
         projects: [{
           id: "project-1",
           key: "OMB",
-          name: "Oh My Bug",
+          name: "Oh My Bug ?!",
           path: dataRoot,
           agent: { plugin: "codex" },
           integrations: {
@@ -203,7 +203,7 @@ describe("Runtime composition boundary", () => {
         projectInspections: {
           "project-1": {
             path: dataRoot,
-            name: "Oh My Bug",
+            name: "Oh My Bug ?!",
             key: "OMB",
             workspaces: {
               local: { available: true },

@@ -1,6 +1,6 @@
 # New Issue Icon Alignment Implementation Plan
 
-> **For agentic workers:** Implement this plan task-by-task using test-driven development. Do not perform Git operations for this Oh My Bug repair stage.
+> **For agentic workers:** Implement this plan task-by-task using test-driven development. Do not perform Git operations for this Oh My Bug ?! repair stage.
 
 **Goal:** Right-align the plus icon in the expanded “新建 Issue” sidebar button without changing its centered collapsed state.
 

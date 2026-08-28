@@ -4,7 +4,7 @@
 
 ## 背景
 
-Oh My Bug 已通过 `@oh-my-bug/integration-sentry` 轮询 Sentry Organization Issues API，并把事件转换为统一的 Integration Input。当前 Sentry 设置仍使用旧的平铺字段布局：Organization、Project、Environment、Query 与 Auth token 处于同一视觉层级，用户无法快速区分连接必需项和可选过滤项，也无法在保存后主动验证配置与权限。
+Oh My Bug ?! 已通过 `@oh-my-bug/integration-sentry` 轮询 Sentry Organization Issues API，并把事件转换为统一的 Integration Input。当前 Sentry 设置仍使用旧的平铺字段布局：Organization、Project、Environment、Query 与 Auth token 处于同一视觉层级，用户无法快速区分连接必需项和可选过滤项，也无法在保存后主动验证配置与权限。
 
 DingTalk 配置页已经建立了可复用的 Integration 展示模式，包括页面说明、字段分组、折叠高级设置、密钥替换、真实健康状态和统一保存。本设计让 Sentry 复用同一套产品语言，并在不泄漏密钥、不绕过插件边界的前提下增加“测试已保存配置”。
 
@@ -115,7 +115,7 @@ const manifest = {
     {
       id: "filters",
       label: "过滤规则",
-      description: "限制进入 Oh My Bug 的 Sentry Issue。",
+      description: "限制进入 Oh My Bug ?! 的 Sentry Issue。",
       collapsed: true,
     },
   ],
@@ -234,7 +234,7 @@ type TestSavedIntegrationInput = {
 };
 ```
 
-这里的两个 ID 都属于 Oh My Bug：
+这里的两个 ID 都属于 Oh My Bug ?!：
 
 - `projectId` 定位本机已保存项目；
 - `integrationId` 定位该项目中的 Integration 和已注册插件，例如 `sentry`。

@@ -9,7 +9,10 @@ pnpm doctor
 Doctor 检查 Node.js、pnpm、Codex 登录、Chromium、Desktop 构建、Runtime package graph、Storage 媒体资源、数据目录和 SQLite。打包后执行：
 
 ```bash
-pnpm doctor:package -- "--app=out/Oh My Bug-darwin-arm64/Oh My Bug.app"
+app="$(find out -maxdepth 2 -type d -path "*-darwin-$(uname -m)/*.app" -print)" &&
+test -n "$app" &&
+test "$(printf '%s\n' "$app" | wc -l | tr -d ' ')" -eq 1 &&
+pnpm doctor:package -- "--app=$app"
 ```
 
 该命令 fail closed 校验 renderer、main、preload、Runtime entry/protocol、Core、Agent、全部内置 Integration、Storage、媒体辅助文件、Codex 二进制、MediaInfo WASM 和 Chromium。

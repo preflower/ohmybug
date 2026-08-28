@@ -76,7 +76,7 @@ describe("tray menu controller", () => {
       "CHK-2 · Repair checkout",
       "separator",
       "打开全部 Issues",
-      "退出 Oh My Bug",
+      "退出 Oh My Bug ?!",
     ]);
     expect(fixture.template[1]?.icon).toBe(icons.review);
     expect(fixture.template[4]?.icon).toBe(icons.processing);
@@ -100,7 +100,7 @@ describe("tray menu controller", () => {
       "暂无待处理任务",
       "separator",
       "打开全部 Issues",
-      "退出 Oh My Bug",
+      "退出 Oh My Bug ?!",
     ]);
 
     const unavailable = setup(vi.fn(async () => { throw new Error("UTILITY_NOT_READY"); }));
@@ -109,7 +109,7 @@ describe("tray menu controller", () => {
       "任务列表暂不可用",
       "separator",
       "打开全部 Issues",
-      "退出 Oh My Bug",
+      "退出 Oh My Bug ?!",
     ]);
   });
 
@@ -131,7 +131,7 @@ describe("tray menu controller", () => {
       "还有 2 条…",
       "separator",
       "打开全部 Issues",
-      "退出 Oh My Bug",
+      "退出 Oh My Bug ?!",
     ]);
     fixture.template[5]?.click?.();
     expect(fixture.options.openAll).toHaveBeenCalledOnce();

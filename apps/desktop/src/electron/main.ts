@@ -29,7 +29,7 @@ import { UtilitySupervisor, type UtilityRuntimeState } from "./utility-superviso
 import { installWindowLifecycle } from "./window-lifecycle.js";
 import { createWindowOptions, installWindowSecurity, resolveRendererUrl } from "./window-security.js";
 
-app.setName("Oh My Bug");
+app.setName("Oh My Bug ?!");
 
 let mainWindow: BrowserWindow | undefined;
 let tray: Tray | undefined;
@@ -84,7 +84,7 @@ async function startDesktop(): Promise<void> {
           OH_MY_BUG_HOME: dataRoot,
           PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath
         })),
-        serviceName: "Oh My Bug Agent Core",
+        serviceName: "Oh My Bug ?! Agent Core",
         stdio: "pipe"
       }) as UtilityProcess;
       child.stdout?.on("data", (chunk) => process.stdout.write(`[agent-core] ${String(chunk)}`));
@@ -147,7 +147,7 @@ function createTray(): void {
   image.setTemplateImage(true);
   const currentTray = new Tray(image);
   tray = currentTray;
-  currentTray.setToolTip("Oh My Bug");
+  currentTray.setToolTip("Oh My Bug ?!");
   const taskIcons = loadTrayStatusIcons();
   const menu = new TrayMenuController({
     loadIssues: () => supervisor!.client().request("listIssues", {}),

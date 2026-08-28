@@ -3,7 +3,7 @@
 ```text
 Use case: ui-mockup
 Asset type: high-fidelity desktop product UI redesign board
-Primary request: Redesign Oh My Bug's current Issue detail as an evidence-first engineering workbench. Show one truthful Delivery REVIEW_REQUIRED main screen plus a separately labeled operation-state atlas covering all other current actions.
+Primary request: Redesign Oh My Bug ?!'s current Issue detail as an evidence-first engineering workbench. Show one truthful Delivery REVIEW_REQUIRED main screen plus a separately labeled operation-state atlas covering all other current actions.
 Scene/backdrop: crisp 1x desktop application UI on a 27-inch engineering monitor in a dim evening workspace; render the interface itself, not a physical monitor or marketing scene
 Style/medium: production-grade dark product UI, calm, precise, trustworthy, compact expert density
 Composition/framing: landscape design board; dominant full desktop screen with quiet inverted-L shell, compact Issue list, wide evidence document, 280px metadata and Agent activity rail, sticky 64px review dock; a clearly separated state-reference atlas beside or beneath the main screen

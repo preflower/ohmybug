@@ -14,7 +14,7 @@
 
 - Create `docs/design/issue-detail-lean-stage-cards-imagegen-prompt.md`: exact generation constraints.
 - Create `docs/design/issue-detail-lean-stage-cards.png`: accepted concept image.
-- Reference `docs/design/issue-detail-system-aligned-a.png`: current Oh My Bug card visual language.
+- Reference `docs/design/issue-detail-system-aligned-a.png`: current Oh My Bug ?! card visual language.
 - Reference `docs/superpowers/specs/2026-08-27-issue-detail-lean-stage-cards-design.md`: approved content and acceptance rules.
 
 ### Task 1: Record the exact prompt
@@ -29,7 +29,7 @@ Use `apply_patch` to record these exact requirements:
 ```markdown
 # Issue Detail Lean Stage Cards — ImageGen Prompt
 
-Reference: `docs/design/issue-detail-system-aligned-a.png` for the current Oh My Bug light design system, card treatment, metadata rail, controls, and Chinese Issue content.
+Reference: `docs/design/issue-detail-system-aligned-a.png` for the current Oh My Bug ?! light design system, card treatment, metadata rail, controls, and Chinese Issue content.
 
 - Render only the selected Issue detail workspace, right metadata rail, and fixed bottom action bar at 1440×960. Exclude the global sidebar and Issue list.
 - The main column contains the Issue ID, title, description, then exactly four top-level cards titled only 评估, 执行, 证据, 交付.

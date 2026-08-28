@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the generic macOS status icon with an Oh My Bug template icon and make both tray click types open a two-section native menu that navigates to pending Issues.
+**Goal:** Replace the generic macOS status icon with an Oh My Bug ?! template icon and make both tray click types open a two-section native menu that navigates to pending Issues.
 
 **Architecture:** Keep status labels and task grouping in renderer-independent pure modules, wrap native-menu behavior in a dependency-injected controller, and send tray selections to the renderer over one validated main-to-renderer channel. Copy dedicated standard and Retina template assets into the compiled Electron tree so development and packaged builds resolve the same relative URL.
 
@@ -291,7 +291,7 @@ describe("tray menu controller", () => {
     expect(fixture.template.map((item) => item.label ?? item.type)).toEqual([
       "需要你操作 (1)", "CHK-1 · Review checkout — 待确认判断",
       "separator", "AI 处理中 (1)", "CHK-2 · Repair checkout — 实现中",
-      "separator", "打开全部 Issues", "退出 Oh My Bug",
+      "separator", "打开全部 Issues", "退出 Oh My Bug ?!",
     ]);
     fixture.template[1]!.click?.();
     fixture.template.at(-2)!.click?.();
@@ -306,13 +306,13 @@ describe("tray menu controller", () => {
     const empty = setup(vi.fn(async () => []));
     await empty.controller.open();
     expect(empty.template.map((item) => item.label ?? item.type)).toEqual([
-      "暂无待处理任务", "separator", "打开全部 Issues", "退出 Oh My Bug",
+      "暂无待处理任务", "separator", "打开全部 Issues", "退出 Oh My Bug ?!",
     ]);
 
     const unavailable = setup(vi.fn(async () => { throw new Error("UTILITY_NOT_READY"); }));
     await unavailable.controller.open();
     expect(unavailable.template.map((item) => item.label ?? item.type)).toEqual([
-      "任务列表暂不可用", "separator", "打开全部 Issues", "退出 Oh My Bug",
+      "任务列表暂不可用", "separator", "打开全部 Issues", "退出 Oh My Bug ?!",
     ]);
   });
 
@@ -387,7 +387,7 @@ export class TrayMenuController<Menu> {
     }
     this.options.popUp(this.options.buildMenu([
       ...entries,
-      { label: "退出 Oh My Bug", click: this.options.quit },
+      { label: "退出 Oh My Bug ?!", click: this.options.quit },
     ]));
   }
 }
@@ -429,7 +429,7 @@ function permanentEntries(
     ...taskArea,
     { type: "separator" },
     { label: "打开全部 Issues", click: openAll },
-    { label: "退出 Oh My Bug", click: quit },
+    { label: "退出 Oh My Bug ?!", click: quit },
   ];
 }
 ```
@@ -738,7 +738,7 @@ Expected: FAIL because the two files and build-layout keys do not exist.
 Before editing bitmap assets, invoke the `imagegen` skill. Use `apps/desktop/assets/icons/oh-my-bug.png` as the visual reference and this constraint-focused prompt:
 
 ```text
-Create a macOS menu bar template icon derived from this exact Oh My Bug mascot: preserve the rounded bug head, winking face, oval eye, question-mark antenna and exclamation-mark antenna. Render a single flat opaque black silhouette/details on a fully transparent square canvas, no gradients, shadows, gray, background, border, text, or extra marks. It must remain recognizable at 18x18 pixels with balanced one-pixel safe padding.
+Create a macOS menu bar template icon derived from this exact Oh My Bug ?! mascot: preserve the rounded bug head, winking face, oval eye, question-mark antenna and exclamation-mark antenna. Render a single flat opaque black silhouette/details on a fully transparent square canvas, no gradients, shadows, gray, background, border, text, or extra marks. It must remain recognizable at 18x18 pixels with balanced one-pixel safe padding.
 ```
 
 Use the approved result as the source and downsample with Sharp/Lanczos to exactly 36-by-36 and 18-by-18 RGBA PNGs. Inspect both output files with the image viewer at original resolution and against light and dark solid backgrounds before keeping them. Name them exactly as listed so macOS discovers the Retina representation and Electron can mark the image as a template.
@@ -902,7 +902,7 @@ Expected: both commands exit 0 and both template icon assets are present under `
 
 Run `pnpm dev` and verify all of the following in both light and dark appearance:
 
-- the menu bar shows the recognizable Oh My Bug mascot rather than the system availability glyph;
+- the menu bar shows the recognizable Oh My Bug ?! mascot rather than the system availability glyph;
 - primary click and context click each open exactly one native menu;
 - the two groups show at most four rows each and correct total/overflow counts;
 - a task row opens and focuses the matching Issue detail with project filtering cleared;

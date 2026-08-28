@@ -129,6 +129,12 @@ describe("release automation", () => {
       expect(workflow).not.toContain(secret);
     }
     expect(workflow).toContain("pnpm doctor:package");
+    expect(workflow).toContain(
+      "find out -maxdepth 2 -type d -path '*-darwin-arm64/*.app' -print0",
+    );
+    expect(workflow).toContain('test "${#apps[@]}" -eq 1');
+    expect(workflow).toContain('app="${apps[0]}"');
+    expect(workflow).toContain('pnpm doctor:package -- "--app=$app"');
     expect(workflow).toContain("pnpm test:e2e:electron:release");
     expect(workflow).toContain("SHA256SUMS.txt");
     expect(workflow).toContain('dmgs=()');
@@ -187,6 +193,21 @@ describe("release automation", () => {
       "RELEASE_APP_PRIVATE_KEY",
     ]) {
       expect(readme).not.toContain(secret);
+    }
+  });
+
+  it("documents unambiguous local packaged-app discovery", () => {
+    for (const path of [
+      "README.md",
+      "docs/troubleshooting.md",
+      "docs/superpowers/plans/2026-08-28-automated-desktop-releases.md",
+    ]) {
+      const document = requiredText(path);
+      expect(document).toContain(
+        'find out -maxdepth 2 -type d -path "*-darwin-$(uname -m)/*.app" -print',
+      );
+      expect(document).toContain('test -n "$app"');
+      expect(document).toContain('wc -l | tr -d \' \'');
     }
   });
 });

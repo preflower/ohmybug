@@ -2,29 +2,29 @@
 
 ## Goal
 
-Let a user open the native Codex CLI for an active Oh My Bug Issue and interact with the same Codex thread and active turn that the Runtime is already driving.
+Let a user open the native Codex CLI for an active Oh My Bug ?! Issue and interact with the same Codex thread and active turn that the Runtime is already driving.
 
-Oh My Bug and the CLI remain simultaneous clients of one long-lived Codex App Server. CLI input joins the current turn through App Server steering. The feature does not pause the Issue, interrupt the turn, transfer ownership, or require a later hand-back action.
+Oh My Bug ?! and the CLI remain simultaneous clients of one long-lived Codex App Server. CLI input joins the current turn through App Server steering. The feature does not pause the Issue, interrupt the turn, transfer ownership, or require a later hand-back action.
 
 ## Product behavior
 
 The Issue detail metadata rail adds an `在 Terminal 中打开` action beside the Agent session. The action is available only for a Codex-backed Issue whose native provider thread has been established.
 
-Selecting the action opens macOS Terminal.app and resumes the Issue thread through the App Server endpoint owned by the current Oh My Bug Runtime:
+Selecting the action opens macOS Terminal.app and resumes the Issue thread through the App Server endpoint owned by the current Oh My Bug ?! Runtime:
 
 ```text
 codex resume <threadId> --remote unix://<socket-path>
 ```
 
-If the Oh My Bug turn is active, input entered in the CLI is appended to that same turn. App Server serializes the input; this is one turn with multiple clients, not two concurrent turns. Oh My Bug continues to receive the complete event stream and remains responsible for interpreting the structured result of the turn it started.
+If the Oh My Bug ?! turn is active, input entered in the CLI is appended to that same turn. App Server serializes the input; this is one turn with multiple clients, not two concurrent turns. Oh My Bug ?! continues to receive the complete event stream and remains responsible for interpreting the structured result of the turn it started.
 
-Closing the Terminal window has no Issue lifecycle effect. If a user remains in the CLI after the Runtime-owned turn completes, the CLI may continue the native Codex thread. Any later CLI-owned turn is external activity and is not interpreted as an Oh My Bug workflow result.
+Closing the Terminal window has no Issue lifecycle effect. If a user remains in the CLI after the Runtime-owned turn completes, the CLI may continue the native Codex thread. Any later CLI-owned turn is external activity and is not interpreted as an Oh My Bug ?! workflow result.
 
 The first increment supports macOS Terminal.app only. Configurable terminal applications, embedded terminals, tray-menu launch actions, non-Codex agents, and remote-machine App Servers are outside scope.
 
 ## Chosen approach
 
-Run one long-lived Codex App Server per Oh My Bug Runtime and connect both Oh My Bug and the native Codex CLI to it over a local Unix socket.
+Run one long-lived Codex App Server per Oh My Bug ?! Runtime and connect both Oh My Bug ?! and the native Codex CLI to it over a local Unix socket.
 
 This replaces the current SDK-owned headless Codex process model. Keeping the SDK and launching an independent `codex resume` process would reopen persisted history but would not reliably attach to the in-memory active turn. Building an embedded terminal would require PTY lifecycle and terminal rendering without providing the native Codex TUI.
 
@@ -50,7 +50,7 @@ Electron main process
 The supervisor owns one bundled Codex App Server child process for the Runtime. It:
 
 - resolves the bundled, version-pinned Codex executable;
-- creates the Runtime-owned Unix socket beneath the Oh My Bug data root;
+- creates the Runtime-owned Unix socket beneath the Oh My Bug ?! data root;
 - verifies that any stale socket is inside that exact owned location before removing it;
 - waits for the App Server transport to accept connections before declaring the Agent available;
 - performs one bounded restart after an unexpected exit;
@@ -92,7 +92,7 @@ A renderer-safe availability operation returns only whether the selected Issue c
 
 One Issue may still have at most one Runtime-owned Agent operation and one Runtime-owned active turn. The shared-terminal feature does not weaken the existing per-Issue Worker serialization.
 
-Multiple clients may contribute input to that turn, but App Server determines the total order. Oh My Bug does not create a second turn in response to Terminal input and does not introduce a terminal-control state.
+Multiple clients may contribute input to that turn, but App Server determines the total order. Oh My Bug ?! does not create a second turn in response to Terminal input and does not introduce a terminal-control state.
 
 Runtime-owned events continue through the existing activity reporter. Items added after a Terminal steer appear in the same Codex turn group. A later CLI-owned turn may be recorded as external Agent activity when observed, but it must be labeled as external and excluded from stage-result parsing. The first increment does not add new Issue statuses for external activity.
 
@@ -187,14 +187,14 @@ All existing `agent-codex` Assessment, Repair, Evidence, finalization recovery, 
 - Terminal launcher success and failure behavior with a stubbed platform launcher.
 - No Issue mutation when Terminal opens or closes.
 - Packaged runtime contains the pinned Codex executable and matching App Server protocol schema.
-- Manual macOS verification opens Terminal.app on an active Issue, shows the same thread, steers the active turn, and reflects the resulting activity in Oh My Bug.
+- Manual macOS verification opens Terminal.app on an active Issue, shows the same thread, steers the active turn, and reflects the resulting activity in Oh My Bug ?!.
 
 ## Acceptance criteria
 
 - An active Codex-backed Issue exposes `在 Terminal 中打开` after its provider thread is established.
 - Clicking the action opens macOS Terminal.app in the same native Codex thread through the Runtime-owned App Server.
 - Input entered in Terminal during a Runtime-owned active turn is applied to that turn without pausing or interrupting it.
-- Oh My Bug displays the resulting activity and parses only the final result belonging to the turn it started.
+- Oh My Bug ?! displays the resulting activity and parses only the final result belonging to the turn it started.
 - Closing Terminal causes no Issue state transition.
 - Existing sessions remain resumable or fail through the existing explicit rebuild path.
 - App Server failure, protocol mismatch, and terminal-launch failure are bounded and do not corrupt Issue or session persistence.

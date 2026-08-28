@@ -2,11 +2,11 @@
 
 ## Goal
 
-Replace the generic macOS status icon with a recognizable Oh My Bug mascot icon and make the icon a useful, native entry point for pending Issue work.
+Replace the generic macOS status icon with a recognizable Oh My Bug ?! mascot icon and make the icon a useful, native entry point for pending Issue work.
 
 ## Current behavior and root cause
 
-`apps/desktop/src/electron/main.ts` creates the tray image from macOS's built-in `NSStatusAvailable` image. It is therefore unrelated to the Oh My Bug application artwork. The tray's context menu contains only “打开 Oh My Bug” and “退出”, while its click handler only shows and focuses the main window. The tray has no path to `listIssues`, no status classification, and no way to navigate the renderer to a particular Issue.
+`apps/desktop/src/electron/main.ts` creates the tray image from macOS's built-in `NSStatusAvailable` image. It is therefore unrelated to the Oh My Bug ?! application artwork. The tray's context menu contains only “打开 Oh My Bug ?!” and “退出”, while its click handler only shows and focuses the main window. The tray has no path to `listIssues`, no status classification, and no way to navigate the renderer to a particular Issue.
 
 ## Chosen interaction
 
@@ -22,7 +22,7 @@ The menu has this structure:
 2. **AI 处理中 (N)**
    - Up to four Issue items.
    - If more than four match, an “还有 N 条…” item opens the full Issues view.
-3. A separator followed by “打开全部 Issues” and “退出 Oh My Bug”.
+3. A separator followed by “打开全部 Issues” and “退出 Oh My Bug ?!”.
 
 Group headings are disabled menu items. The count is the total matching count, not just the number currently displayed. Each Issue item uses the form `identifier · title — status`. The displayed title is limited to 32 Unicode grapheme clusters and ends with an ellipsis when truncated; truncation never changes stored Issue data. Within each group, Issues sort by `updatedAt` descending, with numeric-aware `identifier` descending as a deterministic tie-breaker.
 
@@ -60,7 +60,7 @@ The menu reuses the existing Chinese status wording from the desktop UI through 
 
 ## Menu bar icon
 
-Add a dedicated monochrome macOS Template Image derived from the recognizable Oh My Bug mascot silhouette. Do not shrink and display the shaded 1024-pixel application artwork directly: its three-dimensional shading is not legible at menu bar size. The tray asset keeps the mascot's head and question/exclamation antenna silhouette, uses transparent padding appropriate for the macOS menu bar, and ships as an 18-by-18 standard image plus a 36-by-36 `@2x` Retina image.
+Add a dedicated monochrome macOS Template Image derived from the recognizable Oh My Bug ?! mascot silhouette. Do not shrink and display the shaded 1024-pixel application artwork directly: its three-dimensional shading is not legible at menu bar size. The tray asset keeps the mascot's head and question/exclamation antenna silhouette, uses transparent padding appropriate for the macOS menu bar, and ships as an 18-by-18 standard image plus a 36-by-36 `@2x` Retina image.
 
 Electron marks the result as a template image so macOS controls its foreground color in light, dark, active, and disabled appearances. The Dock icon, packaged application icon, browser favicon, and in-app brand artwork remain unchanged.
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Centralize Oh My Bug's implemented keyboard shortcuts, expose a platform-aware read-only overview in Settings, change the Issue details shortcut to `Cmd/Ctrl + B`, simplify its Tooltip, and standardize the shared Tooltip appearance.
+**Goal:** Centralize Oh My Bug ?!'s implemented keyboard shortcuts, expose a platform-aware read-only overview in Settings, change the Issue details shortcut to `Cmd/Ctrl + B`, simplify its Tooltip, and standardize the shared Tooltip appearance.
 
 **Architecture:** Add a typed shortcut registry that owns matching, accessible metadata, visual key sequences, labels, and Settings order. Keep action state in the existing React owners, but make every handler and presentation consume registry entries. Add one focused Settings component and reuse the existing `Kbd` and Tooltip primitives.
 

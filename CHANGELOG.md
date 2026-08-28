@@ -1,6 +1,6 @@
 # Changelog
 
-All notable user-facing changes to Oh My Bug are recorded in this file.
+All notable user-facing changes to Oh My Bug ?! are recorded in this file.
 
 ## [0.2.2](https://github.com/preflower/ohmybug/compare/oh-my-bug-v0.2.1...oh-my-bug-v0.2.2) (2026-08-28)
 

@@ -114,7 +114,10 @@ pnpm lint
 pnpm test
 pnpm build:desktop
 pnpm package
-pnpm doctor:package -- "--app=out/Oh My Bug-darwin-arm64/Oh My Bug.app"
+app="$(find out -maxdepth 2 -type d -path "*-darwin-$(uname -m)/*.app" -print)" &&
+test -n "$app" &&
+test "$(printf '%s\n' "$app" | wc -l | tr -d ' ')" -eq 1 &&
+pnpm doctor:package -- "--app=$app"
 pnpm test:e2e:electron
 ```
 

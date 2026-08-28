@@ -137,7 +137,7 @@ export function ProjectList({
       </div>
       <p className="projects-local-note">
         <FolderKanban aria-hidden="true" size={15} />
-        项目与配置仅保存在本机；Oh My Bug 只会在已添加项目的目录内运行 Agent。
+        项目与配置仅保存在本机；Oh My Bug ?! 只会在已添加项目的目录内运行 Agent。
       </p>
     </section>
   );

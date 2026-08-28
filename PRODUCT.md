@@ -6,11 +6,11 @@ product
 
 ## Users
 
-Oh My Bug serves software engineers who triage, diagnose, implement, and validate bug fixes and feature changes in local repositories. They use it as a focused desktop console while reviewing external requests, agent assessments, implementation progress, and visual acceptance evidence. Their primary job is to reach a trustworthy decision quickly without surrendering control of consequential actions.
+Oh My Bug ?! serves software engineers who triage, diagnose, implement, and validate bug fixes and feature changes in local repositories. They use it as a focused desktop console while reviewing external requests, agent assessments, implementation progress, and visual acceptance evidence. Their primary job is to reach a trustworthy decision quickly without surrendering control of consequential actions.
 
 ## Product Purpose
 
-Oh My Bug unifies Manual, Sentry, and DingTalk inputs into a local Issue workflow, coordinates Codex Agent analysis and implementation, and preserves explicit human gates before an assessment is accepted or a change is closed. Success means engineers can understand the rationale and implementation plan, inspect the evidence, grant narrowly scoped approval, and finish the workflow without losing context or exposing secrets.
+Oh My Bug ?! unifies Manual, Sentry, and DingTalk inputs into a local Issue workflow, coordinates Codex Agent analysis and implementation, and preserves explicit human gates before an assessment is accepted or a change is closed. Success means engineers can understand the rationale and implementation plan, inspect the evidence, grant narrowly scoped approval, and finish the workflow without losing context or exposing secrets.
 
 ## Brand Personality
 

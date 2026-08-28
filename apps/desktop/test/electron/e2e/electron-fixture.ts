@@ -8,6 +8,9 @@ import { _electron as electron } from "playwright";
 
 import { createTempDir } from "../../../../../test/helpers/temp-dir.js";
 
+const packagedBundleName = "Oh My Bug";
+const packagedExecutableName = "Oh My Bug";
+
 export interface DesktopHarness {
   app: ElectronApplication;
   page: Page;
@@ -40,12 +43,12 @@ export { expect } from "@playwright/test";
 
 export function packagedExecutable(): string {
   if (process.platform === "darwin") {
-    return resolve("out", `Oh My Bug-darwin-${process.arch}`, "Oh My Bug.app", "Contents", "MacOS", "Oh My Bug");
+    return resolve("out", `${packagedBundleName}-darwin-${process.arch}`, `${packagedBundleName}.app`, "Contents", "MacOS", packagedExecutableName);
   }
   if (process.platform === "win32") {
-    return resolve("out", `Oh My Bug-win32-${process.arch}`, "Oh My Bug.exe");
+    return resolve("out", `${packagedBundleName}-win32-${process.arch}`, `${packagedExecutableName}.exe`);
   }
-  return resolve("out", `Oh My Bug-linux-${process.arch}`, "Oh My Bug");
+  return resolve("out", `${packagedBundleName}-linux-${process.arch}`, packagedExecutableName);
 }
 
 export async function launchPackagedDesktop(options: LaunchDesktopOptions): Promise<DesktopHarness> {

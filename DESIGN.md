@@ -1,6 +1,6 @@
 ---
 version: alpha
-name: Oh My Bug Console
+name: Oh My Bug ?! Console
 description: "A calm, dense local engineering console. Quiet neutral surfaces keep attention on root-cause evidence, agent progress, visual evidence, and explicit approval decisions. The system is inspired by Linear's hierarchy and interaction discipline while using an original blue-violet accent and workflow-specific components."
 colors:
   accent: "#716BFF"
@@ -156,11 +156,11 @@ components:
     padding: 16px
 ---
 
-# Oh My Bug Design Contract
+# Oh My Bug ?! Design Contract
 
 ## Overview
 
-Oh My Bug should feel like a focused engineering instrument: fast, composed, precise, and trustworthy. It handles dangerous actions, so hierarchy and state clarity matter more than decoration.
+Oh My Bug ?! should feel like a focused engineering instrument: fast, composed, precise, and trustworthy. It handles dangerous actions, so hierarchy and state clarity matter more than decoration.
 
 The interface borrows Linear's discipline—dense navigation, restrained color, quiet chrome, consistent headers, and keyboard efficiency—but not its identity. Do not use Linear logos, proprietary fonts, exact brand colors, marketing layouts, or copied illustrations.
 
@@ -408,7 +408,7 @@ The product is desktop-first because it controls local projects, but narrow brow
 
 ## Source and adaptation notes
 
-This contract is an original Oh My Bug design system informed by Linear's public writing on hierarchy, density, quiet navigation, and consistent chrome, plus the community `awesome-design-md` analysis of Linear's marketing site. The source analysis is reference material rather than an official Linear specification. Oh My Bug intentionally replaces its palette, fonts, components, layouts, and product-specific rules.
+This contract is an original Oh My Bug ?! design system informed by Linear's public writing on hierarchy, density, quiet navigation, and consistent chrome, plus the community `awesome-design-md` analysis of Linear's marketing site. The source analysis is reference material rather than an official Linear specification. Oh My Bug ?! intentionally replaces its palette, fonts, components, layouts, and product-specific rules.
 
 - [Linear: A calmer interface for a product in motion](https://linear.app/now/behind-the-latest-design-refresh)
 - [Linear: How we redesigned the Linear UI](https://linear.app/now/how-we-redesigned-the-linear-ui)

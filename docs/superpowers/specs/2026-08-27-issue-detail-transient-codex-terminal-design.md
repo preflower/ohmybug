@@ -4,7 +4,7 @@ Date: 2026-08-27
 
 ## Goal
 
-Refine the Oh My Bug Issue detail design by preserving the current Assessment presentation, removing the persistent Execution card, and showing a transient read-only Codex Terminal only while the Agent is actively executing. Keep Evidence and Delivery concise and eliminate duplicated workflow-state information.
+Refine the Oh My Bug ?! Issue detail design by preserving the current Assessment presentation, removing the persistent Execution card, and showing a transient read-only Codex Terminal only while the Agent is actively executing. Keep Evidence and Delivery concise and eliminate duplicated workflow-state information.
 
 ## Product model
 
@@ -161,4 +161,4 @@ The two images demonstrate the intended state transition without adding workflow
 - No workflow-state source is introduced inside the Issue detail.
 - The right rail omits Issue status and duplicated Agent activity.
 - Existing bottom actions remain available without helper copy.
-- Both images remain recognizable as the current Oh My Bug product.
+- Both images remain recognizable as the current Oh My Bug ?! product.
