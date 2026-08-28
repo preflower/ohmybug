@@ -2,6 +2,13 @@
 
 All notable user-facing changes to Oh My Bug are recorded in this file.
 
+## [0.2.1](https://github.com/preflower/ohmybug/compare/oh-my-bug-v0.2.0...oh-my-bug-v0.2.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **release:** package unsigned macOS artifacts ([4a91f11](https://github.com/preflower/ohmybug/commit/4a91f113a2a24d64d6347246fbea31631388886c))
+
 ## [0.2.0](https://github.com/preflower/ohmybug/compare/oh-my-bug-v0.1.0...oh-my-bug-v0.2.0) (2026-08-28)
 
 

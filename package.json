@@ -1,7 +1,7 @@
 {
   "name": "oh-my-bug",
   "productName": "Oh My Bug",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local AI automation for assessing, implementing, and validating bug fixes and feature changes.",
   "private": true,
   "type": "module",
