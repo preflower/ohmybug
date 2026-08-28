@@ -75,6 +75,15 @@ function failureMessage(failure: NonNullable<IssueDto["lastFailure"]>): string {
   }
 }
 
+function isBaseIntegrationRevalidation(issue: IssueDto, events: AgentEventDto[]): boolean {
+  const iteration = issue.repair?.iteration;
+  return issue.status === "REPAIRING"
+    && typeof iteration === "number"
+    && events.some((event) =>
+      event.type === "BASE_INTEGRATION_STALE" && event.data.iteration === iteration
+    );
+}
+
 export function IssueDetail({
   issue,
   branch,
@@ -113,6 +122,16 @@ export function IssueDetail({
         <h2>{issue.title}</h2>
         {latestInput?.data.content ? <p>{latestInput.data.content}</p> : null}
       </header>
+
+      {isBaseIntegrationRevalidation(issue, agentEvents) ? (
+        <div className="revalidation-banner" role="status">
+          <RotateCcw aria-hidden="true" size={16} />
+          <div>
+            <strong>基线已更新，正在重新集成并验证</strong>
+            <span>完成后会生成新的交付证据，需要再次验收。</span>
+          </div>
+        </div>
+      ) : null}
 
       {issue.status === "EVIDENCE_FAILED" ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />证据采集失败；实现改动和工作目录已保留。</div> : issue.lastFailure ? <div className="error-banner" role="alert"><CircleAlert aria-hidden="true" size={15} />{failureMessage(issue.lastFailure)}</div> : null}
 

@@ -77,6 +77,7 @@ describe("Codex App Server Runtime host", () => {
       executablePath: "/bin/codex",
       remoteUrl: "unix:///data/run/codex-app-server.sock",
       workingDirectory: "/repo/worktree",
+      permissionMode: "auto-review",
     });
     expect(host.availability(context())).not.toHaveProperty("providerThreadId");
   });
@@ -149,12 +150,14 @@ function context(overrides: Partial<{
   providerThreadId: string;
   workingDirectory: string;
   workspaceReady: boolean;
+  permissionMode: "request-approval" | "auto-review" | "full-access";
 }> = {}) {
   return {
     agent: "codex",
     providerThreadId,
     workingDirectory: "/repo/worktree",
     workspaceReady: true,
+    permissionMode: "auto-review" as const,
     ...overrides,
   };
 }

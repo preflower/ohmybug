@@ -6,7 +6,7 @@ import type {
 } from "@oh-my-bug/core";
 
 import {
-  effectiveStageCapabilities,
+  projectCapabilityPrompt,
   type CodexAgentStage,
 } from "./stage-capabilities.js";
 
@@ -14,7 +14,7 @@ export function assessmentPrompt(input: AssessInput): string {
   return [
     "Assess whether this Issue requests a software bug fix or a feature change. Do not modify files or Git state.",
     ...continuationPrompt(input.continuation),
-    ...capabilityPrompt(input.issue, "ASSESSMENT"),
+    ...capabilityPrompt(input.project, input.issue, "ASSESSMENT"),
     "Use BUG when existing intended behavior is broken, FEATURE for a new capability or enhancement, NOT_A_BUG when no code change is warranted, and UNCERTAIN when evidence is insufficient.",
     "BUG requires rootCause and solution. FEATURE requires solution; rootCause may be omitted.",
     "Return only the requested structured Assessment. Every verdict will be reviewed by a human.",
@@ -28,7 +28,7 @@ export function repairPrompt(input: RepairInput): string {
   return [
     "Implement the approved BUG or FEATURE change in the supplied project directory. Run your own engineering loop until ready.",
     ...continuationPrompt(input.continuation),
-    ...capabilityPrompt(input.issue, "REPAIR"),
+    ...capabilityPrompt(input.project, input.issue, "REPAIR"),
     ...(input.integration ? [
       `Observed base: ${input.integration.baseBranch}@${input.integration.observedBaseCommit}`,
       `Issue branch: ${input.integration.issueBranch}`,
@@ -59,7 +59,7 @@ export function evidencePrompt(input: EvidenceCaptureInput): string {
   return [
     "Capture real visual evidence for the already completed implementation. Do not reimplement or refactor the product change.",
     ...continuationPrompt(input.continuation),
-    ...capabilityPrompt(input.issue, "EVIDENCE"),
+    ...capabilityPrompt(input.project, input.issue, "EVIDENCE"),
     "Inspect the existing files and prior verification first. Modify product code only if the acceptance run exposes a real defect.",
     `Write screenshots or recordings under: ${input.evidenceDirectory}`,
     "Visual evidence must directly capture a real acceptance run that proves the change. Never submit generated, reconstructed, mocked, or illustrative visuals.",
@@ -113,15 +113,12 @@ function continuationPrompt(
 }
 
 function capabilityPrompt(
+  project: AssessInput["project"],
   issue: Issue,
   stage: CodexAgentStage,
 ): string[] {
-  const available = effectiveStageCapabilities(issue, stage);
   return [
     "Always use the response envelope. On stage completion set outcome=RESULT, populate result, and set capabilityRequest=null. For a capability request set outcome=CAPABILITY_REQUIRED, set result=null, and populate capabilityRequest.",
-    `Capabilities already available in this stage: ${JSON.stringify([...available])}`,
-    "Use a practical lower-privilege alternative first.",
-    "If a project Skill explicitly requires host or network access, or a sandbox, permission, or network denial leaves no practical lower-privilege alternative, stop retrying and return the CAPABILITY_REQUIRED structured outcome.",
-    "Request HOST_EXECUTION for unrestricted host execution and NETWORK_ACCESS for network access. Do not request a capability that is already available.",
+    ...projectCapabilityPrompt(project, issue, stage),
   ];
 }

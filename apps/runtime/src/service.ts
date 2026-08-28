@@ -101,6 +101,7 @@ interface AgentTerminalContext {
   providerThreadId?: string;
   workingDirectory?: string;
   workspaceReady: boolean;
+  permissionMode?: RuntimeProject["permissionMode"];
 }
 
 interface AgentTerminalProvider {
@@ -506,6 +507,7 @@ export class RuntimeService implements RuntimeApi {
         : {}),
       ...(issue.projectPath ? { workingDirectory: issue.projectPath } : {}),
       workspaceReady: Boolean(issue.projectPath),
+      permissionMode: project.permissionMode ?? "request-approval",
     };
   }
 
@@ -714,6 +716,7 @@ export class RuntimeService implements RuntimeApi {
       updatedAt: project.updatedAt ?? this.dependencies.now(),
       ...(project.name ? { name: project.name } : {}),
       ...(project.instructions !== undefined ? { instructions: project.instructions } : {}),
+      permissionMode: project.permissionMode ?? "request-approval",
       ...(project.commands ? { commands: project.commands } : {}),
       ...(project.agent ? { agent: project.agent } : {}),
       ...(integrations ? { integrations } : {}),

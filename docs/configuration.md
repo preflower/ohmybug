@@ -14,6 +14,15 @@
 
 当前内置 Agent 插件为 `codex`，对外提供 Assessment、Repair、Session 与 Cancel。模型、线程和执行细节由插件内部管理，不作为 Project 通用配置字段。
 
+每个 Project 还可在“权限”中选择 Codex 的运行方式：
+
+- 请求批准：保持工作区沙箱，需要更高权限时进入应用现有的人工授权流程；在 Terminal 中打开时使用 `workspace-write` 与 `on-request`。
+- 帮我批准：保持工作区沙箱，由 Codex 自动审核高权限请求；在 Terminal 中打开时传递 `--approve-for-me`。
+- 完全访问权限：跳过批准和沙箱限制，仅应为可信项目启用；选择时需要额外确认。
+
+权限设置保存在本机 Project 数据中，并在后台 Codex 线程及 Terminal 恢复会话时动态传递。它不会创建或修改项目仓库中的 `.codex/config.toml`。
+证据采集也遵守相同设置，不再隐式获得主机与网络的完全访问权限。
+
 ## Integration plugins
 
 Desktop 从 Runtime 读取插件清单，再根据有限字段类型 `string | string[] | number | boolean` 和可选展示分组动态生成表单。新增内置 Integration 只需要新增包、Runtime 依赖和 registry 条目，不需要修改 Desktop 表单。

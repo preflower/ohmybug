@@ -118,6 +118,48 @@ describe("Codex finalization recovery", () => {
     });
   });
 
+  it.each([
+    ["auto-review", "workspace-write", false, "on-request", "auto_review"],
+    ["full-access", "danger-full-access", true, "never", undefined],
+  ] as const)(
+    "applies the %s project permission mode to finalization recovery",
+    async (permissionMode, sandboxMode, networkAccessEnabled, approvalPolicy, approvalsReviewer) => {
+      const sessionId = `logical-recovery-${permissionMode}`;
+      const sessions = new MemorySessions();
+      await bindSession(sessions, sessionId, `thread-recovery-${permissionMode}`);
+      const client = new FixtureClient([JSON.stringify({
+        outcome: "RESULT",
+        result: {
+          summary: "Recovered",
+          diagnosis: "The workspace is ready",
+          disposition: "RECOVERED",
+          affectedPaths: [],
+        },
+        capabilityRequest: null,
+      })]);
+      const adapter = new CodexAgentAdapter({ client, sessions });
+
+      await adapter.recoverFinalization!(
+        { agent: "codex", sessionId },
+        {
+          ...recoveryInput(),
+          project: { ...project, permissionMode },
+        },
+      );
+
+      expect(client.resumes[0]?.options).toMatchObject({
+        sandboxMode,
+        networkAccessEnabled,
+        approvalPolicy,
+      });
+      if (approvalsReviewer) {
+        expect(client.resumes[0]?.options).toMatchObject({ approvalsReviewer });
+      } else {
+        expect(client.resumes[0]?.options).not.toHaveProperty("approvalsReviewer");
+      }
+    },
+  );
+
   it("constrains the AI to surgical workspace repair and no Git publication", () => {
     const prompt = finalizationRecoveryPrompt(recoveryInput());
 

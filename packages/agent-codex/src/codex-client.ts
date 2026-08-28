@@ -4,7 +4,8 @@ export interface CodexThreadOptions {
   workingDirectory: string;
   sandboxMode: "read-only" | "workspace-write" | "danger-full-access";
   networkAccessEnabled: boolean;
-  approvalPolicy: "never";
+  approvalPolicy: "never" | "on-request";
+  approvalsReviewer?: "user" | "auto_review";
 }
 
 export interface CodexTurnOptions { outputSchema: unknown; signal?: AbortSignal }

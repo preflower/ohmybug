@@ -4,6 +4,26 @@ import { rendererOperationNames, runtimeOperations } from "../../src/protocol/op
 import { reviewedIssue } from "../helpers/runtime.js";
 
 describe("Runtime protocol operation registry", () => {
+  it.each([
+    "request-approval",
+    "auto-review",
+    "full-access",
+  ] as const)("accepts the %s project permission mode", (permissionMode) => {
+    expect(runtimeOperations.createProject.input.parse({
+      path: "/repo",
+      key: "APP",
+      permissionMode,
+    })).toMatchObject({ permissionMode });
+  });
+
+  it("rejects unknown project permission modes", () => {
+    expect(() => runtimeOperations.createProject.input.parse({
+      path: "/repo",
+      key: "APP",
+      permissionMode: "unrestricted",
+    })).toThrow();
+  });
+
   it("is the single ordered source of operation shape and renderer exposure", () => {
     expect(Object.keys(runtimeOperations)).toEqual([
       "health",
@@ -73,6 +93,7 @@ describe("Runtime protocol operation registry", () => {
       executablePath: "/Applications/Oh My Bug.app/Contents/Resources/codex",
       remoteUrl: "unix:///private/run/codex-app-server.sock",
       workingDirectory: "/repo/worktree",
+      permissionMode: "auto-review",
     } as const;
     expect(runtimeOperations.resolveAgentTerminalLaunchTarget.output.parse(target)).toEqual(target);
     expect(() => runtimeOperations.resolveAgentTerminalLaunchTarget.output.parse({

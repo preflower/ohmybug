@@ -121,6 +121,9 @@ export class AppServerCodexClient implements CodexClient {
         input: [{ type: "text", text: prompt, text_elements: [] }],
         cwd: threadOptions.workingDirectory,
         approvalPolicy: threadOptions.approvalPolicy,
+        ...(threadOptions.approvalsReviewer
+          ? { approvalsReviewer: threadOptions.approvalsReviewer }
+          : {}),
         sandboxPolicy: sandboxPolicy(threadOptions),
         ...(threadOptions.model ? { model: threadOptions.model } : {}),
         outputSchema: turnOptions.outputSchema as JsonValue,
@@ -242,6 +245,7 @@ function threadParams(
     ...(options.model ? { model: options.model } : {}),
     cwd: options.workingDirectory,
     approvalPolicy: options.approvalPolicy,
+    ...(options.approvalsReviewer ? { approvalsReviewer: options.approvalsReviewer } : {}),
     sandbox: options.sandboxMode,
     config: {
       sandbox_workspace_write: { exclude_slash_tmp: true, exclude_tmpdir_env_var: true },

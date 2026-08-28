@@ -131,6 +131,15 @@ describe("project settings layout", () => {
     expect(cssRule("\\.review-dock-row")).toMatch(/justify-content:\s*flex-end;/);
   });
 
+  it("adapts the Review dock to its own available width", () => {
+    expect(cssRule("\\.review-dock")).toMatch(/container:\s*review-dock \/ inline-size;/);
+    expect(cssRule("\\.review-dock-summary > span")).toMatch(/white-space:\s*normal;/);
+
+    const narrowDock = mediaBlock("@container review-dock (max-width: 520px)", "@media (max-width: 1200px)");
+    expect(narrowDock).toMatch(/\.review-dock-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+    expect(narrowDock).toMatch(/\.review-dock-actions\s*\{[^}]*flex-wrap:\s*wrap;/s);
+  });
+
   it("keeps Agent activity turns full width and flattens terminal output", () => {
     expect(styles).toMatch(/\.activity-turn\s*\{[^}]*width:\s*100%;/s);
     expect(styles).toMatch(/\.activity-log-output\s*\{[^}]*box-sizing:\s*border-box;/s);
@@ -162,6 +171,7 @@ describe("project settings layout", () => {
     expect(styles).toMatch(/\.integration-heading h2\s*\{[^}]*font-size:\s*20px;/s);
     expect(styles).toMatch(/\.integration-section-fields \[data-slot="input"\]\s*\{[^}]*height:\s*32px;/s);
     expect(styles).toMatch(/\.integration-section-fields \[data-slot="button"\]\s*\{[^}]*min-height:\s*30px;/s);
+    expect(styles).toMatch(/\.project-permission-option\s*\{[^}]*min-height:\s*64px;/s);
   });
 
   it("uses the shared surface hierarchy for project settings", () => {

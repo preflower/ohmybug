@@ -27,7 +27,8 @@ export type InitializeResponse = Record<string, unknown>;
 export interface ThreadStartParams {
   model?: string | null;
   cwd?: string | null;
-  approvalPolicy?: "never" | null;
+  approvalPolicy?: "never" | "on-request" | null;
+  approvalsReviewer?: "user" | "auto_review" | null;
   sandbox?: "read-only" | "workspace-write" | "danger-full-access" | null;
   config?: Record<string, JsonValue> | null;
   experimentalRawEvents?: boolean;
@@ -42,7 +43,8 @@ export interface TurnStartParams {
   threadId: string;
   input: UserInputText[];
   cwd?: string | null;
-  approvalPolicy?: "never" | null;
+  approvalPolicy?: "never" | "on-request" | null;
+  approvalsReviewer?: "user" | "auto_review" | null;
   sandboxPolicy?: Record<string, JsonValue> | null;
   model?: string | null;
   outputSchema?: JsonValue | null;

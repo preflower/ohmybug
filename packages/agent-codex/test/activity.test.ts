@@ -267,7 +267,7 @@ describe("Codex activity reporting", () => {
     }));
   });
 
-  it("summarizes pure read activity without exposing the command or file contents", async () => {
+  it("summarizes compound Skill read activity without exposing the command or file contents", async () => {
     const sessions = new MemorySessions();
     await bindSession(sessions);
     const activities: AgentActivityUpdate[] = [];
@@ -286,11 +286,14 @@ describe("Codex activity reporting", () => {
             command: "sed -n '1,240p' .agents/skills/using-superpowers/SKILL.md",
             status: "in_progress",
             output: "",
-            actions: [{
-              type: "read",
-              name: "SKILL.md",
-              path: "/repo/.agents/skills/using-superpowers/SKILL.md",
-            }],
+            actions: [
+              {
+                type: "read",
+                name: "SKILL.md",
+                path: "/repo/.agents/skills/using-superpowers/SKILL.md",
+              },
+              { type: "search", query: "name", path: "/repo/.agents/skills/using-superpowers/SKILL.md" },
+            ],
           },
         },
         {
@@ -309,11 +312,14 @@ describe("Codex activity reporting", () => {
             command: "sed -n '1,240p' .agents/skills/using-superpowers/SKILL.md",
             status: "completed",
             output: skillContents,
-            actions: [{
-              type: "read",
-              name: "SKILL.md",
-              path: "/repo/.agents/skills/using-superpowers/SKILL.md",
-            }],
+            actions: [
+              {
+                type: "read",
+                name: "SKILL.md",
+                path: "/repo/.agents/skills/using-superpowers/SKILL.md",
+              },
+              { type: "search", query: "name", path: "/repo/.agents/skills/using-superpowers/SKILL.md" },
+            ],
           },
         },
         {
@@ -366,6 +372,106 @@ describe("Codex activity reporting", () => {
       ]);
     expect(JSON.stringify(activities)).not.toContain("private-skill-detail");
     expect(JSON.stringify(activities)).not.toContain("sed -n");
+  });
+
+  it("preserves command and output details for ordinary source-file reads", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions);
+    const activities: AgentActivityUpdate[] = [];
+    const sourceContents = [
+      "export const visibleReadResult = true;",
+      "AWS_SECRET_ACCESS_KEY=aws-private-secret",
+      "PRIVATE_KEY=private-key-secret",
+      "",
+    ].join("\n");
+    const readAction = {
+      type: "read" as const,
+      name: "checkout.ts",
+      path: "/repo/src/checkout.ts",
+    };
+    const client = new FixtureClient([{
+      events: [
+        { type: "thread.started", threadId: "thread-1" },
+        { type: "turn.started", threadId: "thread-1", turnId: "turn-read-source" },
+        {
+          type: "item.started",
+          threadId: "thread-1",
+          turnId: "turn-read-source",
+          item: {
+            type: "command_execution",
+            id: "read-source",
+            command: "sed -n '1,80p' src/checkout.ts",
+            status: "in_progress",
+            output: "",
+            actions: [readAction],
+          },
+        },
+        {
+          type: "item.updated",
+          threadId: "thread-1",
+          turnId: "turn-read-source",
+          item: { type: "command_output", id: "read-source", delta: sourceContents },
+        },
+        {
+          type: "item.completed",
+          threadId: "thread-1",
+          turnId: "turn-read-source",
+          item: {
+            type: "command_execution",
+            id: "read-source",
+            command: "sed -n '1,80p' src/checkout.ts",
+            status: "completed",
+            output: sourceContents,
+            actions: [readAction],
+          },
+        },
+        {
+          type: "item.completed",
+          threadId: "thread-1",
+          turnId: "turn-read-source",
+          item: {
+            type: "agent_message",
+            phase: "final_answer",
+            text: JSON.stringify({
+              verdict: "NOT_A_BUG",
+              suggestedTitle: "No change needed",
+              reasoning: "Expected behavior",
+              rootCause: null,
+              solution: null,
+              suspectedDuplicateOf: null,
+            }),
+          },
+        },
+        { type: "turn.completed", threadId: "thread-1", turnId: "turn-read-source" },
+      ],
+    }]);
+    const adapter = new CodexAgentAdapter({
+      client,
+      sessions,
+      reportActivity: (activity) => { activities.push(activity); },
+    });
+
+    await adapter.assess(
+      { agent: "codex", sessionId: "logical-1" },
+      { issue: issue(), project },
+    );
+
+    const readEvents = activities.filter((activity) => activity.correlationId === "read-source");
+    expect(readEvents.map(({ type, message }) => ({ type, message }))).toEqual([
+      { type: "AGENT_STATUS", message: "Exploring" },
+      { type: "AGENT_COMMAND_STARTED", message: "正在执行项目命令" },
+      { type: "AGENT_COMMAND_OUTPUT", message: "命令输出" },
+      { type: "AGENT_COMMAND_OUTPUT", message: "命令输出" },
+      { type: "AGENT_COMMAND_OUTPUT", message: "命令输出" },
+      { type: "AGENT_STATUS", message: "Explored" },
+      { type: "AGENT_COMMAND_COMPLETED", message: "项目命令执行完成" },
+    ]);
+    expect(JSON.stringify(readEvents)).toContain("sed -n '1,80p' src/checkout.ts");
+    expect(JSON.stringify(readEvents)).toContain("visibleReadResult");
+    expect(JSON.stringify(readEvents)).toContain("AWS_SECRET_ACCESS_KEY=[REDACTED]");
+    expect(JSON.stringify(readEvents)).toContain("PRIVATE_KEY=[REDACTED]");
+    expect(JSON.stringify(readEvents)).not.toContain("aws-private-secret");
+    expect(JSON.stringify(readEvents)).not.toContain("private-key-secret");
   });
 
   it("reports a failed read without exposing its command or output", async () => {

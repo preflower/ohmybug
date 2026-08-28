@@ -56,6 +56,42 @@ describe("Codex repair", () => {
     }],
   } as const;
 
+  it.each([
+    ["request-approval", "workspace-write", true, "never", undefined],
+    ["auto-review", "workspace-write", true, "on-request", "auto_review"],
+    ["full-access", "danger-full-access", true, "never", undefined],
+  ] as const)(
+    "applies the %s project permission mode to Repair turns",
+    async (permissionMode, sandboxMode, networkAccessEnabled, approvalPolicy, approvalsReviewer) => {
+      const sessionId = `logical-repair-${permissionMode}`;
+      const sessions = new MemorySessions();
+      await bindSession(sessions, sessionId, `thread-repair-${permissionMode}`);
+      const client = new FixtureClient([JSON.stringify(deliveryOutput("Implemented", []))]);
+      const adapter = new CodexAgentAdapter({ client, sessions });
+
+      await adapter.repair(
+        { agent: "codex", sessionId },
+        {
+          issue: issue({ status: "REPAIRING", assessment, repair: { iteration: 1 } }),
+          project: { ...project, permissionMode },
+          assessment,
+          evidenceDirectory: "/private/intake/issue-1/1",
+        },
+      );
+
+      expect(client.resumes[0]?.options).toMatchObject({
+        sandboxMode,
+        networkAccessEnabled,
+        approvalPolicy,
+      });
+      if (approvalsReviewer) {
+        expect(client.resumes[0]?.options).toMatchObject({ approvalsReviewer });
+      } else {
+        expect(client.resumes[0]?.options).not.toHaveProperty("approvalsReviewer");
+      }
+    },
+  );
+
   it("parses delivery-ready and business-decision output branches", () => {
     const decision = {
       kind: "BUSINESS_DECISION_REQUIRED",

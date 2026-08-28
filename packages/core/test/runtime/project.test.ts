@@ -3,6 +3,28 @@ import { describe, expect, it } from "vitest";
 import { runtimeProjectSchema } from "../../src/index.js";
 
 describe("RuntimeProject", () => {
+  it.each([
+    "request-approval",
+    "auto-review",
+    "full-access",
+  ] as const)("accepts the %s project permission mode", (permissionMode) => {
+    expect(runtimeProjectSchema.parse({
+      id: "project-1",
+      key: "PAY",
+      path: "/repo/payments",
+      permissionMode,
+    }).permissionMode).toBe(permissionMode);
+  });
+
+  it("rejects an unknown project permission mode", () => {
+    expect(() => runtimeProjectSchema.parse({
+      id: "project-1",
+      key: "PAY",
+      path: "/repo/payments",
+      permissionMode: "allow-everything",
+    })).toThrow();
+  });
+
   it("accepts channel-neutral product configuration without secret values", () => {
     const project = {
       id: "project-1",

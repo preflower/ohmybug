@@ -13,7 +13,17 @@ const terminalScript = `on run argv
   set threadId to item 2 of argv
   set remoteUrl to item 3 of argv
   set workingDirectory to item 4 of argv
-  set terminalCommand to "cd " & quoted form of workingDirectory & " && exec " & quoted form of codexPath & " resume " & quoted form of threadId & " --remote " & quoted form of remoteUrl
+  set permissionMode to item 5 of argv
+  if permissionMode is "request-approval" then
+    set permissionArguments to " --sandbox workspace-write --ask-for-approval on-request -c " & quoted form of "approvals_reviewer=user"
+  else if permissionMode is "auto-review" then
+    set permissionArguments to " --approve-for-me"
+  else if permissionMode is "full-access" then
+    set permissionArguments to " --dangerously-bypass-approvals-and-sandbox"
+  else
+    error "invalid permission mode"
+  end if
+  set terminalCommand to "cd " & quoted form of workingDirectory & " && exec " & quoted form of codexPath & permissionArguments & " resume " & quoted form of threadId & " --remote " & quoted form of remoteUrl
   tell application "Terminal"
     activate
     do script terminalCommand
@@ -38,6 +48,7 @@ export async function openAgentTerminal(
       target.providerThreadId,
       target.remoteUrl,
       target.workingDirectory,
+      target.permissionMode,
     ]);
     return { opened: true };
   } catch (error) {
@@ -51,9 +62,14 @@ function validTarget(target: AgentTerminalLaunchTarget): boolean {
     !validThreadId(target.providerThreadId) ||
     !safeAbsolutePath(target.executablePath) ||
     !safeAbsolutePath(target.workingDirectory) ||
+    !validPermissionMode(target.permissionMode) ||
     !target.remoteUrl.startsWith("unix://")
   ) return false;
   return safeAbsolutePath(target.remoteUrl.slice("unix://".length));
+}
+
+function validPermissionMode(value: string): boolean {
+  return value === "request-approval" || value === "auto-review" || value === "full-access";
 }
 
 function validThreadId(value: string): boolean {

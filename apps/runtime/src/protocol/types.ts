@@ -8,6 +8,7 @@ import type {
   ReviewSubmission,
   ProjectAgentConfiguration,
   ProjectCommands,
+  ProjectPermissionMode,
 } from "@oh-my-bug/core";
 import type {
   BranchInfo,
@@ -53,6 +54,7 @@ export interface ProductProject {
   name?: string;
   path: string;
   instructions?: string;
+  permissionMode?: ProjectPermissionMode;
   commands?: ProjectCommands;
   agent?: ProjectAgentConfiguration;
   integrations?: Record<string, ProductIntegrationConfiguration>;
@@ -67,6 +69,7 @@ export interface CreateProjectInput {
   key: string;
   name?: string;
   instructions?: string;
+  permissionMode?: ProjectPermissionMode;
   commands?: ProjectCommands;
   agent?: ProjectAgentConfiguration;
   integrations?: Record<string, ProjectIntegrationInput>;
@@ -148,6 +151,7 @@ export interface AgentTerminalLaunchTarget {
   executablePath: string;
   remoteUrl: string;
   workingDirectory: string;
+  permissionMode: ProjectPermissionMode;
 }
 
 export interface RuntimeApi {

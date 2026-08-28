@@ -740,6 +740,26 @@ describe("Agent activity", () => {
     expect(screen.queryByText("任务意外中断")).not.toBeInTheDocument();
   });
 
+  it("explains that a newer baseline requires another verified Delivery", () => {
+    render(<AgentActivity active events={[
+      {
+        id: "issue-1:1",
+        issueId: "issue-1",
+        sequence: 1,
+        actor: "SYSTEM",
+        type: "BASE_INTEGRATION_STALE",
+        occurredAt: "2026-08-22T03:33:48Z",
+        data: { currentBaseCommit: "b".repeat(40), iteration: 3 },
+      },
+    ]} />);
+
+    expect(screen.getByTitle("基线已更新，正在重新集成并验证")).toBeVisible();
+    const eventEntry = document.querySelector<HTMLElement>(".activity-log-event");
+    expect(eventEntry).not.toBeNull();
+    expect(within(eventEntry!).getByText("基线已更新，正在重新集成并验证")).toBeVisible();
+    expect(screen.queryByText("状态已更新")).not.toBeInTheDocument();
+  });
+
   it("describes the independent evidence lifecycle", () => {
     render(<AgentActivity active events={[
       {
