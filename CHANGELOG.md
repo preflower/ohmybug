@@ -2,6 +2,13 @@
 
 All notable user-facing changes to Oh My Bug ?! are recorded in this file.
 
+## [0.2.3](https://github.com/preflower/ohmybug/compare/oh-my-bug-v0.2.2...oh-my-bug-v0.2.3) (2026-08-28)
+
+
+### Bug Fixes
+
+* standardize Oh My Bug branding ([45c6251](https://github.com/preflower/ohmybug/commit/45c6251ae374cd0ee00bc66726847fa3f655a18d))
+
 ## [0.2.2](https://github.com/preflower/ohmybug/compare/oh-my-bug-v0.2.1...oh-my-bug-v0.2.2) (2026-08-28)
 
 
