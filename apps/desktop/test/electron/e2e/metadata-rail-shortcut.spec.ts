@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { createTempDir } from "../../../../../test/helpers/temp-dir.js";
 import { expect, test } from "./electron-fixture.js";
 
-test("toggles the Issue details rail with the documented keyboard shortcut", async ({ desktop }) => {
+test("toggles the Issue details rail and remembers its closed state", async ({ desktop }) => {
   const project = await createTempDir("oh-my-bug-shortcut-project-");
   const suffix = String(Date.now()).slice(-6);
   try {
@@ -57,11 +57,17 @@ test("toggles the Issue details rail with the documented keyboard shortcut", asy
     await showAction.hover();
     await expect(desktop.page.getByRole("tooltip")).toHaveText("显示详情栏");
 
+    await desktop.page.getByRole("link", { name: "Settings" }).click();
+    await expect(desktop.page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await desktop.page.getByRole("link", { name: "Issues" }).click();
+    await expect(desktop.page.getByRole("button", { name: "显示详情栏" })).toBeVisible();
+    await expect(desktop.page.getByTestId("issue-metadata-rail")).toHaveCount(0);
+
     const evidenceDir = process.env.OH_MY_BUG_EVIDENCE_DIR
       ?? resolve("test-results", "electron-acceptance");
     await mkdir(evidenceDir, { recursive: true });
     await desktop.page.screenshot({
-      path: resolve(evidenceDir, "metadata-rail-shortcut-collapsed.png"),
+      path: resolve(evidenceDir, "metadata-rail-state-remembered.png"),
       fullPage: true,
     });
 
