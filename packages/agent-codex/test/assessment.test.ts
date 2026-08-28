@@ -17,6 +17,100 @@ import { bindSession, FixtureClient, issue, MemorySessions, project } from "./he
 
 describe("Codex assessment", () => {
   it.each([
+    ["auto-review", "read-only", false, "on-request", "auto_review"],
+    ["full-access", "danger-full-access", true, "never", undefined],
+  ] as const)(
+    "applies the %s project permission mode to Codex threads",
+    async (permissionMode, sandboxMode, networkAccessEnabled, approvalPolicy, approvalsReviewer) => {
+      const sessions = new MemorySessions();
+      await bindSession(sessions);
+      const client = new FixtureClient([JSON.stringify({
+        verdict: "NOT_A_BUG",
+        suggestedTitle: "No change needed",
+        reasoning: "Expected behavior",
+        rootCause: null,
+        solution: null,
+        suspectedDuplicateOf: null,
+      })]);
+      const adapter = new CodexAgentAdapter({ client, sessions });
+
+      await adapter.assess(
+        { agent: "codex", sessionId: "logical-1" },
+        { issue: issue(), project: { ...project, permissionMode } },
+      );
+
+      expect(client.starts[0]).toMatchObject({
+        sandboxMode,
+        networkAccessEnabled,
+        approvalPolicy,
+      });
+      if (approvalsReviewer) {
+        expect(client.starts[0]).toMatchObject({ approvalsReviewer });
+      } else {
+        expect(client.starts[0]).not.toHaveProperty("approvalsReviewer");
+      }
+    },
+  );
+
+  it("rejects a repeated automatic-review capability request explicitly", async () => {
+    const sessions = new MemorySessions();
+    await bindSession(sessions);
+    const request = JSON.stringify({
+      outcome: "CAPABILITY_REQUIRED",
+      capabilities: ["HOST_EXECUTION"],
+      reason: "Inspect a host process",
+      blockedCommand: "ps aux",
+      requestedBy: null,
+    });
+    const client = new FixtureClient([request, request]);
+    const adapter = new CodexAgentAdapter({ client, sessions });
+
+    await expect(adapter.assess(
+      { agent: "codex", sessionId: "logical-1" },
+      { issue: issue(), project: { ...project, permissionMode: "auto-review" } },
+    )).rejects.toThrow("AGENT_CAPABILITY_REQUEST_INVALID");
+    expect(client.prompts).toHaveLength(2);
+  });
+
+  it.each([
+    ["auto-review", "automatically reviewed"],
+    ["full-access", "already available"],
+  ] as const)(
+    "does not pause for human approval when %s returns CAPABILITY_REQUIRED",
+    async (permissionMode, correctionText) => {
+      const sessions = new MemorySessions();
+      await bindSession(sessions);
+      const client = new FixtureClient([
+        JSON.stringify({
+          outcome: "CAPABILITY_REQUIRED",
+          capabilities: ["HOST_EXECUTION"],
+          reason: "Inspect a host process",
+          blockedCommand: "ps aux",
+          requestedBy: null,
+        }),
+        JSON.stringify({
+          verdict: "NOT_A_BUG",
+          suggestedTitle: "No change needed",
+          reasoning: "Inspection completed without human approval",
+          rootCause: null,
+          solution: null,
+          suspectedDuplicateOf: null,
+        }),
+      ]);
+      const adapter = new CodexAgentAdapter({ client, sessions });
+
+      await expect(adapter.assess(
+        { agent: "codex", sessionId: "logical-1" },
+        { issue: issue(), project: { ...project, permissionMode } },
+      )).resolves.toMatchObject({ verdict: "NOT_A_BUG" });
+
+      expect(client.prompts).toHaveLength(2);
+      expect(client.prompts[0]).toContain("Do not return CAPABILITY_REQUIRED for human approval");
+      expect(client.prompts[1]).toContain(correctionText);
+    },
+  );
+
+  it.each([
     [[], "read-only", false],
     [["NETWORK_ACCESS"], "read-only", true],
     [["HOST_EXECUTION"], "danger-full-access", false],

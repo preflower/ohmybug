@@ -1,14 +1,12 @@
 import type { FinalizationRecoveryInput } from "@oh-my-bug/core";
 
-import { effectiveStageCapabilities } from "./stage-capabilities.js";
+import { projectCapabilityPrompt } from "./stage-capabilities.js";
 
 export function finalizationRecoveryPrompt(input: FinalizationRecoveryInput): string {
-  const available = [...effectiveStageCapabilities(input.issue, "FINALIZATION_RECOVERY")];
   return [
     "Diagnose and surgically repair the retained Issue workspace after delivery finalization failed. This is the single automatic recovery attempt.",
     ...continuationPrompt(input),
-    `Capabilities already available in this stage: ${JSON.stringify(available)}`,
-    "Use a practical lower-privilege alternative first. If the permission boundary is insufficient, stop and return CAPABILITY_REQUIRED instead of retrying a blocked command.",
+    ...projectCapabilityPrompt(input.project, input.issue, "FINALIZATION_RECOVERY"),
     "Do not commit, merge, push, release, rewrite branches, or rewrite history. Do not run delivery finalization commands; the Workspace Provider owns Git publication.",
     "Never run git add, git commit, git merge, git rebase, git reset, git clean, or git push. Never update refs, stage the real index, abort merge state, or release the Worktree.",
     ...recoveryInstructions(input),

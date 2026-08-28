@@ -3180,23 +3180,74 @@ a:focus-visible {
   font-size: 10px;
 }
 
-.workspace-permission {
-  margin-top: 24px;
-  border-top: 1px solid var(--border);
-  padding-top: 30px;
+.project-permission-heading {
+  margin-bottom: 22px;
 }
 
-.workspace-permission h3 {
-  margin: 0;
+.project-permission-heading h2 {
+  font-size: 20px;
+  letter-spacing: -0.3px;
+}
+
+.project-permission-heading p {
+  margin-top: 7px;
+  font-size: 13px;
+}
+
+.project-permission-options {
+  max-width: 720px;
+  gap: 0;
+  border-block: 1px solid var(--border);
+}
+
+.project-permission-option {
+  display: grid;
+  min-height: 64px;
+  cursor: pointer;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 11px 12px;
+  transition: background-color 120ms ease-out;
+}
+
+.project-permission-option:last-child {
+  border-bottom: 0;
+}
+
+.project-permission-option:hover,
+.project-permission-option:focus-within {
+  background: var(--surface-raised);
+}
+
+.project-permission-option[data-selected] {
+  background: var(--accent-soft);
+}
+
+.project-permission-option > span {
+  display: grid;
+  gap: 3px;
+}
+
+.project-permission-option strong {
   color: var(--text);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 560;
 }
 
-.workspace-permission p {
-  margin: 8px 0 0;
+.project-permission-option small {
+  max-width: 68ch;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.project-permission-note {
+  max-width: 720px;
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .form-field {

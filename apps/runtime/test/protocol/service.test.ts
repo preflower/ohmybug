@@ -180,6 +180,40 @@ async function harness(
 }
 
 describe("RuntimeService", () => {
+  it("defaults old projects to request approval and persists explicit permission modes", async () => {
+    const { root, service, store } = await harness();
+    const defaultDirectory = join(root, "default-permissions");
+    const autoDirectory = join(root, "auto-permissions");
+    await import("node:fs/promises").then(({ mkdir }) => Promise.all([
+      mkdir(defaultDirectory),
+      mkdir(autoDirectory),
+    ]));
+
+    const created = await service.createProject({ path: defaultDirectory, key: "DEFAULT" });
+    expect(created).toMatchObject({ permissionMode: "request-approval" });
+    await expect(service.createProject({
+      path: autoDirectory,
+      key: "AUTO",
+      permissionMode: "auto-review",
+    })).resolves.toMatchObject({ permissionMode: "auto-review" });
+
+    const updated = await service.saveProjectSettings({
+      mode: "update",
+      id: created.id,
+      expectedRevision: created.revision,
+      project: {
+        key: created.key,
+        path: created.path,
+        permissionMode: "full-access",
+      },
+      secretPatches: {},
+    });
+    expect(updated).toMatchObject({ permissionMode: "full-access" });
+    expect(store.getProject(created.id)).toMatchObject({ permissionMode: "full-access" });
+    await expect(service.getProject({ id: created.id }))
+      .resolves.toMatchObject({ permissionMode: "full-access" });
+  });
+
   it("resolves terminal state only from persisted Issue, project, workspace, and Agent session", async () => {
     const target: AgentTerminalLaunchTarget = {
       agent: "codex",
@@ -187,6 +221,7 @@ describe("RuntimeService", () => {
       executablePath: "/bin/codex",
       remoteUrl: "unix:///private/run/codex-app-server.sock",
       workingDirectory: "/trusted/worktree",
+      permissionMode: "auto-review",
     };
     const agentTerminal = {
       availability: vi.fn(() => ({ available: true } as const)),
@@ -202,6 +237,7 @@ describe("RuntimeService", () => {
       ...project,
       path: root,
       agent: { plugin: "codex" },
+      permissionMode: "auto-review",
     });
     const issue = reviewedIssue({
       projectPath: "/trusted/worktree",
@@ -227,12 +263,14 @@ describe("RuntimeService", () => {
       providerThreadId: target.providerThreadId,
       workingDirectory: "/trusted/worktree",
       workspaceReady: true,
+      permissionMode: "auto-review",
     });
     expect(agentTerminal.resolveLaunchTarget).toHaveBeenCalledWith({
       agent: "codex",
       providerThreadId: target.providerThreadId,
       workingDirectory: "/trusted/worktree",
       workspaceReady: true,
+      permissionMode: "auto-review",
     });
     expect(JSON.stringify(await service.agentTerminalAvailability({ id: issue.id })))
       .not.toContain("providerThreadId");

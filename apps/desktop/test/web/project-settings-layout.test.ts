@@ -171,6 +171,7 @@ describe("project settings layout", () => {
     expect(styles).toMatch(/\.integration-heading h2\s*\{[^}]*font-size:\s*20px;/s);
     expect(styles).toMatch(/\.integration-section-fields \[data-slot="input"\]\s*\{[^}]*height:\s*32px;/s);
     expect(styles).toMatch(/\.integration-section-fields \[data-slot="button"\]\s*\{[^}]*min-height:\s*30px;/s);
+    expect(styles).toMatch(/\.project-permission-option\s*\{[^}]*min-height:\s*64px;/s);
   });
 
   it("uses the shared surface hierarchy for project settings", () => {

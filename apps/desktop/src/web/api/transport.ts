@@ -96,6 +96,7 @@ export function createProjectPayload(project: ProjectFormValue): CreateProjectIn
     key: project.key,
     path: project.path,
     ...(project.instructions ? { instructions: project.instructions } : {}),
+    permissionMode: project.permissionMode,
     commands: project.commands,
     agent: { plugin: project.agentPlugin },
     workspace: project.workspace,

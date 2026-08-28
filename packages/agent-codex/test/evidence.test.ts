@@ -38,7 +38,7 @@ describe("Codex evidence capture", () => {
 
     await expect(adapter.captureEvidence(
       { agent: "codex", sessionId: "logical-redundant" },
-      evidenceInput(current),
+      evidenceInput(current, "full-access"),
     )).resolves.toMatchObject({ evidence: [{ relativePath: "payment.png" }] });
     expect(client.prompts).toHaveLength(2);
     expect(client.prompts[1]).toContain("already available in this stage");
@@ -60,12 +60,12 @@ describe("Codex evidence capture", () => {
 
     await expect(adapter.captureEvidence(
       { agent: "codex", sessionId: "logical-loop" },
-      evidenceInput(current),
+      evidenceInput(current, "full-access"),
     )).rejects.toThrow("AGENT_CAPABILITY_REQUEST_INVALID");
     expect(client.prompts).toHaveLength(2);
   });
 
-  it("tells the Agent that Evidence already has host and network access", () => {
+  it("does not claim that request-mode Evidence already has host and network access", () => {
     const current = issue({
       status: "EVIDENCE_CAPTURE",
       assessment,
@@ -87,9 +87,8 @@ describe("Codex evidence capture", () => {
     });
 
     expect(prompt).toContain("CAPABILITY_REQUIRED");
-    expect(prompt).toContain('"HOST_EXECUTION"');
-    expect(prompt).toContain('"NETWORK_ACCESS"');
-    expect(prompt).toContain("already available in this stage");
+    expect(prompt).toContain("Capabilities already available in this stage: []");
+    expect(prompt).not.toContain('Capabilities already available in this stage: ["HOST_EXECUTION"');
   });
 
   it("captures evidence on the same native thread without reimplementing", async () => {
@@ -138,14 +137,49 @@ describe("Codex evidence capture", () => {
       threadId: "thread-1",
       options: {
         workingDirectory: repairing.projectPath,
-        sandboxMode: "danger-full-access",
-        networkAccessEnabled: true,
+        sandboxMode: "workspace-write",
+        networkAccessEnabled: false,
         approvalPolicy: "never",
       },
     });
     expect(client.prompts.at(-1)).toContain("Do not reimplement or refactor");
     expect(client.prompts.at(-1)).toContain("Previous screenshot was blank");
   });
+
+  it.each([
+    ["request-approval", "workspace-write", false, "never", undefined],
+    ["auto-review", "workspace-write", false, "on-request", "auto_review"],
+    ["full-access", "danger-full-access", true, "never", undefined],
+  ] as const)(
+    "applies the %s project permission mode to Evidence turns",
+    async (permissionMode, sandboxMode, networkAccessEnabled, approvalPolicy, approvalsReviewer) => {
+      const sessions = new MemorySessions();
+      await bindSession(sessions, `logical-${permissionMode}`, `thread-${permissionMode}`);
+      const client = new FixtureClient([JSON.stringify({ evidence: [{
+        type: "screenshot",
+        label: "Permission mode evidence",
+        relativePath: "permission-mode.png",
+      }] })]);
+      const adapter = new CodexAgentAdapter({ client, sessions });
+      const current = evidenceIssue();
+
+      await adapter.captureEvidence(
+        { agent: "codex", sessionId: `logical-${permissionMode}` },
+        evidenceInput(current, permissionMode),
+      );
+
+      expect(client.resumes[0]?.options).toMatchObject({
+        sandboxMode,
+        networkAccessEnabled,
+        approvalPolicy,
+      });
+      if (approvalsReviewer) {
+        expect(client.resumes[0]?.options).toMatchObject({ approvalsReviewer });
+      } else {
+        expect(client.resumes[0]?.options).not.toHaveProperty("approvalsReviewer");
+      }
+    },
+  );
 });
 
 function evidenceIssue() {
@@ -163,10 +197,13 @@ function evidenceIssue() {
   });
 }
 
-function evidenceInput(current: ReturnType<typeof evidenceIssue>) {
+function evidenceInput(
+  current: ReturnType<typeof evidenceIssue>,
+  permissionMode: "request-approval" | "auto-review" | "full-access" = "request-approval",
+) {
   return {
     issue: current,
-    project,
+    project: { ...project, permissionMode },
     assessment,
     deliveryDraft: current.repair!.deliveryDraft!,
     evidenceDirectory: "/workspace/evidence",

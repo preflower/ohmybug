@@ -18,6 +18,41 @@ afterEach(async () => {
 });
 
 describe("App Server Codex client", () => {
+  it("routes interactive approvals to the configured auto reviewer", async () => {
+    const rpc = new FixtureConnection();
+    rpc.respond("thread/start", { thread: { id: "thread-1" } });
+    rpc.respond("turn/start", { turn: { id: "turn-1" } });
+    const client = fixtureClient(rpc);
+    const thread = client.startThread({
+      ...threadOptions("/repo"),
+      approvalPolicy: "on-request",
+      approvalsReviewer: "auto_review",
+    });
+
+    const stream = await thread.runStreamed("Inspect safely", { outputSchema: {} });
+    expect(rpc.calls).toEqual([
+      expect.objectContaining({
+        method: "thread/start",
+        params: expect.objectContaining({
+          approvalPolicy: "on-request",
+          approvalsReviewer: "auto_review",
+        }),
+      }),
+      expect.objectContaining({
+        method: "turn/start",
+        params: expect.objectContaining({
+          approvalPolicy: "on-request",
+          approvalsReviewer: "auto_review",
+        }),
+      }),
+    ]);
+    rpc.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+    });
+    await collect(stream);
+  });
+
   it("starts a thread and normalizes only its owned turn", async () => {
     const rpc = new FixtureConnection();
     rpc.respond("thread/start", { thread: { id: "thread-1" } });

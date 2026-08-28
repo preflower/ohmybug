@@ -132,12 +132,13 @@ describe("renderer product transports", () => {
     expect(createProjectPayload({
       name: "Checkout", key: "CHK", path: "/work/checkout", instructions: "", commands: {},
       agentPlugin: "codex",
+      permissionMode: "auto-review",
       workspace: { provider: "git", config: { baseBranch: "main", delivery: "local" } },
       integrations: {
         example: { enabled: true, config: { workspace: "acme", channels: ["alerts"] }, secretConfigured: { apiToken: true } },
       },
     })).toEqual({
-      name: "Checkout", key: "CHK", path: "/work/checkout", commands: {}, agent: { plugin: "codex" },
+      name: "Checkout", key: "CHK", path: "/work/checkout", permissionMode: "auto-review", commands: {}, agent: { plugin: "codex" },
       workspace: { provider: "git", config: { baseBranch: "main", delivery: "local" } },
       integrations: { example: { enabled: true, config: { workspace: "acme", channels: ["alerts"] } } },
     });
@@ -153,6 +154,7 @@ describe("renderer product transports", () => {
       instructions: "",
       commands: {},
       agentPlugin: "codex",
+      permissionMode: "request-approval" as const,
       workspace: { provider: "local", config: {} },
       integrations: {
         dingtalk: {

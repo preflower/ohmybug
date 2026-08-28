@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import type { ProjectCommands, ProjectContext } from "../agent/adapter.js";
+import type {
+  ProjectCommands,
+  ProjectContext,
+  ProjectPermissionMode,
+} from "../agent/adapter.js";
 import type { Issue } from "../issue/types.js";
 
 export type PendingOperation =
@@ -86,6 +90,11 @@ export const projectCommandsSchema = z.object({
     context.addIssue({ code: "custom", message: "ACCEPTANCE_URL_MUST_BE_LOCALHOST" });
   }
 });
+export const projectPermissionModeSchema: z.ZodType<ProjectPermissionMode> = z.enum([
+  "request-approval",
+  "auto-review",
+  "full-access",
+]);
 const agentConfigurationSchema = z.object({
   plugin: z.string().trim().min(1),
 }).strict();
@@ -101,6 +110,7 @@ export const runtimeProjectSchema: z.ZodType<RuntimeProject> = z
     key: z.string().regex(/^[A-Z][A-Z0-9-]*$/),
     path: z.string().trim().min(1),
     instructions: z.string().optional(),
+    permissionMode: projectPermissionModeSchema.optional(),
     name: z.string().trim().min(1).optional(),
     commands: projectCommandsSchema.optional(),
     agent: agentConfigurationSchema.optional(),

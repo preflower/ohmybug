@@ -475,6 +475,7 @@ function snapshotProject(
     updatedAt: project.updatedAt ?? new Date(0).toISOString(),
     ...(project.name ? { name: project.name } : {}),
     ...(project.instructions !== undefined ? { instructions: project.instructions } : {}),
+    permissionMode: project.permissionMode ?? "request-approval",
     ...(project.commands ? { commands: project.commands } : {}),
     ...(project.agent ? { agent: project.agent } : {}),
     ...(integrations ? { integrations } : {}),

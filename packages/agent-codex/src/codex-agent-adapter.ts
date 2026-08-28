@@ -24,6 +24,7 @@ import {
   type FinalizationRecoveryInput,
   type FinalizationRecoveryResult,
   type Issue,
+  type ProjectContext,
   type RepairInput,
   type RepairResult,
 } from "@oh-my-bug/core";
@@ -51,6 +52,7 @@ import {
 import { finalizationRecoveryPrompt } from "./finalization-recovery-prompt.js";
 import { assessmentPrompt, evidencePrompt, repairPrompt } from "./prompts.js";
 import {
+  effectiveProjectStageCapabilities,
   effectiveStageCapabilities,
   type CodexAgentStage,
 } from "./stage-capabilities.js";
@@ -103,11 +105,10 @@ export class CodexAgentAdapter implements AgentAdapter {
       "ASSESSMENT",
       {
         workingDirectory: requireProjectPath(input.issue),
-        ...effectiveTurnOptions(input.issue, "ASSESSMENT", {
+        ...projectPermissionOptions(input.project, input.issue, "ASSESSMENT", {
           sandboxMode: "read-only",
           networkAccessEnabled: false,
         }),
-        approvalPolicy: "never",
       },
       assessmentPrompt(input),
       assessmentOutputSchema,
@@ -136,11 +137,10 @@ export class CodexAgentAdapter implements AgentAdapter {
       "REPAIR",
       {
         workingDirectory: requireProjectPath(input.issue),
-        ...effectiveTurnOptions(input.issue, "REPAIR", {
+        ...projectPermissionOptions(input.project, input.issue, "REPAIR", {
           sandboxMode: "workspace-write",
           networkAccessEnabled: true,
         }),
-        approvalPolicy: "never",
       },
       repairPrompt(input),
       repairOutputSchema,
@@ -178,9 +178,10 @@ export class CodexAgentAdapter implements AgentAdapter {
       "EVIDENCE",
       {
         workingDirectory: requireProjectPath(input.issue),
-        sandboxMode: "danger-full-access",
-        networkAccessEnabled: true,
-        approvalPolicy: "never",
+        ...projectPermissionOptions(input.project, input.issue, "EVIDENCE", {
+          sandboxMode: "workspace-write",
+          networkAccessEnabled: false,
+        }),
       },
       evidencePrompt(input),
       evidenceOutputSchema,
@@ -211,11 +212,10 @@ export class CodexAgentAdapter implements AgentAdapter {
       "FINALIZATION_RECOVERY",
       {
         workingDirectory: requireProjectPath(input.issue),
-        ...effectiveTurnOptions(input.issue, "FINALIZATION_RECOVERY", {
+        ...projectPermissionOptions(input.project, input.issue, "FINALIZATION_RECOVERY", {
           sandboxMode: "workspace-write",
           networkAccessEnabled: false,
         }),
-        approvalPolicy: "never",
       },
       finalizationRecoveryPrompt(input),
       finalizationRecoveryOutputSchema,
@@ -247,6 +247,8 @@ export class CodexAgentAdapter implements AgentAdapter {
     prompt: string,
     outputSchema: unknown,
   ): Promise<unknown> {
+    const permissionMode = input.project.permissionMode ?? "request-approval";
+    const initialPrompt = prompt;
     const run = (nextPrompt: string) => this.turn(
       session,
       input,
@@ -258,17 +260,17 @@ export class CodexAgentAdapter implements AgentAdapter {
     let correctionUsed = false;
     let output: unknown;
     try {
-      output = await run(prompt);
+      output = await run(initialPrompt);
     } catch (error) {
       if (!looksPermissionBlocked(error)) throw error;
       correctionUsed = true;
       output = await run([
-        prompt,
-        "The previous attempt was permission-blocked. Make exactly one choice: use a lower-privilege alternative, or return CAPABILITY_REQUIRED. Do not retry the blocked command.",
+        initialPrompt,
+        permissionBlockedCorrection(permissionMode),
       ].join("\n\n"));
     }
 
-    const checked = checkCapabilityRequest(output, input.issue, stage);
+    const checked = checkCapabilityRequest(output, input.project, input.issue, stage);
     if (checked.kind === "NEW") {
       throw new AgentCapabilityRequiredError(checked.request);
     }
@@ -276,14 +278,14 @@ export class CodexAgentAdapter implements AgentAdapter {
     if (correctionUsed) throw new Error("AGENT_CAPABILITY_REQUEST_INVALID");
 
     const corrected = await run([
-      prompt,
-      "Every capability in the previous request is already available in this stage. Continue the task and return the normal stage result. Do not request it again.",
+      initialPrompt,
+      capabilityRequestCorrection(checked.kind),
     ].join("\n\n"));
-    const rechecked = checkCapabilityRequest(corrected, input.issue, stage);
+    const rechecked = checkCapabilityRequest(corrected, input.project, input.issue, stage);
     if (rechecked.kind === "NEW") {
       throw new AgentCapabilityRequiredError(rechecked.request);
     }
-    if (rechecked.kind === "REDUNDANT") {
+    if (rechecked.kind !== "NONE") {
       throw new Error("AGENT_CAPABILITY_REQUEST_INVALID");
     }
     return corrected;
@@ -433,22 +435,46 @@ export class CodexAgentAdapter implements AgentAdapter {
 type CapabilityRequestCheck =
   | { kind: "NONE" }
   | { kind: "NEW"; request: AgentCapabilityRequest }
+  | { kind: "AUTO_REVIEW" }
   | { kind: "REDUNDANT" };
 
 function checkCapabilityRequest(
   output: unknown,
+  project: ProjectContext,
   issue: Issue,
   stage: CodexActivity["stage"],
 ): CapabilityRequestCheck {
   const request = parseCapabilityRequiredOutput(output);
   if (!request) return { kind: "NONE" };
-  const available = effectiveStageCapabilities(issue, stage);
+  const available = effectiveProjectStageCapabilities(project, issue, stage);
+  const permissionMode = project.permissionMode ?? "request-approval";
   const capabilities = request.capabilities.filter(
     (capability) => !available.has(capability),
   );
-  return capabilities.length === 0
-    ? { kind: "REDUNDANT" }
-    : { kind: "NEW", request: { ...request, capabilities } };
+  if (capabilities.length === 0) return { kind: "REDUNDANT" };
+  if (permissionMode === "auto-review") return { kind: "AUTO_REVIEW" };
+  return { kind: "NEW", request: { ...request, capabilities } };
+}
+
+function permissionBlockedCorrection(
+  permissionMode: NonNullable<ProjectContext["permissionMode"]>,
+): string {
+  if (permissionMode === "auto-review") {
+    return "The previous attempt was permission-blocked. Do not request human approval. Retry only through a native sandbox escalation so it can be automatically reviewed, or use a lower-privilege alternative and return the normal stage result.";
+  }
+  if (permissionMode === "full-access") {
+    return "The previous attempt reported a permission boundary even though full access is enabled. Do not request human approval or retry the same blocked command; use a practical alternative and return the normal stage result.";
+  }
+  return "The previous attempt was permission-blocked. Make exactly one choice: use a lower-privilege alternative, or return CAPABILITY_REQUIRED. Do not retry the blocked command.";
+}
+
+function capabilityRequestCorrection(
+  kind: Exclude<CapabilityRequestCheck["kind"], "NONE" | "NEW">,
+): string {
+  if (kind === "AUTO_REVIEW") {
+    return "The previous capability request must not pause for a human because native approval requests are automatically reviewed. Attempt the operation through the native reviewer; if it is denied, use a lower-privilege alternative. Return the normal stage result and do not return CAPABILITY_REQUIRED again.";
+  }
+  return "Every capability in the previous request is already available in this stage. Continue the task and return the normal stage result. Do not request it again.";
 }
 
 function effectiveTurnOptions(
@@ -465,6 +491,33 @@ function effectiveTurnOptions(
       ? true
       : defaults.networkAccessEnabled,
   };
+}
+
+function projectPermissionOptions(
+  project: ProjectContext,
+  issue: Issue,
+  stage: CodexAgentStage,
+  defaults: Pick<CodexThreadOptions, "sandboxMode" | "networkAccessEnabled">,
+): Pick<
+  CodexThreadOptions,
+  "sandboxMode" | "networkAccessEnabled" | "approvalPolicy" | "approvalsReviewer"
+> {
+  if (project.permissionMode === "full-access") {
+    return {
+      sandboxMode: "danger-full-access",
+      networkAccessEnabled: true,
+      approvalPolicy: "never",
+    };
+  }
+  const effective = effectiveTurnOptions(issue, stage, defaults);
+  if (project.permissionMode === "auto-review") {
+    return {
+      ...effective,
+      approvalPolicy: "on-request",
+      approvalsReviewer: "auto_review",
+    };
+  }
+  return { ...effective, approvalPolicy: "never" };
 }
 
 function looksPermissionBlocked(error: unknown): boolean {

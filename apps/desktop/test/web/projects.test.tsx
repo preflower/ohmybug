@@ -132,6 +132,7 @@ const configuredProject: ProjectDto = {
   key: "CHK",
   path: "/work/checkout",
   instructions: "Follow checkout conventions.",
+  permissionMode: "request-approval",
   agent: { plugin: "codex" },
   commands: { test: "pnpm test" },
   integrations: {
@@ -168,6 +169,50 @@ function selectTab(name: string) {
 }
 
 describe("Project configuration", () => {
+  it("defaults new projects to request approval", () => {
+    render(<ProjectForm inspection={inspection} manifests={manifests} onSave={async () => undefined} />);
+
+    selectTab("权限");
+    expect(screen.getByRole("radio", { name: /请求批准/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /帮我批准/ })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /完全访问权限/ })).not.toBeChecked();
+  });
+
+  it("saves auto review without an extra confirmation", async () => {
+    const onSave = vi.fn(async () => undefined);
+    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />);
+
+    selectTab("权限");
+    fireEvent.click(screen.getByRole("radio", { name: /帮我批准/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionMode: "auto-review" }),
+      {},
+    ));
+  });
+
+  it("requires explicit confirmation before enabling full access", async () => {
+    const onSave = vi.fn(async () => undefined);
+    render(<ProjectForm initial={configuredProject} manifests={manifests} onSave={onSave} />);
+
+    selectTab("权限");
+    fireEvent.click(screen.getByRole("radio", { name: /完全访问权限/ }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("启用完全访问权限？");
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(screen.getByRole("radio", { name: /请求批准/ })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("radio", { name: /完全访问权限/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "启用完全访问" }));
+    expect(screen.getByRole("radio", { name: /完全访问权限/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionMode: "full-access" }),
+      {},
+    ));
+  });
+
   it("renders config-derived collapsed summaries", () => {
     render(<IntegrationFields
       config={{ environment: "", query: "" }}
@@ -652,7 +697,7 @@ describe("Project configuration", () => {
     const tabs = screen.getByRole("tablist", { name: "项目配置" });
     expect(tabs).toHaveAttribute("aria-orientation", "vertical");
     expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "项目", "Agent", "命令与验收", "Example source",
+      "项目", "Agent", "权限", "命令与验收", "Example source",
     ]);
     selectTab("Example source");
     const enabled = screen.getByRole("switch", { name: "启用" });

@@ -1,11 +1,21 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { Bot, ClipboardCheck, Folder, MessageCircle, Plug, Webhook } from "lucide-react";
+import { Bot, ClipboardCheck, Folder, MessageCircle, Plug, ShieldCheck, Webhook } from "lucide-react";
 import { toast } from "sonner";
 
 import { DingTalkIcon, SentryIcon } from "../components/brand-icons.js";
 import { Alert, AlertDescription } from "../components/ui/alert.js";
 import { Button } from "../components/ui/button.js";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog.js";
 import { Input } from "../components/ui/input.js";
+import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group.js";
 import {
   Select,
   SelectContent,
@@ -37,6 +47,7 @@ export interface ProjectFormValue {
   path: string;
   instructions: string;
   agentPlugin: string;
+  permissionMode: NonNullable<ProjectDto["permissionMode"]>;
   commands: NonNullable<ProjectDto["commands"]>;
   integrations: Record<string, ProjectIntegrationFormValue>;
   workspace: { provider: string; config: Record<string, ConfigValue> };
@@ -92,6 +103,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(Boolean(initial));
   const [saveConfirmed, setSaveConfirmed] = useState(false);
+  const [fullAccessConfirmationOpen, setFullAccessConfirmationOpen] = useState(false);
 
   const updateProject = (update: (current: ProjectFormValue) => ProjectFormValue) => {
     setSaved(false);
@@ -176,6 +188,7 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
         <span className="project-settings-nav-label" role="presentation">项目设置</span>
         <TabsTrigger value="project"><Folder aria-hidden="true" />项目</TabsTrigger>
         <TabsTrigger value="agent"><Bot aria-hidden="true" />Agent</TabsTrigger>
+        <TabsTrigger value="permissions"><ShieldCheck aria-hidden="true" />权限</TabsTrigger>
         <TabsTrigger value="commands"><ClipboardCheck aria-hidden="true" />命令与验收</TabsTrigger>
         <span className="project-settings-nav-label project-settings-nav-label-integrations" role="presentation">集成</span>
         {allManifests.map((manifest) => <TabsTrigger key={manifest.id} value={manifest.id}><IntegrationNavIcon icon={manifest.icon} />{manifest.name}</TabsTrigger>)}
@@ -221,13 +234,49 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
           /> : <ConfigFields fields={allWorkspaceProviders.find((provider) => provider.id === project.workspace.provider)?.configFields ?? []} config={project.workspace.config} idPrefix={`workspace-${project.workspace.provider}`} inspection={projectInspection?.workspaces[project.workspace.provider]} onChange={(key, value) => updateProject((current) => ({ ...current, workspace: { ...current.workspace, config: { ...current.workspace.config, [key]: value } } }))} />}
           {initial?.workspace?.unavailable ? <p className="field-wide">{initial.workspace.unavailable}</p> : null}
           {projectInspection?.workspaces[project.workspace.provider]?.available === false ? <p className="field-wide field-error">{projectInspection.workspaces[project.workspace.provider]?.reason}</p> : null}
-        </div></section><section className="workspace-permission"><h3>工作目录权限</h3><p>Agent 对文件的所有读写操作都将被限制在此项目目录中。</p></section></section></div> : null}
+        </div></section></section></div> : null}
         {activeTab === "agent" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel"><div className="section-heading"><div><h2>Agent</h2><p>选择能力实现，并提供项目指令。</p></div></div><div className="form-grid">
           <label>Agent 插件<Select items={{ codex: "Codex", ...(project.agentPlugin === "codex" ? {} : { [project.agentPlugin]: project.agentPlugin }) }} value={project.agentPlugin} onValueChange={(agentPlugin) => {
             if (agentPlugin !== null) updateProject((current) => ({ ...current, agentPlugin }));
           }}><SelectTrigger aria-label="Agent 插件"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="codex">Codex</SelectItem>{project.agentPlugin !== "codex" ? <SelectItem value={project.agentPlugin}>{project.agentPlugin}</SelectItem> : null}</SelectContent></Select></label>
           <label className="field-wide">项目指令<Textarea aria-label="项目指令" rows={4} value={project.instructions} onChange={(event) => updateProject((current) => ({ ...current, instructions: event.target.value }))} /></label>
         </div></section></div> : null}
+        {activeTab === "permissions" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel"><div className="section-heading project-permission-heading"><div><h2>权限</h2><p>设置这个项目启动 Codex 时的审核和沙箱方式。</p></div></div>
+          <RadioGroup
+            aria-label="项目权限"
+            className="project-permission-options"
+            value={project.permissionMode}
+            onValueChange={(permissionMode) => {
+              if (permissionMode === "full-access" && project.permissionMode !== "full-access") {
+                setFullAccessConfirmationOpen(true);
+                return;
+              }
+              if (permissionMode === "request-approval" || permissionMode === "auto-review") {
+                updateProject((current) => ({ ...current, permissionMode }));
+              }
+            }}
+          >
+            <PermissionOption
+              description="需要更高权限时由你决定，适合不熟悉的项目。"
+              label="请求批准"
+              selected={project.permissionMode === "request-approval"}
+              value="request-approval"
+            />
+            <PermissionOption
+              description="Codex 自动评估高权限请求，减少工作中的打断。"
+              label="帮我批准"
+              selected={project.permissionMode === "auto-review"}
+              value="auto-review"
+            />
+            <PermissionOption
+              description="跳过批准和沙箱，可访问项目目录之外的文件与进程。"
+              label="完全访问权限"
+              selected={project.permissionMode === "full-access"}
+              value="full-access"
+            />
+          </RadioGroup>
+          <p className="project-permission-note">此设置仅保存在这台电脑上，不会修改项目中的 Codex 配置文件。</p>
+        </section></div> : null}
         {activeTab === "commands" ? <div className="flex-1 text-sm outline-none" role="tabpanel"><section className="project-settings-panel"><div className="section-heading"><div><h2>命令与验收</h2><p>这些命令会作为项目上下文提供给 Agent。</p></div></div><div className="form-grid">
           {(["install", "test", "start", "acceptanceUrl"] as const).map((key) => <label key={key}>{commandLabel(key)}<Input value={project.commands[key] ?? ""} onChange={(event) => updateProject((current) => ({ ...current, commands: { ...current.commands, [key]: event.target.value || undefined } }))} /></label>)}
           <label>证据采集方式<Select items={{ agent: "Agent", browser: "浏览器", electron: "Electron", command: "命令" }} value={project.commands.evidenceCapture?.mode ?? "agent"} onValueChange={(mode) => {
@@ -299,7 +348,41 @@ export function ProjectForm({ manifests, workspaceProviders = [localWorkspacePro
         })}
       </div><footer className="project-settings-actions"><div className="project-settings-status">{saved ? <span aria-live="polite" role={saveConfirmed ? "status" : undefined}><i className="state-dot" />所有更改已保存</span> : <span>有未保存的更改</span>}</div><div className="project-settings-action-buttons">{onCancel ? <Button type="button" variant="secondary" onClick={onCancel}>取消</Button> : null}<Button disabled={saving} type="submit">{saving ? "保存中…" : "保存更改"}</Button></div></footer></div>
     </Tabs>
+    <Dialog open={fullAccessConfirmationOpen} onOpenChange={setFullAccessConfirmationOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>启用完全访问权限？</DialogTitle>
+          <DialogDescription>
+            Codex 将跳过批准和沙箱限制，可以执行宿主命令、启动其他进程，并访问项目目录之外的文件。仅为你信任的项目启用。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button type="button" variant="secondary" />}>返回</DialogClose>
+          <Button type="button" onClick={() => {
+            updateProject((current) => ({ ...current, permissionMode: "full-access" }));
+            setFullAccessConfirmationOpen(false);
+          }}>启用完全访问</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </form>;
+}
+
+function PermissionOption({
+  description,
+  label,
+  selected,
+  value,
+}: {
+  description: string;
+  label: string;
+  selected: boolean;
+  value: NonNullable<ProjectDto["permissionMode"]>;
+}) {
+  return <label className="project-permission-option" data-selected={selected || undefined}>
+    <RadioGroupItem value={value} />
+    <span><strong>{label}</strong><small>{description}</small></span>
+  </label>;
 }
 
 function unsupportedConnectionTest(): Promise<never> {
@@ -337,6 +420,7 @@ function initialValue(manifests: IntegrationPluginManifest[], workspaceProviders
     path: initial?.path ?? inspection?.path ?? "",
     instructions: initial?.instructions ?? "",
     agentPlugin: initial?.agent?.plugin ?? "codex",
+    permissionMode: initial?.permissionMode ?? "request-approval",
     commands: { ...initial?.commands },
     integrations,
     workspace: inspection ? mergeWorkspaceInspection(workspace, inspection) : workspace,

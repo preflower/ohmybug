@@ -5,6 +5,7 @@ import {
   issueSchema,
   reviewSubmissionSchema as coreReviewSubmissionSchema,
   projectCommandsSchema as coreProjectCommandsSchema,
+  projectPermissionModeSchema,
 } from "@oh-my-bug/core";
 import { z } from "zod";
 
@@ -76,6 +77,7 @@ const projectFields = {
   key: z.string().regex(/^[A-Z][A-Z0-9-]*$/),
   name: identifierSchema.optional(),
   instructions: z.string().optional(),
+  permissionMode: projectPermissionModeSchema.optional(),
   commands: projectCommandsSchema.optional(),
   agent: projectAgentSchema.optional(),
   integrations: z.record(identifierSchema, projectIntegrationInputSchema).optional(),
@@ -107,6 +109,7 @@ export const updateProjectInputSchema = z.object({
   key: projectFields.key.optional(),
   name: projectFields.name,
   instructions: projectFields.instructions,
+  permissionMode: projectFields.permissionMode,
   commands: projectFields.commands,
   agent: projectFields.agent,
   integrations: projectFields.integrations,
@@ -121,6 +124,7 @@ export const productProjectSchema = z.object({
   updatedAt: z.iso.datetime(),
   name: projectFields.name,
   instructions: projectFields.instructions,
+  permissionMode: projectPermissionModeSchema.optional(),
   commands: projectFields.commands,
   agent: projectFields.agent,
   integrations: z.record(identifierSchema, productIntegrationSchema).optional(),
@@ -209,6 +213,7 @@ export const agentTerminalLaunchTargetSchema = z.object({
   executablePath: identifierSchema,
   remoteUrl: z.string().startsWith("unix://"),
   workingDirectory: identifierSchema,
+  permissionMode: projectPermissionModeSchema,
 }).strict();
 export const approvalResultSchema = z.object({
   issue: issueSchema,

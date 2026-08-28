@@ -1,7 +1,7 @@
 import { lstatSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
-import type { AgentPlugin } from "@oh-my-bug/core";
+import type { AgentPlugin, ProjectPermissionMode } from "@oh-my-bug/core";
 
 import { codexAgent } from "../codex-agent-adapter.js";
 import type { CodexClient, CodexThread, CodexThreadOptions } from "../codex-client.js";
@@ -28,6 +28,7 @@ export interface AgentTerminalLaunchTarget {
   executablePath: string;
   remoteUrl: string;
   workingDirectory: string;
+  permissionMode: ProjectPermissionMode;
 }
 
 export interface TerminalSessionContext {
@@ -35,6 +36,7 @@ export interface TerminalSessionContext {
   providerThreadId?: string;
   workingDirectory?: string;
   workspaceReady: boolean;
+  permissionMode?: ProjectPermissionMode;
 }
 
 interface RuntimeClient extends CodexClient { dispose(): Promise<void> }
@@ -122,6 +124,7 @@ export class CodexAppServerRuntimeHost {
       executablePath: this.supervisor.executablePath(),
       remoteUrl: this.supervisor.endpoint().remoteUrl,
       workingDirectory: context.workingDirectory,
+      permissionMode: context.permissionMode ?? "request-approval",
     };
   }
 

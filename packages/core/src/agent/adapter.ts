@@ -89,11 +89,17 @@ export interface ProjectCommands {
   evidenceCapture?: ProjectEvidenceCapture;
 }
 
+export type ProjectPermissionMode =
+  | "request-approval"
+  | "auto-review"
+  | "full-access";
+
 export interface ProjectContext {
   id: string;
   path: string;
   instructions?: string;
   commands?: ProjectCommands;
+  permissionMode?: ProjectPermissionMode;
 }
 
 export interface CreateSessionInput {
