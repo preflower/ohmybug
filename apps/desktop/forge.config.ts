@@ -11,6 +11,30 @@ interface ForgeConfigOptions {
   development?: boolean;
 }
 
+const macSigningEnvironmentVariables = [
+  "APPLE_API_KEY",
+  "APPLE_API_KEY_ID",
+  "APPLE_API_ISSUER",
+] as const;
+
+export function resolveMacSigningConfig(environment: NodeJS.ProcessEnv = process.env) {
+  if (environment.OMB_MACOS_SIGN !== "1") return {};
+
+  const missing = macSigningEnvironmentVariables.filter((name) => !environment[name]);
+  if (missing.length > 0) {
+    throw new Error(`OMB_MACOS_SIGN_REQUIRES:${missing.join(",")}`);
+  }
+
+  return {
+    osxSign: {},
+    osxNotarize: {
+      appleApiKey: environment.APPLE_API_KEY as string,
+      appleApiKeyId: environment.APPLE_API_KEY_ID as string,
+      appleApiIssuer: environment.APPLE_API_ISSUER as string,
+    },
+  };
+}
+
 export function createForgeConfig(
   resources: RuntimeResources,
   options: ForgeConfigOptions = {}
@@ -22,6 +46,7 @@ export function createForgeConfig(
       icon: resolve(import.meta.dirname, "assets/icons/oh-my-bug.icns"),
       appBundleId: "com.ohmybug.desktop",
       appCategoryType: "public.app-category.developer-tools",
+      ...resolveMacSigningConfig(),
       asar: {
         unpack: desktopAsarUnpackPattern
       },

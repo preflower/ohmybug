@@ -3,7 +3,10 @@ import { basename, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import forgeConfig, { createForgeConfig } from "../../forge.config.js";
+import forgeConfig, {
+  createForgeConfig,
+  resolveMacSigningConfig,
+} from "../../forge.config.js";
 import {
   desktopAsarUnpackPattern,
   desktopBuildLayout,
@@ -134,5 +137,25 @@ describe("Electron packaging", () => {
       expect(offset).toBeLessThanOrEqual(icon.length);
     }
     expect(iconTypes).toEqual(expect.arrayContaining(["icp4", "icp5", "icp6", "ic07", "ic08", "ic09", "ic10"]));
+  });
+
+  it("enables macOS signing and notarization only for an explicit release build", () => {
+    expect(resolveMacSigningConfig({})).toEqual({});
+    expect(resolveMacSigningConfig({
+      OMB_MACOS_SIGN: "1",
+      APPLE_API_KEY: "/private/tmp/AuthKey.p8",
+      APPLE_API_KEY_ID: "ABCDEFGHIJ",
+      APPLE_API_ISSUER: "12345678-1234-1234-1234-123456789012",
+    })).toEqual({
+      osxSign: {},
+      osxNotarize: {
+        appleApiKey: "/private/tmp/AuthKey.p8",
+        appleApiKeyId: "ABCDEFGHIJ",
+        appleApiIssuer: "12345678-1234-1234-1234-123456789012",
+      },
+    });
+    expect(() => resolveMacSigningConfig({ OMB_MACOS_SIGN: "1" })).toThrow(
+      "OMB_MACOS_SIGN_REQUIRES:APPLE_API_KEY,APPLE_API_KEY_ID,APPLE_API_ISSUER",
+    );
   });
 });
